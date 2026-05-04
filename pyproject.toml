@@ -1,0 +1,13 @@
+[project]
+name = "teamflow-v2"
+version = "0.1.0"
+description = "Codex + Claude + MiMo MCP task controller"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.27.0",
+  "rich>=14.3.3",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
