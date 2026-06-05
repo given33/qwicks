@@ -12,7 +12,7 @@ It replaces the old Warp-first Teamflow V2 entrypoint with a Tauri desktop app:
 ## Start
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\MCP\teamflow\scripts\start-teamflow-desktop.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-teamflow-desktop.ps1
 ```
 
 The desktop shortcut `C:\Users\28219\Desktop\Open-Teamflow-Workflow.cmd` points at this script.
@@ -22,14 +22,14 @@ The desktop shortcut `C:\Users\28219\Desktop\Open-Teamflow-Workflow.cmd` points 
 Teamflow Desktop uses Tauri and requires Rust/Cargo plus Node.js/npm.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\MCP\teamflow\scripts\build-teamflow-desktop.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-teamflow-desktop.ps1
 ```
 
 If Rust is missing, the script exits with code `2` and prints the install URL.
 
 ## Runtime Model
 
-- SQLite remains the source of truth in `D:\MCP\teamflow\runtime\teamflow.sqlite3`.
+- SQLite remains the source of truth in repo-local `runtime\teamflow.sqlite3`.
 - `runtime\tasks.json` is still a read-only exported snapshot.
 - The Tauri backend initializes the current run, schema, events, agent messages, raw transcripts, and process events.
 - Codex and Claude Code still run through the installed local CLI binaries, but Teamflow captures their output and translates it into app messages.
@@ -40,7 +40,7 @@ If Rust is missing, the script exits with code `2` and prints the install URL.
 The old Warp workflow is kept only as a fallback:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\MCP\teamflow\scripts\start-teamflow-warp-legacy.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-teamflow-warp-legacy.ps1
 ```
 
 Warp is no longer the default Teamflow entrypoint.
@@ -54,4 +54,3 @@ Do not write MiMo keys into this repository. Teamflow reads keys from user or pr
 - `ANTHROPIC_API_KEY`
 - `XIAOMI_MIMO_API_KEY`
 - `MIMO_KEY`
-

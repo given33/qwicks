@@ -65,28 +65,33 @@ def test_web_dashboard_contains_json_protocol_parser_and_item_merge_hooks():
 
 def test_web_dashboard_pipeline_and_intervention_tokens_exist():
     app = (WEB / "src" / "App.jsx").read_text(encoding="utf-8")
+    client = (WEB / "src" / "tauriClient.js").read_text(encoding="utf-8")
+    rust = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
 
     for token in [
         "任务流水线",
-        "人工干预",
         "待处理",
         "开发中",
         "本地验证中",
         "逻辑评审中",
-        "已被打回",
+        "打回重做",
         "已交付",
         "已阻塞",
         "已取消",
-        "继续",
-        "修改并重试",
-        "标记完成",
-        "终止",
+        "三阶段看板",
+        "MiMo 审核",
+        "风险通过",
+    ]:
+        assert token in app
+
+    for token in [
         "continue_task",
         "retry_task_with_instruction",
         "mark_task_completed",
         "terminate_task_and_codex",
     ]:
-        assert token in app
+        assert token in client
+        assert f"async fn {token}" in rust
 
 
 def test_web_dashboard_realtime_event_pipeline_tokens_exist():
@@ -140,13 +145,12 @@ def test_session_sidebar_keeps_current_blank_run_visible_and_shows_summary_time_
     app = (WEB / "src" / "App.jsx").read_text(encoding="utf-8")
 
     for token in [
-        "function ensureCurrentRunVisible(",
         "currentRunPlaceholder",
         "summary: summarizeRunForSidebar(run)",
         "time: formatDateTime(run.lastActivityAt || run.updatedAt || run.createdAt || \"\")",
-        "currentRunGroup",
-        'groups={ensureCurrentRunVisible(runGroups, status)}',
+        'key: "current-run"',
         'group.key === "current-run"',
+        "RunListItem",
     ]:
         assert token in app, f"missing current run sidebar token: {token}"
 

@@ -191,6 +191,8 @@ def test_mcp_sidecar_exposes_teamflow_tools():
 
 def test_react_ui_is_three_column_desktop_chat_workspace():
     app = read(WEB / "src" / "App.jsx")
+    client = read(WEB / "src" / "tauriClient.js")
+    rust = read(TAURI / "src" / "lib.rs")
 
     for text in [
         "Codex 架构师",
@@ -203,15 +205,29 @@ def test_react_ui_is_three_column_desktop_chat_workspace():
         "MiMo 审查",
         "标准错误",
         "原始 CLI 输出",
-        "continue_task",
-        "retry_task_with_instruction",
-        "mark_task_completed",
-        "terminate_task_and_codex",
+        "任务流水线",
+        "三阶段看板",
+        "会话",
+        "新会话",
+    ]:
+        assert text in app
+
+    for command in [
         "send_codex_message",
         "start_claude_worker",
         "open_diagnostics",
     ]:
-        assert text in app
+        assert command in app
+        assert command in rust
+
+    for command in [
+        "continue_task",
+        "retry_task_with_instruction",
+        "mark_task_completed",
+        "terminate_task_and_codex",
+    ]:
+        assert command in client
+        assert f"async fn {command}" in rust
 
     assert "/api/status" not in app
     assert "warp://launch" not in app

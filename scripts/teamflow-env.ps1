@@ -3,10 +3,11 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$env:TEAMFLOW_ROOT = 'D:\MCP\teamflow'
-$env:TEAMFLOW_WORKDIR = 'D:\MCP\teamflow\workspace'
+$teamflowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$env:TEAMFLOW_ROOT = $teamflowRoot
+$env:TEAMFLOW_WORKDIR = Join-Path $teamflowRoot 'workspace'
 $env:USER_ROOT = 'C:\Users\28219'
-$env:PYTHONPATH = 'D:\MCP\teamflow\src'
+$env:PYTHONPATH = Join-Path $teamflowRoot 'src'
 $env:MIMO_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/anthropic'
 $env:MIMO_MODEL = 'mimo-v2.5-pro'
 $env:ANTHROPIC_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/anthropic'

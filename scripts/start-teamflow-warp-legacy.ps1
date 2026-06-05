@@ -1,3 +1,3 @@
 $ErrorActionPreference = 'Stop'
-& 'D:\MCP\teamflow\start-teamflow-v2.ps1' -Restart -Warp
-
+$teamflowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+& (Join-Path $teamflowRoot 'start-teamflow-v2.ps1') -Restart -Warp

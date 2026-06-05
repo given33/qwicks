@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$teamflowRoot = 'D:\MCP\teamflow'
+$teamflowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $cargoBin = 'C:\Users\28219\.cargo\bin'
 
 if ((Test-Path $cargoBin) -and (($env:PATH -split ';') -notcontains $cargoBin)) {
@@ -54,6 +54,7 @@ try {
     throw "Compiled sidecar was not found: $builtSidecar"
   }
 
+  New-Item -ItemType Directory -Force -Path $mainReleaseDir | Out-Null
   $stagedSidecar = Join-Path $mainReleaseDir 'teamflow-mcp.exe'
   Copy-Item -Force $builtSidecar $stagedSidecar
 

@@ -17,16 +17,33 @@ target/
 src-tauri/target/
 src-tauri/teamflow-mcp/target/
 src-tauri/teamflow-mcp-x86_64-pc-windows-msvc.exe
+src-tauri/teamflow-mcp-*.exe
+.cargo-home/
 
 # Runtime / local state
 runtime/
 workspace/
+.teamflow/
+.tmp/
+.workflow/
+.feature-dev/
+
+# Local package/tool caches
+.npm-cache/
+.playwright-cli/
 
 # Logs and local databases
 *.log
 *.sqlite
 *.sqlite3
 *.db
+
+# Release/build artifacts belong in GitHub Releases, not source commits.
+release-staging/
+rollback-snapshots/
+*.msi
+*.exe.sig
+*.msi.sig
 
 # OS files
 .DS_Store

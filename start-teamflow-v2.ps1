@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$teamflowRoot = 'D:\MCP\teamflow'
+$teamflowRoot = (Resolve-Path $PSScriptRoot).Path
 $launchName = 'Teamflow V2 MCP'
 $teamflowEnvScript = Join-Path $teamflowRoot 'scripts\teamflow-env.ps1'
 
@@ -22,7 +22,7 @@ function Use-TeamflowEnv {
 
   $env:TEAMFLOW_ROOT = $teamflowRoot
   $env:TEAMFLOW_WORKDIR = Join-Path $teamflowRoot 'workspace'
-  $env:USER_ROOT = 'C:\Users\28219'
+  $env:USER_ROOT = $env:USERPROFILE
   $env:PYTHONPATH = Join-Path $teamflowRoot 'src'
 
   New-Item -ItemType Directory -Force -Path $teamflowRoot | Out-Null
@@ -57,8 +57,9 @@ if ($SyncOnly) {
 
 if ($Restart) {
   $all = @(Get-CimInstance Win32_Process)
+  $escapedTeamflowRoot = [regex]::Escape($teamflowRoot)
   $roots = @(
-    $all | Where-Object { $_.CommandLine -match 'D:\\MCP\\teamflow' -or $_.CommandLine -match 'teamflow-v2' }
+    $all | Where-Object { $_.CommandLine -match $escapedTeamflowRoot -or $_.CommandLine -match 'teamflow-v2' }
   )
   $ids = [System.Collections.Generic.HashSet[int]]::new()
   $queue = [System.Collections.Generic.Queue[int]]::new()

@@ -1,16 +1,30 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-$teamflowRoot = 'D:\MCP\teamflow'
+$teamflowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $env:TEAMFLOW_ROOT = $teamflowRoot
 $env:TEAMFLOW_WORKDIR = Join-Path $teamflowRoot 'workspace'
 $env:USER_ROOT = 'C:\Users\28219'
 $cargoBin = 'C:\Users\28219\.cargo\bin'
 $prepareSidecarScript = Join-Path $teamflowRoot 'scripts\prepare-tauri-sidecar.ps1'
 $bundledSidecarPath = Join-Path $teamflowRoot 'src-tauri\teamflow-mcp-x86_64-pc-windows-msvc.exe'
-# sidecar compile contract: cargo build --manifest-path D:\MCP\teamflow\src-tauri\teamflow-mcp\Cargo.toml --bin teamflow-mcp --release
+# sidecar compile contract: cargo build --manifest-path <repo>\src-tauri\teamflow-mcp\Cargo.toml --bin teamflow-mcp --release
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+function Invoke-CheckedCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Command,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]] $Arguments
+  )
+
+  & $Command @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "Command failed with exit code $LASTEXITCODE`: $Command $($Arguments -join ' ')"
+  }
+}
 
 if ((Test-Path $cargoBin) -and (($env:PATH -split ';') -notcontains $cargoBin)) {
   $env:PATH = "$cargoBin;$env:PATH"
@@ -29,11 +43,11 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 
 Set-Location $teamflowRoot
 if (-not (Test-Path (Join-Path $teamflowRoot 'node_modules'))) {
-  npm install
+  Invoke-CheckedCommand npm install
 }
 
-if (-not (Test-Path (Join-Path $teamflowRoot 'web\node_modules'))) {
-  npm run web:install
+if (-not (Test-Path (Join-Path $teamflowRoot 'web\node_modules\.bin\vite.cmd'))) {
+  Invoke-CheckedCommand npm run web:install
 }
 
 & $prepareSidecarScript
@@ -46,4 +60,4 @@ if (-not (Test-Path $bundledSidecarPath)) {
   exit 2
 }
 
-npm run build
+Invoke-CheckedCommand npm run build

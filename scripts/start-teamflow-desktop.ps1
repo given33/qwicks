@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-$teamflowRoot = 'D:\MCP\teamflow'
+$teamflowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $env:TEAMFLOW_ROOT = $teamflowRoot
 $env:TEAMFLOW_WORKDIR = Join-Path $teamflowRoot 'workspace'
 $env:USER_ROOT = 'C:\Users\28219'
