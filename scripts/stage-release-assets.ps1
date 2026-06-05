@@ -32,11 +32,13 @@ foreach ($pattern in $patterns) {
     ForEach-Object {
       $destination = Join-Path $stageDir $_.Name
       Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+      $sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
       $copied += [pscustomobject]@{
         Name = $_.Name
         Source = $_.FullName
         Destination = $destination
         Bytes = $_.Length
+        Sha256 = $sha256
       }
     }
 }

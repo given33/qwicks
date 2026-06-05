@@ -61,6 +61,11 @@ Assert-Contains `
   -Pattern '\$\{version\}:' `
   -Message 'stage-release-assets.ps1 must delimit $version before a colon in strings.'
 
+Assert-Contains `
+  -Text $stageScript `
+  -Pattern 'Get-FileHash[^\r\n]+-Algorithm\s+SHA256' `
+  -Message 'stage-release-assets.ps1 must include SHA256 checksums in release-assets.json.'
+
 foreach ($relativePath in $operationalScripts) {
   $scriptText = Get-Content -LiteralPath (Join-Path $root $relativePath) -Raw
   Assert-NotContains `
