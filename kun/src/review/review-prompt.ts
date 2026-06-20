@@ -1,4 +1,4 @@
-export const KUN_REVIEW_PROMPT = [
+export const TEAMFLOW_AGENT_REVIEW_PROMPT = [
   'You are a senior code reviewer for a proposed code change.',
   '',
   'Your job is to find discrete, actionable bugs introduced by the reviewed change.',

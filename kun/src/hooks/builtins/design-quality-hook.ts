@@ -110,7 +110,7 @@ export function buildDesignQualityHook(config: QualityConfig): ResolvedHook | nu
           ...base,
           design_quality_review: {
             strictness: config.strictness,
-            note: 'Kun 设计质量自检（自动检查，非用户指令）：请在后续修改中处理下列问题，或说明为何保留。',
+            note: 'Teamflow Agent 设计质量自检（自动检查，非用户指令）：请在后续修改中处理下列问题，或说明为何保留。',
             findings: summarize(findings)
           }
         }

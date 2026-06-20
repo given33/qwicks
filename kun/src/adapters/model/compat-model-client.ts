@@ -14,7 +14,7 @@
  *
  * For the initial Teamflow Agent migration, this stub provides the
  * interface and basic structure. The full implementation should be
- * ported from the Kun source code with naming replacement
+ * ported from the Teamflow Agent source code with naming replacement
  * (teamflow-agent).
  *
  * TODO: Port full implementation from Teamflow Agent upstream source
@@ -53,7 +53,7 @@ export class CompatModelClient implements ModelClient {
     // Stub: returns an error chunk indicating implementation is incomplete
     yield {
       kind: 'error',
-      message: 'CompatModelClient is a stub. Full implementation pending port from Kun source.'
+      message: 'CompatModelClient is a stub. Full implementation pending port from Teamflow Agent source.'
     }
     yield { kind: 'completed', stopReason: 'error' }
   }

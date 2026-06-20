@@ -7,7 +7,7 @@ import { detectImage } from '../../attachments/attachment-store.js'
 import type { CapabilityToolProvider } from './capability-registry.js'
 import { LocalToolHost } from './local-tool-host.js'
 
-const GENERATED_IMAGE_DIR = '.deepseekgui-images'
+const GENERATED_IMAGE_DIR = '.teamflowgui-images'
 const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
 const REFERENCE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const ASPECT_RATIOS = new Set(['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'])

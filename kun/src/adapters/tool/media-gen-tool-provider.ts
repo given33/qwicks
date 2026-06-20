@@ -8,9 +8,9 @@ import type { CapabilityToolProvider } from './capability-registry.js'
 import { ImageGenHttpError, describeNetworkError } from './image-gen-tool-provider.js'
 import { LocalToolHost } from './local-tool-host.js'
 
-const GENERATED_SPEECH_DIR = '.deepseekgui-audio'
-const GENERATED_MUSIC_DIR = '.deepseekgui-music'
-const GENERATED_VIDEO_DIR = '.deepseekgui-videos'
+const GENERATED_SPEECH_DIR = '.teamflowgui-audio'
+const GENERATED_MUSIC_DIR = '.teamflowgui-music'
+const GENERATED_VIDEO_DIR = '.teamflowgui-videos'
 const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
 const REFERENCE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const AUDIO_FORMATS = new Set(['mp3', 'wav', 'flac', 'pcm', 'pcm16'])

@@ -3,7 +3,7 @@
  *
  * The detector is a dependency-free, source-based scanner that flags
  * AI-generated frontend "tells" (slop) and general design-quality issues.
- * It runs in the Node-only Kun runtime, so it works on raw source text
+ * It runs in the Node-only Teamflow Agent runtime, so it works on raw source text
  * (HTML / CSS / JSX / TSX / SVG) — never on a rendered DOM or computed
  * styles. Rules trade a little recall for high precision so the findings
  * fed back to the model are trustworthy.

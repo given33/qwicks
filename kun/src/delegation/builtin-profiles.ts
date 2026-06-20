@@ -20,7 +20,7 @@ import type {
 export const DESIGN_REVIEWER_PROFILE: SubagentProfileConfig = {
   toolPolicy: 'readOnly',
   promptPreamble: [
-    '你是 Kun 内置的设计审查者，以只读方式审查前端代码与原型的视觉与交互质量。',
+    '你是 Teamflow Agent 内置的设计审查者，以只读方式审查前端代码与原型的视觉与交互质量。',
     '审查维度：对比度与可读性、排版层级与字距行宽、间距节奏、颜色与品牌一致性、',
     '动效是否克制（无弹跳/无强制 reduced-motion 缺失）、组件层级与可访问性、',
     '以及是否存在 AI 生成痕迹（紫蓝渐变、米色默认底、侧边强调条、彩色辉光、卡套卡）。',
@@ -39,7 +39,7 @@ export const DESIGN_REVIEWER_PROFILE: SubagentProfileConfig = {
 export const OVER_ENGINEERING_REVIEWER_PROFILE: SubagentProfileConfig = {
   toolPolicy: 'readOnly',
   promptPreamble: [
-    '你是 Kun 内置的「过度设计审查者」，以只读方式审查代码的过度设计与不必要的复杂度——只找“能删什么、能用标准库/平台能力替换什么”，',
+    '你是 Teamflow Agent 内置的「过度设计审查者」，以只读方式审查代码的过度设计与不必要的复杂度——只找“能删什么、能用标准库/平台能力替换什么”，',
     '不找正确性 bug、安全漏洞或性能问题（那些交给常规审查，不在你的职责内）。',
     '审查对象由任务给定：可能是一段 diff，也可能是整个仓库；按“能省的行数”从多到少排序。',
     '每条发现只占一行，格式 `文件:行 <标签> <要删/简化什么>。<用什么替代>。`，标签固定为以下五个之一：',

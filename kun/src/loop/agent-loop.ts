@@ -459,7 +459,7 @@ export type AgentLoopOptions = {
     maxStringBytes?: number
   }
   /**
-   * Tuning + test seams for goal auto-resume (KunAgent/Kun#370). Defaults
+   * Tuning + test seams for goal auto-resume (TeamflowAgent/teamflow-agent#370). Defaults
    * back off exponentially and bound consecutive no-progress retries; tests
    * inject a synchronous timer and small caps for determinism.
    */
@@ -627,7 +627,7 @@ export class AgentLoop {
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error)
       // Best-effort enrichment so the renderer can show "what failed where"
-      // instead of the bare "Kun turn failed" string. See issue #26.
+      // instead of the bare "Teamflow Agent turn failed" string. See issue #26.
       const modelInfo = this.opts.model && 'config' in this.opts.model
         ? (this.opts.model as { config: { model?: string; baseUrl?: string } }).config
         : undefined
@@ -637,7 +637,7 @@ export class AgentLoop {
         ? (error.stack?.split('\n').slice(0, 3).join(' | ') ?? '')
         : ''
       const message = [
-        '[Kun turn failed]',
+        '[Teamflow Agent turn failed]',
         `turn=${turnId}`,
         `thread=${threadId}`,
         `model=${modelName}`,
@@ -824,7 +824,7 @@ export class AgentLoop {
    *
    * Only failed, non-plan turns on a still-`active` goal are resumed: a model
    * step-budget stop or a model/network/tool error left the goal "in
-   * progress" with nothing running (KunAgent/Kun#370). Deliberate stops
+   * progress" with nothing running (TeamflowAgent/teamflow-agent#370). Deliberate stops
    * (`completed`: the goal-repetition guard or a cost-budget block) and user
    * interrupts / shutdown (`aborted`) are never relaunched. When the
    * consecutive no-progress budget is exhausted the goal is moved to
@@ -2583,7 +2583,7 @@ export class AgentLoop {
   /** Convenience factory for tests: builds a loop with sensible defaults. */
   static defaultPrefix(): ImmutablePrefix {
     return createImmutablePrefix({
-      systemPrompt: 'You are Kun, a careful and helpful assistant.',
+      systemPrompt: 'You are Teamflow Agent, a careful and helpful assistant.',
       pinnedConstraints: ['user: preserve recent turns', 'project: keep responses concise']
     })
   }
@@ -2753,8 +2753,8 @@ function buildToolCatalogDriftMessage(toolCatalog: {
   const sample = toolCatalog.toolNames.slice(0, 12).join(', ')
   const suffix = toolCatalog.toolNames.length > 12 ? `, +${toolCatalog.toolNames.length - 12} more` : ''
   const policy = changeKind === 'additive'
-    ? 'Only additive tool changes are allowed in-place; Kun will continue with the refreshed tool list.'
-    : 'Non-additive tool changes can invalidate prompt-cache assumptions; Kun stopped this turn. Start a new thread after editing, removing, or reordering tool schemas.'
+    ? 'Only additive tool changes are allowed in-place; Teamflow Agent will continue with the refreshed tool list.'
+    : 'Non-additive tool changes can invalidate prompt-cache assumptions; Teamflow Agent stopped this turn. Start a new thread after editing, removing, or reordering tool schemas.'
   return [
     `Tool catalog changed for this thread (${toolCatalog.toolCount} tools, fingerprint ${toolCatalog.fingerprint}).`,
     policy,

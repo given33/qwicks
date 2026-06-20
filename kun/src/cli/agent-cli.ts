@@ -7,7 +7,7 @@ import {
   modelContextProfilesFromConfig
 } from '../loop/model-context-profile.js'
 import type { ToolHostContext } from '../ports/tool-host.js'
-import { createKunServeRuntime } from '../server/runtime-factory.js'
+import { createTeamflowAgentServeRuntime } from '../server/runtime-factory.js'
 import type { ServerRuntime } from '../server/routes/server-runtime.js'
 import {
   parseServeOptionsSafe,
@@ -28,7 +28,7 @@ export type CliIo = {
   createRuntime?: (options: ServeOptions) => Promise<ServerRuntime>
 }
 
-export const KUN_CLI_USAGE = `teamflow-agent <command> [options]
+export const TEAMFLOW_AGENT_CLI_USAGE = `teamflow-agent <command> [options]
 
 Commands:
   serve [options]            Start the local HTTP/SSE runtime
@@ -38,7 +38,7 @@ Commands:
 
 Common options:
   --config <path>            JSON config file
-  --data-dir <path>          Root directory for Kun data
+  --data-dir <path>          Root directory for Teamflow Agent data
   --workspace <path>         Workspace root for run/chat/exec
   --model <model>            Model id
   --approval-policy <p>      on-request | untrusted | never | auto | suggest
@@ -72,10 +72,10 @@ const VALUE_FLAGS = new Set([
   'title'
 ])
 
-export type KunCliCommand = 'serve' | 'run' | 'chat' | 'exec' | 'help'
+export type TeamflowAgentCliCommand = 'serve' | 'run' | 'chat' | 'exec' | 'help'
 
-export function splitKunCliCommand(argv: readonly string[]): {
-  command: KunCliCommand
+export function splitTeamflowAgentCliCommand(argv: readonly string[]): {
+  command: TeamflowAgentCliCommand
   args: string[]
   error?: string
 } {
@@ -93,7 +93,7 @@ export function splitKunCliCommand(argv: readonly string[]): {
 }
 
 export async function runAgentCommand(
-  command: Exclude<KunCliCommand, 'serve' | 'help'>,
+  command: Exclude<TeamflowAgentCliCommand, 'serve' | 'help'>,
   argv: readonly string[],
   io: CliIo
 ): Promise<number> {
@@ -303,13 +303,13 @@ function parseSharedOptions(argv: readonly string[], io: CliIo): SharedOptionsRe
   return {
     ok: true,
     options: parsed.options,
-    workspace: stringFlag(argv, ['workspace']) ?? io.env?.KUN_WORKSPACE ?? io.cwd?.() ?? process.cwd(),
+    workspace: stringFlag(argv, ['workspace']) ?? io.env?.TEAMFLOW_AGENT_WORKSPACE ?? io.cwd?.() ?? process.cwd(),
     json: hasFlag(argv, 'json')
   }
 }
 
 function createRuntime(options: ServeOptions, io: CliIo): Promise<ServerRuntime> {
-  return io.createRuntime ? io.createRuntime(options) : createKunServeRuntime(options)
+  return io.createRuntime ? io.createRuntime(options) : createTeamflowAgentServeRuntime(options)
 }
 
 async function shutdownRuntime(

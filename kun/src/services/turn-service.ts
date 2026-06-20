@@ -395,7 +395,7 @@ export class TurnService {
    * to run in the background after the server starts listening.
    *
    * Returns the ids of threads that had at least one turn reconciled, so the
-   * caller can resume goals that were interrupted mid-run (KunAgent/Kun#370).
+   * caller can resume goals that were interrupted mid-run (TeamflowAgent/teamflow-agent#370).
    */
   async reconcileOrphanedTurns(): Promise<string[]> {
     const summaries = await this.deps.threadStore.list()

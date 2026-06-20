@@ -26,7 +26,7 @@ import { TurnService } from './turn-service.js'
 import { UsageService } from './usage-service.js'
 import { resolveReviewTargetPrompt } from '../review/git-review-target.js'
 import { parseReviewOutput, renderReviewOutput } from '../review/review-output.js'
-import { KUN_REVIEW_PROMPT } from '../review/review-prompt.js'
+import { TEAMFLOW_AGENT_REVIEW_PROMPT } from '../review/review-prompt.js'
 
 export type ReviewServiceDeps = {
   threadStore: ThreadStore
@@ -169,7 +169,7 @@ export class ReviewService {
       steering,
       compactor,
       prefix: createImmutablePrefix({
-        systemPrompt: KUN_REVIEW_PROMPT,
+        systemPrompt: TEAMFLOW_AGENT_REVIEW_PROMPT,
         pinnedConstraints: ['system: review mode is read-only and must output strict JSON']
       }),
       ids,

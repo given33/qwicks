@@ -77,7 +77,7 @@ import { FileMemoryStore } from '../memory/memory-store.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
 
-export type KunServeRuntimeOptions = {
+export type TeamflowAgentServeRuntimeOptions = {
   host: string
   port: number
   configPath?: string
@@ -114,7 +114,7 @@ export type KunServeRuntimeOptions = {
   startedAt?: string
 }
 
-export type KunServeHandle = NodeHttpServerHandle & {
+export type TeamflowAgentServeHandle = NodeHttpServerHandle & {
   runtime: ServerRuntime
 }
 
@@ -123,8 +123,8 @@ export type KunServeHandle = NodeHttpServerHandle & {
  * place that wires concrete adapters to ports; domain, services, loop,
  * and HTTP handlers stay constructor-injected and testable.
  */
-export async function createKunServeRuntime(
-  options: KunServeRuntimeOptions
+export async function createTeamflowAgentServeRuntime(
+  options: TeamflowAgentServeRuntimeOptions
 ): Promise<ServerRuntime> {
   await mkdir(options.dataDir, { recursive: true })
   const eventBus = new InMemoryEventBus()
@@ -155,7 +155,7 @@ export async function createKunServeRuntime(
     pinnedConstraints: [
       'system: preserve user intent across compaction',
       'system: keep the HTTP/SSE contract stable for the GUI',
-      'system: keep the stable Kun prefix byte-stable for prompt-cache reuse'
+      'system: keep the stable Teamflow Agent prefix byte-stable for prompt-cache reuse'
     ]
   })
   const threadService = new ThreadService({ threadStore, sessionStore, events, ids, nowIso })
@@ -533,7 +533,7 @@ export async function createKunServeRuntime(
 }
 
 function tokenEconomyConfigForOptions(
-  options: Pick<KunServeRuntimeOptions, 'tokenEconomyMode' | 'tokenEconomy'>
+  options: Pick<TeamflowAgentServeRuntimeOptions, 'tokenEconomyMode' | 'tokenEconomy'>
 ): TokenEconomyConfig {
   return {
     ...(options.tokenEconomy ?? {}),
@@ -600,10 +600,10 @@ export async function seedUsageCarryover(input: {
   }))
 }
 
-export async function startKunServe(
-  options: KunServeRuntimeOptions
-): Promise<KunServeHandle> {
-  const runtime = await createKunServeRuntime(options)
+export async function startTeamflowAgentServe(
+  options: TeamflowAgentServeRuntimeOptions
+): Promise<TeamflowAgentServeHandle> {
+  const runtime = await createTeamflowAgentServeRuntime(options)
   const router = buildRouter(runtime)
   const server = await startNodeHttpServer({
     router,
@@ -613,7 +613,7 @@ export async function startKunServe(
   // Background sweep after listen: settle turns orphaned by a crash so
   // clients stop spinning on them, without delaying readiness. Then resume
   // goals that were interrupted mid-run so an active goal doesn't sit "in
-  // progress" forever with nothing running (KunAgent/Kun#370).
+  // progress" forever with nothing running (TeamflowAgent/teamflow-agent#370).
   void runtime.turnService
     .reconcileOrphanedTurns()
     .then(async (threadIds) => {

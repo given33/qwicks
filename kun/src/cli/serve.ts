@@ -40,12 +40,12 @@ export function parseServeOptions(
   }
   const loadedConfig = loadServeConfig(raw, env)
   const configServe = loadedConfig?.config.serve ?? {}
-  const portEnv = env.KUN_PORT
+  const portEnv = env.TEAMFLOW_AGENT_PORT
   const tokenEconomyMode =
     booleanFlag(raw, 'token-economy') ??
     booleanFlag(raw, 'token-economy-mode') ??
     booleanFlag(raw, 'tokenEconomyMode') ??
-    envBoolean(env.KUN_TOKEN_ECONOMY_MODE) ??
+    envBoolean(env.TEAMFLOW_AGENT_TOKEN_ECONOMY_MODE) ??
     configServe.tokenEconomy?.enabled ??
     configServe.tokenEconomyMode ??
     DEFAULT_SERVE_OPTIONS.tokenEconomyMode
@@ -55,7 +55,7 @@ export function parseServeOptions(
     host:
       typeof raw.host === 'string'
         ? raw.host
-        : env.KUN_HOST ?? configServe.host ?? DEFAULT_SERVE_OPTIONS.host,
+        : env.TEAMFLOW_AGENT_HOST ?? configServe.host ?? DEFAULT_SERVE_OPTIONS.host,
     port:
       typeof raw.port === 'string'
         ? Number(raw.port)
@@ -67,7 +67,7 @@ export function parseServeOptions(
         ? raw['data-dir']
         : typeof raw.dataDir === 'string'
           ? raw.dataDir
-          : env.KUN_DATA_DIR ??
+          : env.TEAMFLOW_AGENT_DATA_DIR ??
             configServe.dataDir ??
             DEFAULT_SERVE_OPTIONS.dataDir,
     runtimeToken:
@@ -75,7 +75,7 @@ export function parseServeOptions(
         ? raw['runtime-token']
         : typeof raw.runtimeToken === 'string'
           ? raw.runtimeToken
-          : env.KUN_RUNTIME_TOKEN ??
+          : env.TEAMFLOW_AGENT_RUNTIME_TOKEN ??
             configServe.runtimeToken ??
             DEFAULT_SERVE_OPTIONS.runtimeToken,
     apiKey:
@@ -89,7 +89,7 @@ export function parseServeOptions(
         ? raw['base-url']
         : typeof raw.baseUrl === 'string'
           ? raw.baseUrl
-          : env.KUN_BASE_URL ??
+          : env.TEAMFLOW_AGENT_BASE_URL ??
             env.DEEPSEEK_BASE_URL ??
             configServe.baseUrl ??
             DEFAULT_SERVE_OPTIONS.baseUrl,
@@ -104,13 +104,13 @@ export function parseServeOptions(
         ? raw['endpoint-format'] as ServeOptions['endpointFormat']
         : typeof raw.endpointFormat === 'string'
           ? raw.endpointFormat as ServeOptions['endpointFormat']
-          : env.KUN_ENDPOINT_FORMAT as ServeOptions['endpointFormat'] | undefined ??
+          : env.TEAMFLOW_AGENT_ENDPOINT_FORMAT as ServeOptions['endpointFormat'] | undefined ??
             configServe.endpointFormat ??
             DEFAULT_SERVE_OPTIONS.endpointFormat,
     model:
       typeof raw.model === 'string'
         ? raw.model
-        : env.KUN_MODEL ?? configServe.model ?? DEFAULT_SERVE_OPTIONS.model,
+        : env.TEAMFLOW_AGENT_MODEL ?? configServe.model ?? DEFAULT_SERVE_OPTIONS.model,
     approvalPolicy:
       typeof raw['approval-policy'] === 'string'
         ? (raw['approval-policy'] as ServeOptions['approvalPolicy'])
@@ -152,7 +152,7 @@ export function parseServeOptions(
 
 /**
  * Validate a pre-constructed options object. Used by tests and by the
- * main process when Kun is started programmatically.
+ * main process when Teamflow Agent is started programmatically.
  */
 export function validateServeOptions(input: unknown): ServeOptions {
   return ServeOptionsSchema.parse(input)
@@ -231,7 +231,7 @@ function loadServeConfig(
   const explicitConfigPath =
     stringFlag(raw, 'config') ??
     stringFlag(raw, 'config-file') ??
-    env.KUN_CONFIG
+    env.TEAMFLOW_AGENT_CONFIG
   if (explicitConfigPath) {
     return readTeamflowAgentConfigFile(explicitConfigPath)
   }
@@ -245,7 +245,7 @@ function dataDirFromRawOrEnv(
 ): string | undefined {
   return stringFlag(raw, 'data-dir') ??
     stringFlag(raw, 'dataDir') ??
-    env.KUN_DATA_DIR
+    env.TEAMFLOW_AGENT_DATA_DIR
 }
 
 function storageBackendFromRawOrEnv(
@@ -255,7 +255,7 @@ function storageBackendFromRawOrEnv(
   const value =
     stringFlag(raw, 'storage-backend') ??
     stringFlag(raw, 'storageBackend') ??
-    env.KUN_STORAGE_BACKEND
+    env.TEAMFLOW_AGENT_STORAGE_BACKEND
   if (value === 'hybrid' || value === 'file') return value
   return value ? (value as ServeOptions['storage']['backend']) : undefined
 }
@@ -266,7 +266,7 @@ function storageSqlitePathFromRawOrEnv(
 ): string | undefined {
   return stringFlag(raw, 'sqlite-path') ??
     stringFlag(raw, 'sqlitePath') ??
-    env.KUN_SQLITE_PATH
+    env.TEAMFLOW_AGENT_SQLITE_PATH
 }
 
 function stringFlag(

@@ -5,7 +5,7 @@
  * its own loop. When that turn ends abnormally (model/network/tool error or
  * the per-turn model-step budget) while the goal is still `active`, nothing
  * used to relaunch it — the goal banner kept showing "in progress" while the
- * runtime sat idle (KunAgent/Kun#370). This coordinator owns the cross-turn
+ * runtime sat idle (TeamflowAgent/teamflow-agent#370). This coordinator owns the cross-turn
  * resume policy:
  *
  * - It relaunches a continuation turn after a failed goal turn (path B) and

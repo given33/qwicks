@@ -5,7 +5,7 @@ import { MODEL_ENDPOINT_FORMATS } from './model-endpoint-format.js'
 
 /**
  * Runtime info response returned on GET /v1/runtime/info.
- * Port default changed from 8899 (Kun) to 8898 (Teamflow Agent).
+ * Port default changed from 8899 to 8898 (Teamflow Agent).
  */
 export const RuntimeInfoResponse = z
   .object({

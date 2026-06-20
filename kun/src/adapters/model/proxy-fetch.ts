@@ -2,7 +2,7 @@
  * Simplified HTTP fetch wrapper for Teamflow Agent.
  *
  * This is a placeholder for the full proxy-fetch implementation.
- * The full version from Kun uses `proxy-agent` for HTTP proxy support
+ * The full version from Teamflow Agent uses `proxy-agent` for HTTP proxy support
  * and provides advanced retry logic.
  *
  * For the initial Teamflow Agent migration, we use native fetch which

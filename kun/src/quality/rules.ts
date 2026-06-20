@@ -8,7 +8,7 @@
  * from the public design-lint heuristics popularized by impeccable
  * (Apache-2.0) — algorithms only, expressed in Teamflow Agent's own naming and zh copy.
  *
- * Because the Kun runtime has no DOM, every rule works on raw source:
+ * Because the Teamflow Agent runtime has no DOM, every rule works on raw source:
  * CSS declarations, Tailwind utility classes, and markup tags. Rules
  * favor precision over recall so findings stay trustworthy.
  */

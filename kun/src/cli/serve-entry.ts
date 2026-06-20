@@ -2,13 +2,13 @@
 import process from 'node:process'
 import { parseServeOptionsSafe, SERVE_USAGE, ServeExitCode } from './serve.js'
 import {
-  KUN_CLI_USAGE,
+  TEAMFLOW_AGENT_CLI_USAGE,
   runAgentCommand,
-  splitKunCliCommand
+  splitTeamflowAgentCliCommand
 } from './agent-cli.js'
-import { startKunServe, type KunServeHandle } from '../server/runtime-factory.js'
+import { startTeamflowAgentServe, type TeamflowAgentServeHandle } from '../server/runtime-factory.js'
 
-export const KUN_READY_PREFIX = 'KUN_READY '
+export const TEAMFLOW_AGENT_READY_PREFIX = 'TEAMFLOW_AGENT_READY '
 
 /**
  * Serve mode runs unattended under the GUI. An uncaught error must not
@@ -16,7 +16,7 @@ export const KUN_READY_PREFIX = 'KUN_READY '
  * tail), attempt a bounded graceful close, then exit non-zero so the
  * GUI supervisor can restart us.
  */
-function installServeCrashHandlers(getHandle: () => KunServeHandle | null): void {
+function installServeCrashHandlers(getHandle: () => TeamflowAgentServeHandle | null): void {
   let crashing = false
   const crash = (kind: string, error: unknown): void => {
     if (crashing) return
@@ -42,7 +42,7 @@ function installServeCrashHandlers(getHandle: () => KunServeHandle | null): void
 
 /**
  * Serve-mode command. Kept separate from the dispatcher so GUI startup
- * still has the exact same KUN_READY handshake behavior.
+ * still has the exact same TEAMFLOW_AGENT_READY handshake behavior.
  */
 async function serveMain(argv: readonly string[]): Promise<number> {
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
@@ -57,9 +57,9 @@ async function serveMain(argv: readonly string[]): Promise<number> {
     }
     return parsed.exitCode
   }
-  let handle: KunServeHandle | null = null
+  let handle: TeamflowAgentServeHandle | null = null
   installServeCrashHandlers(() => handle)
-  const server = await startKunServe(parsed.options)
+  const server = await startTeamflowAgentServe(parsed.options)
   handle = server
   const info = server.runtime.info()
   const startupInfo = {
@@ -77,7 +77,7 @@ async function serveMain(argv: readonly string[]): Promise<number> {
     pid: info.pid,
     message: `teamflow-agent runtime listening on http://${server.host}:${server.port}`
   }
-  process.stdout.write(`${KUN_READY_PREFIX}${JSON.stringify(startupInfo)}\n`)
+  process.stdout.write(`${TEAMFLOW_AGENT_READY_PREFIX}${JSON.stringify(startupInfo)}\n`)
   process.stdout.write(JSON.stringify(startupInfo, null, 2) + '\n')
   await new Promise<void>((resolve) => {
     const stop = () => {
@@ -106,14 +106,14 @@ async function hideMacosDockIfRunningAsElectron(): Promise<void> {
 
 export async function main(argv: readonly string[]): Promise<number> {
   await hideMacosDockIfRunningAsElectron()
-  const command = splitKunCliCommand(argv)
+  const command = splitTeamflowAgentCliCommand(argv)
   if (command.command === 'help') {
     if (command.error) {
       process.stderr.write(`teamflow-agent: ${command.error}\n`)
-      process.stderr.write(KUN_CLI_USAGE)
+      process.stderr.write(TEAMFLOW_AGENT_CLI_USAGE)
       return ServeExitCode.usage
     }
-    process.stdout.write(KUN_CLI_USAGE)
+    process.stdout.write(TEAMFLOW_AGENT_CLI_USAGE)
     return ServeExitCode.ok
   }
   if (command.command === 'serve') {
