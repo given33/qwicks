@@ -1,6 +1,7 @@
 # JavaScript / Node
 node_modules/
 dist/
+out/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -15,22 +16,23 @@ __pycache__/
 # Rust / Tauri
 target/
 src-tauri/target/
-src-tauri/teamflow-mcp/target/
-src-tauri/teamflow-mcp-x86_64-pc-windows-msvc.exe
-src-tauri/teamflow-mcp-*.exe
+src-tauri/qwicks-mcp/target/
+src-tauri/qwicks-mcp-x86_64-pc-windows-msvc.exe
+src-tauri/qwicks-mcp-*.exe
 .cargo-home/
 
 # Runtime / local state
-runtime/
-workspace/
-.teamflow/
-.tmp/
-.workflow/
-.feature-dev/
+/runtime/
+/workspace/
+/.qwicks/
+/.tmp/
+/.workflow/
+/.feature-dev/
 
 # Local package/tool caches
 .npm-cache/
 .playwright-cli/
+.codex-tools/
 
 # Logs and local databases
 *.log
@@ -48,3 +50,5 @@ rollback-snapshots/
 # OS files
 .DS_Store
 Thumbs.db
+*.lnk
+nul

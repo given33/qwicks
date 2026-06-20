@@ -1,4 +1,4 @@
-# Teamflow Release and Update Strategy
+# QWicks Release and Update Strategy
 
 ## Repository Roles
 
@@ -8,10 +8,10 @@
 
 ## Current Local Layout
 
-- Release source worktree: `D:\MCP\teamflow-release-main`
-- Active migration worktree: `D:\MCP\teamflow`
-- Local full backup: `D:\git-backups\teamflow-desktop-full.git`
-- Workspace archive: `D:\MCP\_teamflow-workspace-archive`
+- Release source worktree: `D:\MCP\qwicks-release-main`
+- Active migration worktree: `D:\MCP\qwicks`
+- Local full backup: `D:\git-backups\qwicks-desktop-full.git`
+- Workspace archive: `D:\MCP\_qwicks-workspace-archive`
 
 ## GitHub Main Policy
 
@@ -29,15 +29,15 @@ Large generated files belong in GitHub Releases or the local bare backup.
 
 Each public release should contain:
 
-- NSIS installer: `Teamflow Desktop_<version>_x64-setup.exe`
-- MSI installer: `Teamflow Desktop_<version>_x64_zh-CN.msi`
+- NSIS installer: `QWicks_<version>_x64-setup.exe`
+- MSI installer: `QWicks_<version>_x64_zh-CN.msi`
 - updater signatures when updater artifacts are enabled
 - `latest.json` once the updater endpoint is active
 - release notes with build commit, version, date, and verification results
 
 ## Hot Update Requirements
 
-Teamflow uses Tauri. Tauri updater artifacts require signing. The private signing key must never be committed.
+QWicks uses Tauri. Tauri updater artifacts require signing. The private signing key must never be committed.
 
 Before enabling real in-app hot update:
 

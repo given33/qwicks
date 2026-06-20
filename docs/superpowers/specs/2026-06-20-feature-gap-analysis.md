@@ -1,15 +1,15 @@
-# Teamflow Agent vs Kun - 功能差距分析报告
+# QWicks vs QWicks - 功能差距分析报告
 
 **日期：** 2026-06-20  
 **对比对象：**
-- 源项目：Kun (C:\Users\given\Desktop\Kun-master)
-- 目标项目：Teamflow Agent (D:\teamflow-desktop-v2\kun)
+- 源项目：QWicks (C:\Users\given\Desktop\QWicks-master)
+- 目标项目：QWicks (D:\qwicks-desktop-v2\qwicks)
 
 ---
 
 ## 1. 总体概览
 
-| 指标 | Kun 源 | Teamflow Agent | 差异 |
+| 指标 | QWicks 源 | QWicks | 差异 |
 |------|--------|----------------|------|
 | **总代码行数（含测试）** | 40,762 | 37,988 | -2,774 (-6.8%) |
 | **非测试代码行数** | 38,505 | 35,757 | -2,748 (-7.1%) |
@@ -55,9 +55,9 @@
 ### 🔴 P0 - 阻止运行的核心问题
 
 #### 1. CompatModelClient 是 Stub
-- **位置：** `D:\teamflow-desktop-v2\kun\src\adapters\model\compat-model-client.ts`
+- **位置：** `D:\qwicks-desktop-v2\qwicks\src\adapters\model\compat-model-client.ts`
 - **现状：** 63 行 stub
-- **Kun 原始：** 2,602 行完整实现
+- **QWicks 原始：** 2,602 行完整实现
 - **影响：** **所有模型调用都会失败**，返回 `{kind: 'error', message: 'CompatModelClient is a stub...'}`
 - **需要：**
   - 完整移植 OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 协议
@@ -69,7 +69,7 @@
   - 代理/端点格式支持
 
 #### 2. better-sqlite3 未声明为依赖
-- **位置：** `D:\teamflow-desktop-v2\kun\package.json` `dependencies` 缺少 `better-sqlite3`
+- **位置：** `D:\qwicks-desktop-v2\qwicks\package.json` `dependencies` 缺少 `better-sqlite3`
 - **影响：** HybridThreadStore 会失败，运行时静默回退到 JSONL，丢失索引和快速查询
 - **需要：** 添加 `better-sqlite3: ^12.10.0` 到 dependencies
 
@@ -90,8 +90,8 @@
 ### 🟡 P1 - 重要但非阻塞
 
 #### 5. 整个测试套件缺失
-- **Kun：** 54 个测试文件，5,500+ 行
-- **Teamflow：** 0 个测试文件
+- **QWicks：** 54 个测试文件，5,500+ 行
+- **QWicks：** 0 个测试文件
 - **关键测试：**
   - `agent-loop.test.ts`
   - `hybrid-store.test.ts`
@@ -104,9 +104,9 @@
   - 等等
 
 #### 6. hooks 配置 schema 是 stub
-- **位置：** `D:\teamflow-desktop-v2\kun\src\config\teamflow-agent-config.ts` line 25
+- **位置：** `D:\qwicks-desktop-v2\qwicks\src\config\qwicks-config.ts` line 25
 - **现状：** `const HooksConfigSchema = z.object({}).optional()`
-- **Kun 原始：** 完整的 `HooksConfigSchema` from `hooks/hook-config.js`（已存在 141 行）
+- **QWicks 原始：** 完整的 `HooksConfigSchema` from `hooks/hook-config.js`（已存在 141 行）
 - **影响：** `config.json#hooks` 被解析为 unknown，运行时类型检查丢失
 
 #### 7. package.json exports 减少
@@ -122,13 +122,13 @@
 ### 🟢 P2 - 改进项
 
 #### 9. 命名差异（已大部分修复，但有小遗漏）
-- `agent-loop.ts` 仍有 "Kun turn failed" 日志字符串
-- "You are Kun" 系统提示词
-- `KunAgent/Kun#370` issue 链接
+- `agent-loop.ts` 仍有 "QWicks turn failed" 日志字符串
+- "You are QWicks" 系统提示词
+- `QWicksAgent/QWicks#370` issue 链接
 
 #### 10. 默认值差异
-- **端口：** Kun=8899, Teamflow=8898
-- **模型：** Kun=deepseek-v4-pro, Teamflow=mimo-v2.5-pro
+- **端口：** QWicks=8899, QWicks=8898
+- **模型：** QWicks=deepseek-v4-pro, QWicks=mimo-v2.5-pro
 - **影响：** CLI flag 和 schema 默认值不一致
 
 #### 11. 文件结尾换行
@@ -188,7 +188,7 @@
 
 ## 6. 关键统计
 
-| 项目 | Kun | Teamflow Agent | 状态 |
+| 项目 | QWicks | QWicks | 状态 |
 |------|-----|----------------|------|
 | TypeScript 源文件 | 196 | 199 | ✅ +3 (新 index.ts) |
 | 测试文件 | 54 | 0 | ❌ 缺失 |
@@ -202,7 +202,7 @@
 
 ## 7. 结论
 
-**Teamflow Agent 已经迁移了 Kun 93% 的功能**，核心架构（AgentLoop、Services、Server、Hooks、Tools、Adapters）全部完整。
+**QWicks 已经迁移了 QWicks 93% 的功能**，核心架构（AgentLoop、Services、Server、Hooks、Tools、Adapters）全部完整。
 
 **主要问题集中在**：
 1. 模型 HTTP 客户端（compat-model-client）是 stub，导致**运行时无法与模型对话**

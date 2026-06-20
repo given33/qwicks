@@ -1,4 +1,4 @@
-# Teamflow Agent Runtime - 第二批迁移架构文档
+# QWicks Runtime - 第二批迁移架构文档
 
 **日期：** 2026-06-20  
 **状态：** 规划中  
@@ -42,16 +42,16 @@
 
 ### 问题分析
 
-Kun 使用了两个关键原生 Node.js 模块：
+QWicks 使用了两个关键原生 Node.js 模块：
 
-| 模块 | 用途 | Kun 位置 | 困难 |
+| 模块 | 用途 | QWicks 位置 | 困难 |
 |------|------|---------|------|
 | `better-sqlite3` | SQLite 数据库 | adapters/hybrid | 需要 Node.js 绑定，Electron 中需要重新编译 |
 | `proxy-agent` | HTTP 代理 | adapters/model | Node.js 特定，依赖 `http`/`https` 模块 |
 
-### Teamflow 现有方案
+### QWicks 现有方案
 
-Teamflow 已在 Tauri/Rust 后端使用 `rusqlite`：
+QWicks 已在 Tauri/Rust 后端使用 `rusqlite`：
 
 ```toml
 # src-tauri/Cargo.toml
@@ -65,7 +65,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 **架构：**
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Teamflow Agent                    │
+│                    QWicks                    │
 │  (TypeScript/Node.js 兼容层)                         │
 ├─────────────────────────────────────────────────────┤
 │                 Tauri IPC Bridge                     │
@@ -97,7 +97,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 **架构：**
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Teamflow Agent                    │
+│                    QWicks                    │
 │  (TypeScript)                                        │
 ├─────────────────────────────────────────────────────┤
 │                 better-sqlite3                       │
@@ -108,21 +108,21 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 ```
 
 **优点：**
-- 保持 Kun 原有代码不变
+- 保持 QWicks 原有代码不变
 - 直接复用 hybrid-thread-store
 
 **缺点：**
 - 需要 `electron-rebuild`
 - 打包复杂度增加
 - 与 Tauri 架构冲突
-- 违背 Teamflow 技术栈统一性
+- 违背 QWicks 技术栈统一性
 
 #### 方案 C：sql.js 内存 SQLite
 
 **架构：**
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Teamflow Agent                    │
+│                    QWicks                    │
 │  (TypeScript)                                        │
 ├─────────────────────────────────────────────────────┤
 │                 sql.js                               │
@@ -144,9 +144,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 **采用方案 A：Tauri IPC 桥接**
 
 理由：
-1. Teamflow 已有 Tauri 后端和 rusqlite
+1. QWicks 已有 Tauri 后端和 rusqlite
 2. 避免引入新的原生依赖
-3. 与 Teamflow 整体架构一致
+3. 与 QWicks 整体架构一致
 4. 安全性和性能更优
 
 ---
@@ -261,7 +261,7 @@ const result = await Command.create('bash', ['-c', command]).execute()
 ```rust
 // Cargo.toml
 [bundle]
-externalBin = ["binaries/teamflow-shell"]
+externalBin = ["binaries/qwicks-shell"]
 ```
 
 #### Grep/Find
@@ -285,7 +285,7 @@ async function grep(pattern: string, path: string): Promise<string[]> {
 
 ### 问题分析
 
-Kun 使用 `@modelcontextprotocol/sdk` 实现 MCP 协议。
+QWicks 使用 `@modelcontextprotocol/sdk` 实现 MCP 协议。
 
 ### 解决方案
 
@@ -467,7 +467,7 @@ MCP SDK 是纯 JavaScript，兼容 Node.js 和浏览器环境：
 
 1. **验证 MCP SDK 兼容性**
    ```bash
-   cd D:\teamflow-desktop-v2\kun
+   cd D:\qwicks-desktop-v2\qwicks
    npm install @modelcontextprotocol/sdk
    ```
 
