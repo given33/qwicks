@@ -4,7 +4,7 @@ import { MultiProviderModelClient } from './multi-provider-model-client.js'
 import type { ModelRequest, ModelStreamChunk } from '../../ports/model-client.js'
 
 // Workflow / scheduled-task / IM-bridge can pick a non-runtime provider per
-// request. The same Kun process must route those requests to a per-provider
+// request. The same Teamflow Agent process must route those requests to a per-provider
 // HTTP client, leaving requests without a providerId on the default client.
 
 type CapturedCall = { url: string; authorization: string }

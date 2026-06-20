@@ -2659,8 +2659,23 @@ fn resolve_sidecar_path(root: &Path) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    let bin_dir = root.join("src-tauri");
-    if let Ok(entries) = fs::read_dir(&bin_dir) {
+
+    let mut bin_dirs = Vec::new();
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(current_dir) = current_exe.parent() {
+            bin_dirs.push(current_dir.to_path_buf());
+        }
+    }
+    bin_dirs.push(root.join("src-tauri"));
+
+    for bin_dir in bin_dirs {
+        let plain_sidecar = bin_dir.join("teamflow-mcp.exe");
+        if plain_sidecar.exists() {
+            return Some(plain_sidecar);
+        }
+        let Ok(entries) = fs::read_dir(&bin_dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = path.file_name()?.to_string_lossy();
@@ -4719,6 +4734,39 @@ async fn set_ui_settings(state: State<'_, AppState>, settings: Value) -> Result<
 }
 
 #[tauri::command]
+async fn run_desktop_command(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    command: String,
+) -> Result<()> {
+    match command.as_str() {
+        "minimize" => window
+            .minimize()
+            .map_err(|error| TeamflowError::Message(format!("窗口最小化失败：{error}")))?,
+        "toggleMaximize" => {
+            let is_maximized = window
+                .is_maximized()
+                .map_err(|error| TeamflowError::Message(format!("读取窗口状态失败：{error}")))?;
+            if is_maximized {
+                window
+                    .unmaximize()
+                    .map_err(|error| TeamflowError::Message(format!("窗口还原失败：{error}")))?;
+            } else {
+                window
+                    .maximize()
+                    .map_err(|error| TeamflowError::Message(format!("窗口最大化失败：{error}")))?;
+            }
+        }
+        "close" => window
+            .close()
+            .map_err(|error| TeamflowError::Message(format!("窗口关闭失败：{error}")))?,
+        "quit" => app.exit(0),
+        _ => {}
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_realtime_config(state: State<'_, AppState>) -> Result<RealtimeConfig> {
     Ok(state.realtime.config())
 }
@@ -5934,6 +5982,7 @@ pub fn run() {
             get_ui_settings,
             set_ui_setting,
             set_ui_settings,
+            run_desktop_command,
             send_codex_message,
             interrupt_codex_session,
             start_claude_worker,

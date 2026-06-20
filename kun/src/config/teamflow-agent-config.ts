@@ -20,13 +20,11 @@ import {
   MODEL_ENDPOINT_FORMATS,
   normalizeModelEndpointFormat
 } from '../contracts/model-endpoint-format.js'
-
-// Stub for hooks config - will be implemented later
-const HooksConfigSchema = z.object({}).optional()
+import { HooksConfigSchema } from '../hooks/hook-config.js'
 
 export const TEAMFLOW_AGENT_CONFIG_FILENAME = 'config.json'
-export const DEFAULT_TEAMFLOW_AGENT_MODEL = 'mimo-v2.5-pro'
-export const DEFAULT_TEAMFLOW_AGENT_PORT = 8898
+export const DEFAULT_TEAMFLOW_AGENT_MODEL = 'deepseek-v4-pro'
+export const DEFAULT_TEAMFLOW_AGENT_PORT = 8899
 
 const PositiveInt = z.number().int().positive()
 const PositiveRatio = z.number().positive().max(1)

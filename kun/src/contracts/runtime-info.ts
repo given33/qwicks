@@ -5,12 +5,11 @@ import { MODEL_ENDPOINT_FORMATS } from './model-endpoint-format.js'
 
 /**
  * Runtime info response returned on GET /v1/runtime/info.
- * Port default changed from 8899 to 8898 (Teamflow Agent).
  */
 export const RuntimeInfoResponse = z
   .object({
     host: z.string(),
-    port: z.number().int().min(0).max(65_535).default(8898),
+    port: z.number().int().min(0).max(65_535).default(8899),
     dataDir: z.string().min(1),
     configPath: z.string().optional(),
     model: z.string().optional(),

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ToolCallLike, ToolHostContext } from '../ports/tool-host.js'
 import { terminateSpawnTree } from '../adapters/tool/builtin-tool-utils.js'
@@ -313,8 +314,9 @@ async function runCommandHook(
   invocation: HookInvocation
 ): Promise<HookExecutionOutcome> {
   const payload = JSON.stringify(invocation)
+  const cwd = hookCommandCwd(hook, invocation)
   const child = spawn(hook.command, {
-    cwd: hook.cwd || workspaceOf(invocation) || undefined,
+    ...(cwd ? { cwd } : {}),
     shell: true,
     stdio: ['pipe', 'pipe', 'pipe']
   })
@@ -366,6 +368,14 @@ function workspaceOf(invocation: HookInvocation): string | undefined {
     return invocation.context.workspace
   }
   return invocation.workspace
+}
+
+function hookCommandCwd(
+  hook: Extract<ResolvedHook, { command: string }>,
+  invocation: HookInvocation
+): string | undefined {
+  const cwd = hook.cwd || workspaceOf(invocation)
+  return cwd && existsSync(cwd) ? cwd : undefined
 }
 
 function errorMessage(error: unknown): string {

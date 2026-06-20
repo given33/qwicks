@@ -33,7 +33,7 @@ export const GuiPlanContextSchema = z.object({
     .string()
     .min(1)
     .refine(isGuiPlanRelativePath, {
-      message: 'relativePath must be a direct Markdown file under .teamflow-sdd/plan'
+      message: 'relativePath must be a direct Markdown file under .kunsdd/plan'
     }),
   planId: z.string().min(1),
   sourceRequest: z.string().optional(),

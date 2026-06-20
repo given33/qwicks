@@ -71,7 +71,7 @@ export function resolveWorkspacePath(inputPath: string, context: ToolHostContext
   return {
     workspaceRoot: root,
     absolutePath,
-    relativePath: relativePath || '.'
+    relativePath: normalizeToolPath(relativePath || '.')
   }
 }
 
