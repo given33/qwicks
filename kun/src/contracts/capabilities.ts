@@ -331,7 +331,7 @@ export const ComputerUseCapabilityConfig = CapabilityToggleConfig.extend({
 }).strict()
 export type ComputerUseCapabilityConfig = z.infer<typeof ComputerUseCapabilityConfig>
 
-export const KunCapabilitiesConfig = z
+export const TeamflowAgentCapabilitiesConfig = z
   .object({
     mcp: McpCapabilityConfig.default(() => McpCapabilityConfig.parse({})),
     web: WebCapabilityConfig.default(() => WebCapabilityConfig.parse({})),
@@ -346,9 +346,9 @@ export const KunCapabilitiesConfig = z
     computerUse: ComputerUseCapabilityConfig.default(() => ComputerUseCapabilityConfig.parse({}))
   })
   .strict()
-export type KunCapabilitiesConfig = z.infer<typeof KunCapabilitiesConfig>
+export type TeamflowAgentCapabilitiesConfig = z.infer<typeof TeamflowAgentCapabilitiesConfig>
 
-export const DEFAULT_KUN_CAPABILITIES_CONFIG: KunCapabilitiesConfig = KunCapabilitiesConfig.parse({})
+export const DEFAULT_TEAMFLOW_AGENT_CAPABILITIES_CONFIG: TeamflowAgentCapabilitiesConfig = TeamflowAgentCapabilitiesConfig.parse({})
 
 export const RuntimeCapabilityManifest = z
   .object({
@@ -434,7 +434,7 @@ export const RuntimeCapabilityManifest = z
 export type RuntimeCapabilityManifest = z.infer<typeof RuntimeCapabilityManifest>
 
 export function buildRuntimeCapabilityManifest(input: {
-  config?: KunCapabilitiesConfig
+  config?: TeamflowAgentCapabilitiesConfig
   model: ModelCapabilityMetadata
   mcp?: {
     configuredServers?: number
@@ -491,7 +491,7 @@ export function buildRuntimeCapabilityManifest(input: {
     reason?: string
   }
 }): RuntimeCapabilityManifest {
-  const config = KunCapabilitiesConfig.parse(input.config ?? {})
+  const config = TeamflowAgentCapabilitiesConfig.parse(input.config ?? {})
   const configuredMcpServers = input.mcp?.configuredServers ?? Object.keys(config.mcp.servers).length
   const connectedMcpServers = input.mcp?.connectedServers ?? 0
   const mcpToolCount = input.mcp?.toolCount ?? 0

@@ -9,8 +9,8 @@ import {
   SandboxModeSchema
 } from '../contracts/policy.js'
 import {
-  DEFAULT_KUN_CAPABILITIES_CONFIG,
-  KunCapabilitiesConfig,
+  DEFAULT_TEAMFLOW_AGENT_CAPABILITIES_CONFIG,
+  TeamflowAgentCapabilitiesConfig,
   ModelInputModality,
   ModelMessagePartSupport,
   ModelReasoningCapabilityMetadata
@@ -230,7 +230,7 @@ export const TeamflowAgentConfigSchema = z
     models: ModelConfigSchema.optional(),
     contextCompaction: ContextCompactionConfigSchema.optional(),
     runtime: RuntimeTuningConfigSchema.optional(),
-    capabilities: KunCapabilitiesConfig.default(DEFAULT_KUN_CAPABILITIES_CONFIG),
+    capabilities: TeamflowAgentCapabilitiesConfig.default(DEFAULT_TEAMFLOW_AGENT_CAPABILITIES_CONFIG),
     hooks: HooksConfigSchema.optional(),
     quality: QualityConfigSchema.optional()
   })

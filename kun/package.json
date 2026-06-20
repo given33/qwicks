@@ -30,6 +30,10 @@
     "./cache": {
       "types": "./dist/cache/index.d.ts",
       "import": "./dist/cache/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
     }
   },
   "scripts": {
@@ -39,6 +43,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "diff": "^8.0.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
