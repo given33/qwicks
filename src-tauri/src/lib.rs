@@ -163,6 +163,7 @@ struct Store {
     db_path: PathBuf,
     tasks_json_path: PathBuf,
     active_run_path: PathBuf,
+    ui_settings_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,6 +317,7 @@ impl Store {
             db_path: runtime.join("teamflow.sqlite3"),
             tasks_json_path: runtime.join("tasks.json"),
             active_run_path: runtime.join("active-run.json"),
+            ui_settings_path: runtime.join("ui-settings.json"),
             root,
             runtime,
             workspace,
@@ -1494,6 +1496,71 @@ impl Store {
         self.status_snapshot_for_run(&run_id)
     }
 
+    fn default_ui_settings(&self) -> Value {
+        json!({
+            "workMode": "coding",
+            "defaultPermissions": true,
+            "fullAccess": true,
+            "fileOpenDestination": "VS Code",
+            "terminalShell": "PowerShell",
+            "theme": "system",
+            "language": "zh-CN",
+            "browserEnabled": true,
+            "computerUseEnabled": false,
+            "personalName": "",
+            "replyStyle": "balanced",
+            "pluginMarketplace": true,
+            "keyboardPreset": "default",
+            "mcpEnabled": true,
+            "hooksEnabled": false,
+            "gitAutoDetect": true,
+            "environmentProfile": "local",
+            "worktreeMode": "single",
+            "archivedVisible": false,
+            "telemetryEnabled": false,
+            "compactSidebar": false,
+            "autoTitleRuns": true,
+            "confirmBeforeDelete": true,
+            "browserHeadless": true,
+            "computerUseConfirm": true,
+            "hooksDirectory": "",
+            "gitCommitStyle": "manual",
+            "defaultBranchPrefix": "codex/",
+            "petEnabled": false,
+            "petStyle": "quiet"
+        })
+    }
+
+    fn ui_settings(&self) -> Result<Value> {
+        let defaults = self.default_ui_settings();
+        if !self.ui_settings_path.exists() {
+            return Ok(defaults);
+        }
+        let stored: Value = serde_json::from_str(&fs::read_to_string(&self.ui_settings_path)?)?;
+        Ok(merge_json_objects(defaults, stored))
+    }
+
+    fn write_ui_settings(&self, settings: Value) -> Result<Value> {
+        let merged = merge_json_objects(self.default_ui_settings(), settings);
+        fs::write(
+            &self.ui_settings_path,
+            serde_json::to_string_pretty(&merged)? + "\n",
+        )?;
+        Ok(merged)
+    }
+
+    fn set_ui_setting(&self, key: &str, value: Value) -> Result<Value> {
+        if key.trim().is_empty() {
+            return Err(TeamflowError::Message("设置键不能为空。".to_string()));
+        }
+        let mut settings = self.ui_settings()?;
+        let object = settings
+            .as_object_mut()
+            .ok_or_else(|| TeamflowError::Message("设置格式无效。".to_string()))?;
+        object.insert(key.to_string(), value);
+        self.write_ui_settings(settings)
+    }
+
     fn codex_model_provider_id_for_run(&self, run_id: &str) -> Result<String> {
         let conn = self.connect()?;
         let provider_id = conn
@@ -1920,6 +1987,16 @@ fn process_event_row_json(row: &Row<'_>) -> rusqlite::Result<Value> {
 
 fn parse_json(text: String) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|_| json!({}))
+}
+
+fn merge_json_objects(mut base: Value, overlay: Value) -> Value {
+    if let (Some(base_obj), Some(overlay_obj)) = (base.as_object_mut(), overlay.as_object()) {
+        for (key, value) in overlay_obj {
+            base_obj.insert(key.clone(), value.clone());
+        }
+        return base;
+    }
+    overlay
 }
 
 fn now() -> String {
@@ -4627,6 +4704,21 @@ async fn set_codex_model_provider(
 }
 
 #[tauri::command]
+async fn get_ui_settings(state: State<'_, AppState>) -> Result<Value> {
+    state.store.ui_settings()
+}
+
+#[tauri::command]
+async fn set_ui_setting(state: State<'_, AppState>, key: String, value: Value) -> Result<Value> {
+    state.store.set_ui_setting(&key, value)
+}
+
+#[tauri::command]
+async fn set_ui_settings(state: State<'_, AppState>, settings: Value) -> Result<Value> {
+    state.store.write_ui_settings(settings)
+}
+
+#[tauri::command]
 async fn get_realtime_config(state: State<'_, AppState>) -> Result<RealtimeConfig> {
     Ok(state.realtime.config())
 }
@@ -5839,6 +5931,9 @@ pub fn run() {
             run_realtime_benchmark,
             get_status,
             set_codex_model_provider,
+            get_ui_settings,
+            set_ui_setting,
+            set_ui_settings,
             send_codex_message,
             interrupt_codex_session,
             start_claude_worker,
