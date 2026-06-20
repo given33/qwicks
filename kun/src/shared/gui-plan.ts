@@ -10,7 +10,7 @@
  * sync when changing the public surface.
  */
 
-export const GUI_PLAN_RELATIVE_DIR = '.teamflow-sdd/plan'
+export const GUI_PLAN_RELATIVE_DIR = '.kunsdd/plan'
 export const GUI_PLAN_LEGACY_RELATIVE_DIR = '.deepseekgui/plan'
 export const GUI_PLAN_ACCEPTED_RELATIVE_DIRS = [
   GUI_PLAN_RELATIVE_DIR,
@@ -89,7 +89,7 @@ export function validateCreatePlanToolInput(input: Partial<CreatePlanToolInput>)
     if (!path) {
       issues.push('plan_relative_path must be non-empty when supplied')
     } else if (!isGuiPlanRelativePath(path)) {
-      issues.push('plan_relative_path must be a direct Markdown file under .teamflow-sdd/plan')
+      issues.push('plan_relative_path must be a direct Markdown file under .kunsdd/plan')
     }
   }
   if (input.plan_id != null && typeof input.plan_id !== 'string') {

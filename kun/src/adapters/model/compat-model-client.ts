@@ -1,7 +1,8 @@
 /**
  * CompatModelClient - Compatibility HTTP model client.
  *
- * This is a STUB implementation. The full implementation supports:
+ * Stub implementation pending full port from upstream model client source.
+ * The full implementation supports:
  * - OpenAI Chat Completions format
  * - Anthropic Messages format
  * - OpenAI Responses format
@@ -14,9 +15,9 @@
  * For the initial Teamflow Agent migration, this stub provides the
  * interface and basic structure. The full implementation should be
  * ported from the Kun source code with naming replacement
- * (kun → teamflow-agent).
+ * (teamflow-agent).
  *
- * TODO: Port full implementation from C:\Users\given\Desktop\Kun-master\kun\src\adapters\model\compat-model-client.ts
+ * TODO: Port full implementation from Teamflow Agent upstream source
  */
 
 import type {
