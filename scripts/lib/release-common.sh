@@ -23,7 +23,6 @@ release_export_update_channel() {
   RELEASE_CHANNEL="$(release_normalize_channel "${RELEASE_CHANNEL:-frontier}")"
   export RELEASE_CHANNEL
   export QWICKS_UPDATE_CHANNEL="${RELEASE_CHANNEL}"
-  export DEEPSEEK_GUI_UPDATE_CHANNEL="${RELEASE_CHANNEL}"
   cyan "  Channel: ${RELEASE_CHANNEL}"
 }
 
@@ -121,7 +120,6 @@ release_compute_version() {
 release_export_app_version() {
   release_validate_semver "${RELEASE_VERSION}" || die "Invalid release version for electron-updater: ${RELEASE_VERSION}"
   export QWICKS_APP_VERSION="${RELEASE_VERSION}"
-  export DEEPSEEK_GUI_APP_VERSION="${RELEASE_VERSION}"
   cyan "  App:     ${QWICKS_APP_VERSION}"
 }
 

@@ -87,17 +87,8 @@ afterEach(() => {
   vi.resetModules()
 })
 
-function platformManifestName(): string {
-  if (process.platform === 'darwin') return 'latest-mac.yml'
-  if (process.platform === 'linux') return 'latest-linux.yml'
-  return 'latest.yml'
-}
-
 describe('checkGuiUpdate feed URL', () => {
-  it('prefers the qwicks-agent update feed when metadata is reachable', async () => {
-    process.env.DEEPSEEK_GUI_ALLOW_UNSIGNED_UPDATES = '1'
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
-    vi.stubGlobal('fetch', fetchMock)
+  it('uses the given33/qwicks GitHub release feed for stable updates', async () => {
     updater.checkForUpdates.mockResolvedValue({
       updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
       isUpdateAvailable: true
@@ -111,89 +102,34 @@ describe('checkGuiUpdate feed URL', () => {
       latestVersion: '0.2.0',
       hasUpdate: true
     })
-    expect(fetchMock).toHaveBeenCalledWith(
-      `https://www.qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
     expect(updater.setFeedURL).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: 'https://www.qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/'
+      provider: 'github',
+      owner: 'given33',
+      repo: 'qwicks',
+      channel: 'latest'
     })
   })
 
-  it('falls back to the bare qwicks-agent feed before the legacy feed', async () => {
-    process.env.DEEPSEEK_GUI_ALLOW_UNSIGNED_UPDATES = '1'
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 404 })
-      .mockResolvedValueOnce({ ok: true })
-    vi.stubGlobal('fetch', fetchMock)
+  it('uses the frontier GitHub release channel for frontier updates', async () => {
     updater.checkForUpdates.mockResolvedValue({
       updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
       isUpdateAvailable: true
     })
 
     const module = await import('./gui-updater')
-    module.initializeGuiUpdater(() => null, () => 'stable')
+    module.initializeGuiUpdater(() => null, () => 'frontier')
 
-    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+    await expect(module.checkGuiUpdate('frontier')).resolves.toMatchObject({
       ok: true,
       latestVersion: '0.2.0',
       hasUpdate: true
     })
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      `https://www.qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      `https://qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
+    expect(updater.allowPrerelease).toBe(true)
     expect(updater.setFeedURL).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: 'https://qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/'
-    })
-  })
-
-  it('falls back to the legacy deepseek-gui feed when both qwicks-agent feeds are unavailable', async () => {
-    process.env.DEEPSEEK_GUI_ALLOW_UNSIGNED_UPDATES = '1'
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 404 })
-      .mockResolvedValueOnce({ ok: false, status: 404 })
-      .mockResolvedValueOnce({ ok: true })
-    vi.stubGlobal('fetch', fetchMock)
-    updater.checkForUpdates.mockResolvedValue({
-      updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
-      isUpdateAvailable: true
-    })
-
-    const module = await import('./gui-updater')
-    module.initializeGuiUpdater(() => null, () => 'stable')
-
-    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
-      ok: true,
-      latestVersion: '0.2.0',
-      hasUpdate: true
-    })
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      `https://www.qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      `https://qwicks-agent.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      `https://deepseek-gui.com/api/r2/deepseek-gui/channels/stable/latest/${platformManifestName()}`,
-      expect.objectContaining({ method: 'HEAD' })
-    )
-    expect(updater.setFeedURL).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: 'https://deepseek-gui.com/api/r2/deepseek-gui/channels/stable/latest/'
+      provider: 'github',
+      owner: 'given33',
+      repo: 'qwicks',
+      channel: 'frontier'
     })
   })
 })
@@ -293,7 +229,7 @@ describe('showPostUpdateReleaseNotes', () => {
         buttons: ['查看更新日志', '稍后']
       })
     )
-    expect(openExternal).toHaveBeenCalledWith('https://deepseek-gui.com/changelog')
+    expect(openExternal).toHaveBeenCalledWith('https://github.com/given33/qwicks/releases')
     expect(JSON.parse(mockedFiles.get(versionStatePath) ?? '{}')).toEqual({
       lastSeenVersion: '0.2.0'
     })

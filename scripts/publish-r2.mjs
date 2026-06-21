@@ -14,7 +14,7 @@ import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PRODUCT_NAME = 'QWicks'
-const DEFAULT_RELEASE_PREFIX = 'deepseek-gui'
+const DEFAULT_RELEASE_PREFIX = 'qwicks'
 const DEFAULT_RELEASE_CHANNEL = 'frontier'
 const PLATFORMS = ['mac', 'win', 'linux']
 const RELEASE_CHANNELS = ['frontier', 'stable']
@@ -52,7 +52,7 @@ Environment:
   R2_ACCESS_KEY_ID or S3_ACCESS_KEY_ID
   R2_SECRET_ACCESS_KEY or S3_SECRET_ACCESS_KEY
   R2_PUBLIC_BASE_URL
-  R2_RELEASE_PREFIX=deepseek-gui
+  R2_RELEASE_PREFIX=qwicks
 `)
 }
 
@@ -633,7 +633,7 @@ async function promoteRelease({ flags, dryRun }) {
       tag,
       releaseDate,
       generatedAt: new Date().toISOString(),
-      githubReleaseUrl: `https://github.com/QWicksAgent/QWicks/releases/tag/${tag}`,
+      githubReleaseUrl: `https://github.com/given33/qwicks/releases/tag/${tag}`,
       updateBaseUrl: joinUrl(config.publicBaseUrl, target.basePath, 'latest') + '/',
       updateMetadata: Object.fromEntries(
         platformManifests.map((manifest) => [

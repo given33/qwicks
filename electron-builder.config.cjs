@@ -51,19 +51,10 @@ const hasNotaryToolCredentials = Boolean(
     (process.env.APPLE_API_KEY || process.env.APPLE_API_KEY_BASE64)
 )
 
-// R2 release prefix 维持旧值不动:线上老版本轮询的就是
-// `…/deepseek-gui/channels/<channel>/latest/`,prefix 一改老客户端就再也
-// 收不到更新。默认公开域名优先使用 qwicks-agent,运行时仍会兜底旧域名。
-const r2PublicBaseUrl = (process.env.R2_PUBLIC_BASE_URL || 'https://www.qwicks-agent.com/api/r2')
-  .trim()
-  .replace(/\/+$/, '')
-const r2ReleasePrefix = (process.env.R2_RELEASE_PREFIX || 'deepseek-gui')
-  .trim()
-  .replace(/^\/+|\/+$/g, '')
 const updateChannel = normalizeUpdateChannel(
   envWithLegacyFallback('QWICKS_UPDATE_CHANNEL', 'DEEPSEEK_GUI_UPDATE_CHANNEL') || 'stable'
 )
-const genericUpdateUrl = `${r2PublicBaseUrl}/${r2ReleasePrefix}/channels/${updateChannel}/latest/`
+const githubUpdateChannel = updateChannel === 'stable' ? 'latest' : updateChannel
 const releaseAppVersion = (
   envWithLegacyFallback('QWICKS_APP_VERSION', 'DEEPSEEK_GUI_APP_VERSION') || ''
 ).trim()
@@ -82,13 +73,7 @@ if (releaseAppVersion && !/^\d+\.\d+\.\d+$/.test(releaseAppVersion)) {
 }
 
 module.exports = {
-  // appId 永远保持旧值,即使品牌已改名 QWicks:
-  //  - macOS 端 Squirrel.Mac 校验更新包签名时锚定 bundle identifier,
-  //    换了 id 老版本会拒绝安装新版本;
-  //  - Windows 端 NSIS 以 appId 派生卸载 GUID,换了 id 升级安装不会
-  //    卸载旧版本,用户会装出两份应用;
-  //  - macOS TCC 权限、通知授权也都挂在这个 id 上。
-  appId: 'com.xingyuzhong.deepseekgui',
+  appId: 'com.given33.qwicks',
   productName: 'QWicks',
   asar: true,
   asarUnpack: [
@@ -129,8 +114,10 @@ module.exports = {
   artifactName: `QWicks-${artifactVersion}-\${os}-\${arch}.\${ext}`,
   publish: [
     {
-      provider: 'generic',
-      url: genericUpdateUrl
+      provider: 'github',
+      owner: 'given33',
+      repo: 'qwicks',
+      channel: githubUpdateChannel
     }
   ],
   afterPack: './scripts/after-pack.cjs',

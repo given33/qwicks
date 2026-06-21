@@ -11,9 +11,8 @@ import { app } from 'electron'
  * 2026-06 起品牌从 “DeepSeek GUI” 升级为 “QWicks”。这个名字同时决定
  * userData 默认目录(appData/QWicks),老目录由 legacy-data-migration.ts
  * 在启动最早期搬迁;历史名字列表见该模块的 LEGACY_USER_DATA_DIR_NAMES。
- * 注意:electron-builder 的 appId(com.xingyuzhong.deepseekgui)刻意
- * 不随品牌改名 —— macOS 自动更新的签名校验和 NSIS 升级卸载的注册表
- * GUID 都锚定在 appId 上,改了老版本就无法平滑升级到新版本。
+ * electron-builder 的 appId 与 Windows AppUserModelId 都使用
+ * com.given33.qwicks,让任务栏分组、通知和自动更新都落在 QWicks 身份下。
  */
 export const APP_PRODUCT_NAME = 'QWicks'
 

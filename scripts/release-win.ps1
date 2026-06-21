@@ -144,10 +144,8 @@ Write-Info "Release channel: $ReleaseChannel"
 $ReleaseVersion = $TagName.TrimStart('v')
 Assert-Semver $ReleaseVersion
 $env:QWICKS_APP_VERSION = $ReleaseVersion
-$env:DEEPSEEK_GUI_APP_VERSION = $ReleaseVersion
 $env:RELEASE_CHANNEL = $ReleaseChannel
 $env:QWICKS_UPDATE_CHANNEL = $ReleaseChannel
-$env:DEEPSEEK_GUI_UPDATE_CHANNEL = $ReleaseChannel
 Write-Info "App version: $env:QWICKS_APP_VERSION"
 
 & gh release view $TagName 2>&1 | Out-Null

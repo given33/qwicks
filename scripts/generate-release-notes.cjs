@@ -99,7 +99,7 @@ function main() {
 
   const out = ['## 更新摘要', '']
   if (sinceTag) {
-    out.push(`自 [\`${sinceTag}\`](https://github.com/QWicksAgent/QWicks/compare/${sinceTag}...HEAD) 以来的变更：`, '')
+    out.push(`自 [\`${sinceTag}\`](https://github.com/given33/qwicks/compare/${sinceTag}...HEAD) 以来的变更：`, '')
   }
 
   let wroteSection = false

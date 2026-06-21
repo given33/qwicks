@@ -16,14 +16,8 @@ import type {
 import { nextGuiUpdateCheckDelay } from '../shared/gui-update-schedule'
 import { DEFAULT_GUI_UPDATE_CHANNEL, normalizeGuiUpdateChannel } from '../shared/gui-update'
 
-// R2 prefix 保持旧值:线上还在运行的 DeepSeek GUI 老版本轮询的
-// 就是 `deepseek-gui/channels/<channel>/latest/`,prefix 一改老客户端
-// 就再也收不到 QWicks 的升级包。域名优先使用 qwicks-agent,旧域名仅作兜底。
-const PRIMARY_R2_PUBLIC_BASE_URL = 'https://www.qwicks-agent.com/api/r2'
-const SECONDARY_R2_PUBLIC_BASE_URL = 'https://qwicks-agent.com/api/r2'
-const LEGACY_R2_PUBLIC_BASE_URL = 'https://deepseek-gui.com/api/r2'
-const DEFAULT_R2_RELEASE_PREFIX = 'deepseek-gui'
-const UPDATE_FEED_PROBE_TIMEOUT_MS = 5_000
+const DEFAULT_GITHUB_OWNER = 'given33'
+const DEFAULT_GITHUB_REPO = 'qwicks'
 const { autoUpdater } = electronUpdater
 
 function envWithLegacyFallback(qwicksName: string, legacyName: string): string {
@@ -50,7 +44,7 @@ let backgroundCheckPromise: Promise<void> | null = null
 
 const GUI_UPDATE_SCHEDULE_FILE = 'gui-update-schedule.json'
 const GUI_VERSION_STATE_FILE = 'gui-version-state.json'
-const DEFAULT_CHANGELOG_URL = 'https://deepseek-gui.com/changelog'
+const DEFAULT_CHANGELOG_URL = `https://github.com/${DEFAULT_GITHUB_OWNER}/${DEFAULT_GITHUB_REPO}/releases`
 
 type GuiVersionState = {
   lastSeenVersion?: string
@@ -58,87 +52,6 @@ type GuiVersionState = {
     version: string
     releaseNotes?: string
   }
-}
-
-function trimSlashes(value: string): string {
-  return value.replace(/^\/+|\/+$/g, '')
-}
-
-function normalizeBaseUrl(raw: string): string {
-  return raw.trim().replace(/\/+$/, '')
-}
-
-function joinUrl(base: string, ...parts: string[]): string {
-  const cleanBase = normalizeBaseUrl(base)
-  const cleanParts = parts.map((p) => trimSlashes(p)).filter(Boolean)
-  return [cleanBase, ...cleanParts].join('/')
-}
-
-function envUpdateUrl(channel: GuiUpdateChannel): string {
-  const channelSpecific = envWithLegacyFallback(
-    `QWICKS_UPDATE_URL_${channel.toUpperCase()}`,
-    `DEEPSEEK_GUI_UPDATE_URL_${channel.toUpperCase()}`
-  )
-  const direct = channelSpecific || envWithLegacyFallback('QWICKS_UPDATE_URL', 'DEEPSEEK_GUI_UPDATE_URL')
-  return direct ? direct.replace(/\{channel\}/g, channel).replace(/\/?$/, '/') : ''
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean)))
-}
-
-function defaultR2BaseUrls(): string[] {
-  const configured = process.env.R2_PUBLIC_BASE_URL?.trim()
-  if (configured) return [configured]
-  return [PRIMARY_R2_PUBLIC_BASE_URL, SECONDARY_R2_PUBLIC_BASE_URL, LEGACY_R2_PUBLIC_BASE_URL]
-}
-
-function updateFeedUrlCandidates(channel: GuiUpdateChannel): string[] {
-  const direct = envUpdateUrl(channel)
-  if (direct) return [direct]
-
-  const prefix = process.env.R2_RELEASE_PREFIX?.trim() || DEFAULT_R2_RELEASE_PREFIX
-  return uniqueStrings(
-    defaultR2BaseUrls().map((base) => `${joinUrl(base, prefix, 'channels', channel, 'latest')}/`)
-  )
-}
-
-function updateFeedUrl(channel: GuiUpdateChannel): string {
-  return updateFeedUrlCandidates(channel)[0]
-}
-
-function updateFeedManifestUrl(feedUrl: string): string {
-  return `${feedUrl}${platformManifestName()}`
-}
-
-async function isUpdateFeedAccessible(feedUrl: string): Promise<boolean> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), UPDATE_FEED_PROBE_TIMEOUT_MS)
-  try {
-    const res = await fetch(updateFeedManifestUrl(feedUrl), {
-      method: 'HEAD',
-      headers: {
-        Accept: 'application/x-yaml,text/yaml,text/plain,*/*',
-        'User-Agent': `qwicks/${app.getVersion()}`
-      },
-      signal: controller.signal
-    })
-    return res.ok
-  } catch {
-    return false
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function resolveUpdateFeedUrl(channel: GuiUpdateChannel): Promise<string> {
-  const candidates = updateFeedUrlCandidates(channel)
-  if (candidates.length <= 1) return candidates[0]
-
-  for (const candidate of candidates) {
-    if (await isUpdateFeedAccessible(candidate)) return candidate
-  }
-  return candidates[candidates.length - 1]
 }
 
 function guiUpdateSchedulePath(): string {
@@ -247,8 +160,8 @@ function readPackageJson(): Record<string, unknown> | null {
   }
 }
 
-function resolveGithubReleaseUrl(): string | null {
-  const envRepo = normalizeGithubOwnerRepo(process.env.DEEPSEEK_GUI_GITHUB_REPO?.trim() ?? '')
+function resolveGithubReleaseUrl(): string {
+  const envRepo = normalizeGithubOwnerRepo(process.env.QWICKS_GITHUB_REPO?.trim() ?? '')
   if (envRepo) return `https://github.com/${envRepo}/releases`
 
   const pkg = readPackageJson()
@@ -260,7 +173,7 @@ function resolveGithubReleaseUrl(): string | null {
         ? String((repository as { url?: unknown }).url ?? '')
         : ''
   const repo = normalizeGithubOwnerRepo(raw)
-  return repo ? `https://github.com/${repo}/releases` : null
+  return repo ? `https://github.com/${repo}/releases` : `https://github.com/${DEFAULT_GITHUB_OWNER}/${DEFAULT_GITHUB_REPO}/releases`
 }
 
 function downloadPageUrl(): string {
@@ -271,7 +184,7 @@ function downloadPageUrl(): string {
   const homepage = typeof pkg?.homepage === 'string' ? pkg.homepage.trim() : ''
   if (homepage) return homepage
 
-  return resolveGithubReleaseUrl() ?? updateFeedUrl(configuredChannel)
+  return resolveGithubReleaseUrl()
 }
 
 function releaseUrlForVersion(version: string): string {
@@ -280,36 +193,6 @@ function releaseUrlForVersion(version: string): string {
     return `${page.replace(/\/+$/, '')}/tag/v${version.replace(/^v/i, '')}`
   }
   return page
-}
-
-function parseVersionParts(v: string): number[] {
-  const cleaned = v.trim().replace(/^v/i, '').replace(/-.*$/, '')
-  return cleaned.split('.').map((part) => Number.parseInt(part, 10) || 0)
-}
-
-function isVersionGreater(latest: string, current: string): boolean {
-  const a = parseVersionParts(latest)
-  const b = parseVersionParts(current)
-  const len = Math.max(a.length, b.length)
-  for (let i = 0; i < len; i += 1) {
-    const av = a[i] ?? 0
-    const bv = b[i] ?? 0
-    if (av > bv) return true
-    if (av < bv) return false
-  }
-  return false
-}
-
-function platformManifestName(): string {
-  if (process.platform === 'darwin') return 'latest-mac.yml'
-  if (process.platform === 'linux') return 'latest-linux.yml'
-  return 'latest.yml'
-}
-
-function parseYamlScalar(source: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = source.match(new RegExp(`^${escaped}:\\s*['"]?([^'"\\n]+)['"]?\\s*$`, 'm'))
-  return match?.[1]?.trim() ?? ''
 }
 
 function macAutoUpdateAllowed(): boolean {
@@ -454,13 +337,28 @@ async function resolveUpdateChannel(requested?: GuiUpdateChannel): Promise<GuiUp
   return DEFAULT_GUI_UPDATE_CHANNEL
 }
 
-function configureUpdaterChannel(channel: GuiUpdateChannel, feedUrl = updateFeedUrl(channel)): void {
+function githubUpdateChannel(channel: GuiUpdateChannel): string {
+  return channel === 'stable' ? 'latest' : channel
+}
+
+function githubProviderOptions(channel: GuiUpdateChannel) {
+  return {
+    provider: 'github' as const,
+    owner: DEFAULT_GITHUB_OWNER,
+    repo: DEFAULT_GITHUB_REPO,
+    channel: githubUpdateChannel(channel)
+  }
+}
+
+function configureUpdaterChannel(channel: GuiUpdateChannel): void {
   const normalized = normalizeGuiUpdateChannel(channel)
-  const changed = normalized !== configuredChannel || feedUrl !== configuredFeedUrl
+  const providerOptions = githubProviderOptions(normalized)
+  const feedKey = `${providerOptions.owner}/${providerOptions.repo}:${providerOptions.channel}`
+  const changed = normalized !== configuredChannel || feedKey !== configuredFeedUrl
   configuredChannel = normalized
-  configuredFeedUrl = feedUrl
+  configuredFeedUrl = feedKey
   autoUpdater.allowPrerelease = normalized === 'frontier'
-  autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl })
+  autoUpdater.setFeedURL(providerOptions)
   if (!changed) return
   downloaded = false
   downloadPromise = null
@@ -469,7 +367,7 @@ function configureUpdaterChannel(channel: GuiUpdateChannel, feedUrl = updateFeed
 }
 
 async function configureReachableUpdaterChannel(channel: GuiUpdateChannel): Promise<void> {
-  configureUpdaterChannel(channel, await resolveUpdateFeedUrl(channel))
+  configureUpdaterChannel(channel)
 }
 
 export function setGuiUpdateChannel(channel: GuiUpdateChannel): void {
@@ -481,62 +379,13 @@ async function checkManualUpdate(
   code: GuiUpdateFailureCode = 'unsupported'
 ): Promise<GuiUpdateInfo> {
   const currentVersion = app.getVersion()
-  try {
-    const feedUrl = configuredChannel === channel && configuredFeedUrl
-      ? configuredFeedUrl
-      : await resolveUpdateFeedUrl(channel)
-    const url = updateFeedManifestUrl(feedUrl)
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/x-yaml,text/yaml,text/plain,*/*',
-        'User-Agent': `qwicks/${currentVersion}`
-      }
-    })
-    if (!res.ok) {
-      return {
-        ok: false,
-        currentVersion,
-        code,
-        message: `${unsupportedMessage()} Update metadata returned ${res.status}.`,
-        releaseUrl: downloadPageUrl(),
-        channel
-      }
-    }
-    const text = await res.text()
-    const latestVersion = parseYamlScalar(text, 'version')
-    if (!latestVersion) {
-      return {
-        ok: false,
-        currentVersion,
-        code,
-        message: `${unsupportedMessage()} Update metadata is missing a version.`,
-        releaseUrl: downloadPageUrl(),
-        channel
-      }
-    }
-    const info: Extract<GuiUpdateInfo, { ok: true }> = {
-      ok: true,
-      currentVersion,
-      latestVersion,
-      hasUpdate: isVersionGreater(latestVersion, currentVersion),
-      releaseUrl: releaseUrlForVersion(latestVersion),
-      releaseDate: parseYamlScalar(text, 'releaseDate'),
-      channel,
-      manualOnly: true,
-      downloaded: false
-    }
-    lastInfo = info
-    emitGuiUpdateState(info.hasUpdate ? { status: 'available', info } : { status: 'not_available', info })
-    return info
-  } catch (e) {
-    return {
-      ok: false,
-      currentVersion,
-      code,
-      message: `${unsupportedMessage()} ${e instanceof Error ? e.message : String(e)}`,
-      releaseUrl: downloadPageUrl(),
-      channel
-    }
+  return {
+    ok: false,
+    currentVersion,
+    code,
+    message: unsupportedMessage(),
+    releaseUrl: downloadPageUrl(),
+    channel
   }
 }
 

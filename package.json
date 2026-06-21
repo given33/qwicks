@@ -106,9 +106,9 @@
   },
   "author": "QWicks Contributors",
   "license": "PolyForm-Noncommercial-1.0.0",
-  "homepage": "https://github.com/QWicksAgent/QWicks",
+  "homepage": "https://github.com/given33/qwicks",
   "repository": {
     "type": "git",
-    "url": "https://github.com/QWicksAgent/QWicks.git"
+    "url": "https://github.com/given33/qwicks.git"
   }
 }

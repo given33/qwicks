@@ -84,10 +84,9 @@ import { createTelegramRuntime, type TelegramRuntime, verifyTelegramBotToken } f
 import { isQWicksHealthResponseBody } from './qwicks-health'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-// 品牌升级为 QWicks 后仍保留旧 AppUserModelId:它必须和 electron-builder
-// 的 appId 一致才能让 Windows 通知 / 任务栏分组在升级前后连续,而
-// appId 因为 NSIS 升级 GUID 与 macOS 更新签名校验的原因永远不改。
-const APP_USER_MODEL_ID = 'com.xingyuzhong.deepseekgui'
+// AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
+// 通知、任务栏分组和快捷方式图标都会使用 QWicks 的新应用身份。
+const APP_USER_MODEL_ID = 'com.given33.qwicks'
 const HIDDEN_START_ARG = '--hidden'
 const startupTraceEnabled =
   process.env.QWICKS_STARTUP_TRACE === '1' || process.env.DEEPSEEK_GUI_STARTUP_TRACE === '1'
