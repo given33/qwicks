@@ -18,6 +18,7 @@ import { DEFAULT_GUI_UPDATE_CHANNEL, normalizeGuiUpdateChannel } from '../shared
 
 const DEFAULT_GITHUB_OWNER = 'given33'
 const DEFAULT_GITHUB_REPO = 'qwicks'
+const DEFAULT_UPDATE_BASE_URL = 'http://8.138.40.16/qwicks'
 const { autoUpdater } = electronUpdater
 
 function envWithLegacyFallback(qwicksName: string, legacyName: string): string {
@@ -180,11 +181,7 @@ function downloadPageUrl(): string {
   const direct = envWithLegacyFallback('QWICKS_DOWNLOAD_URL', 'DEEPSEEK_GUI_DOWNLOAD_URL')
   if (direct) return direct
 
-  const pkg = readPackageJson()
-  const homepage = typeof pkg?.homepage === 'string' ? pkg.homepage.trim() : ''
-  if (homepage) return homepage
-
-  return resolveGithubReleaseUrl()
+  return updateBaseUrl()
 }
 
 function releaseUrlForVersion(version: string): string {
@@ -337,23 +334,43 @@ async function resolveUpdateChannel(requested?: GuiUpdateChannel): Promise<GuiUp
   return DEFAULT_GUI_UPDATE_CHANNEL
 }
 
-function githubUpdateChannel(channel: GuiUpdateChannel): string {
-  return channel === 'stable' ? 'latest' : channel
+function normalizeUrlBase(raw: string): string {
+  return raw.trim().replace(/\/+$/, '')
 }
 
-function githubProviderOptions(channel: GuiUpdateChannel) {
+function ensureTrailingSlash(raw: string): string {
+  const normalized = normalizeUrlBase(raw)
+  return normalized ? `${normalized}/` : ''
+}
+
+function updateBaseUrl(): string {
+  return normalizeUrlBase(
+    process.env.QWICKS_UPDATE_BASE_URL?.trim() ||
+      process.env.PUBLIC_DOWNLOAD_BASE_URL?.trim() ||
+      DEFAULT_UPDATE_BASE_URL
+  )
+}
+
+function updateFeedUrl(channel: GuiUpdateChannel): string {
+  const normalized = normalizeGuiUpdateChannel(channel)
+  const direct =
+    process.env[`QWICKS_UPDATE_URL_${normalized.toUpperCase()}`]?.trim() ||
+    envWithLegacyFallback('QWICKS_UPDATE_URL', 'DEEPSEEK_GUI_UPDATE_URL')
+  if (direct) return ensureTrailingSlash(direct.replace(/\{channel\}/g, normalized))
+  return `${updateBaseUrl()}/channels/${normalized}/latest/`
+}
+
+function genericProviderOptions(channel: GuiUpdateChannel) {
   return {
-    provider: 'github' as const,
-    owner: DEFAULT_GITHUB_OWNER,
-    repo: DEFAULT_GITHUB_REPO,
-    channel: githubUpdateChannel(channel)
+    provider: 'generic' as const,
+    url: updateFeedUrl(channel)
   }
 }
 
 function configureUpdaterChannel(channel: GuiUpdateChannel): void {
   const normalized = normalizeGuiUpdateChannel(channel)
-  const providerOptions = githubProviderOptions(normalized)
-  const feedKey = `${providerOptions.owner}/${providerOptions.repo}:${providerOptions.channel}`
+  const providerOptions = genericProviderOptions(normalized)
+  const feedKey = providerOptions.url
   const changed = normalized !== configuredChannel || feedKey !== configuredFeedUrl
   configuredChannel = normalized
   configuredFeedUrl = feedKey

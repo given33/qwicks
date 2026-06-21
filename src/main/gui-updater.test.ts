@@ -88,7 +88,7 @@ afterEach(() => {
 })
 
 describe('checkGuiUpdate feed URL', () => {
-  it('uses the given33/qwicks GitHub release feed for stable updates', async () => {
+  it('uses the Aliyun server update feed for stable updates', async () => {
     updater.checkForUpdates.mockResolvedValue({
       updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
       isUpdateAvailable: true
@@ -103,14 +103,12 @@ describe('checkGuiUpdate feed URL', () => {
       hasUpdate: true
     })
     expect(updater.setFeedURL).toHaveBeenLastCalledWith({
-      provider: 'github',
-      owner: 'given33',
-      repo: 'qwicks',
-      channel: 'latest'
+      provider: 'generic',
+      url: 'http://8.138.40.16/qwicks/channels/stable/latest/'
     })
   })
 
-  it('uses the frontier GitHub release channel for frontier updates', async () => {
+  it('uses the Aliyun server frontier update feed for frontier updates', async () => {
     updater.checkForUpdates.mockResolvedValue({
       updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
       isUpdateAvailable: true
@@ -126,10 +124,29 @@ describe('checkGuiUpdate feed URL', () => {
     })
     expect(updater.allowPrerelease).toBe(true)
     expect(updater.setFeedURL).toHaveBeenLastCalledWith({
-      provider: 'github',
-      owner: 'given33',
-      repo: 'qwicks',
-      channel: 'frontier'
+      provider: 'generic',
+      url: 'http://8.138.40.16/qwicks/channels/frontier/latest/'
+    })
+  })
+
+  it('allows the server update base URL to be replaced by a future domain', async () => {
+    process.env.QWICKS_UPDATE_BASE_URL = 'https://update.haoyongai.xyz/qwicks/'
+    updater.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
+      isUpdateAvailable: true
+    })
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      latestVersion: '0.2.0',
+      hasUpdate: true
+    })
+    expect(updater.setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: 'https://update.haoyongai.xyz/qwicks/channels/stable/latest/'
     })
   })
 })

@@ -54,7 +54,13 @@ const hasNotaryToolCredentials = Boolean(
 const updateChannel = normalizeUpdateChannel(
   envWithLegacyFallback('QWICKS_UPDATE_CHANNEL', 'DEEPSEEK_GUI_UPDATE_CHANNEL') || 'stable'
 )
-const githubUpdateChannel = updateChannel === 'stable' ? 'latest' : updateChannel
+const defaultUpdateBaseUrl = 'http://8.138.40.16/qwicks'
+const updateBaseUrl = (
+  process.env.QWICKS_UPDATE_BASE_URL ||
+    process.env.PUBLIC_DOWNLOAD_BASE_URL ||
+    defaultUpdateBaseUrl
+).trim().replace(/\/+$/, '')
+const genericUpdateUrl = `${updateBaseUrl}/channels/${updateChannel}/latest/`
 const releaseAppVersion = (
   envWithLegacyFallback('QWICKS_APP_VERSION', 'DEEPSEEK_GUI_APP_VERSION') || ''
 ).trim()
@@ -114,10 +120,8 @@ module.exports = {
   artifactName: `QWicks-${artifactVersion}-\${os}-\${arch}.\${ext}`,
   publish: [
     {
-      provider: 'github',
-      owner: 'given33',
-      repo: 'qwicks',
-      channel: githubUpdateChannel
+      provider: 'generic',
+      url: genericUpdateUrl
     }
   ],
   afterPack: './scripts/after-pack.cjs',

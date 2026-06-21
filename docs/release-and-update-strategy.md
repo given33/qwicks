@@ -1,52 +1,69 @@
 # QWicks Release and Update Strategy
 
-## Repository Roles
+## Current Flow
 
-- GitHub `main`: clean source code that can be built and released.
-- GitHub Releases: versioned installers, updater artifacts, signatures, and release notes.
-- Local bare backup: complete recovery storage for dirty worktrees, experiments, evidence, and large historical artifacts.
+- GitHub `main`: source code and CI configuration.
+- GitHub Actions: builds the Windows NSIS installer on every push to `main`.
+- Aliyun server: hosts the Electron update feed and installer files.
+- Client updater: reads `latest.yml` from the Aliyun public update URL.
 
-## Current Local Layout
+Default update URL while there is no domain:
 
-- Release source worktree: `D:\MCP\qwicks-release-main`
-- Active migration worktree: `D:\MCP\qwicks`
-- Local full backup: `D:\git-backups\qwicks-desktop-full.git`
-- Workspace archive: `D:\MCP\_qwicks-workspace-archive`
+```text
+http://8.138.40.16/qwicks/channels/stable/latest/
+```
 
-## GitHub Main Policy
+After a domain is ready, set the GitHub repository variable
+`QWICKS_UPDATE_BASE_URL` to the domain path, for example:
 
-Only commit maintainable source, tests, scripts, and docs to GitHub `main`.
+```text
+https://update.haoyongai.xyz/qwicks
+```
 
-Do not commit:
+Then rebuild and deploy one new version so installed clients learn the new
+update base URL.
 
-- `target/`, `node_modules/`, `.npm-cache/`, `.cargo-home/`
-- `runtime/`, `workspace/`, `.tmp/`, `.workflow/`
-- installer binaries, rollback snapshots, local review evidence, or one-off agent logs
+## Update Files
 
-Large generated files belong in GitHub Releases or the local bare backup.
+The Windows update directory contains:
 
-## GitHub Release Policy
+- `latest.yml`: Electron updater metadata used by the app.
+- `latest.json`: human/API friendly version manifest for the server.
+- `QWicks-<version>-win-x64.exe`: installer.
+- `QWicks-<version>-win-x64.exe.blockmap`: differential download metadata.
 
-Each public release should contain:
+For the stable channel these files live under:
 
-- NSIS installer: `QWicks_<version>_x64-setup.exe`
-- MSI installer: `QWicks_<version>_x64_zh-CN.msi`
-- updater signatures when updater artifacts are enabled
-- `latest.json` once the updater endpoint is active
-- release notes with build commit, version, date, and verification results
+```text
+/var/www/qwicks/channels/stable/latest/
+```
 
-## Hot Update Requirements
+The server should expose that path publicly as:
 
-QWicks uses Tauri. Tauri updater artifacts require signing. The private signing key must never be committed.
+```text
+http://8.138.40.16/qwicks/channels/stable/latest/
+```
 
-Before enabling real in-app hot update:
+## GitHub Secrets
 
-1. Generate a Tauri updater signing key.
-2. Store the private key outside Git, for example in a local secret store or GitHub Actions secret.
-3. Put only the public key in `src-tauri/tauri.conf.json`.
-4. Set `bundle.createUpdaterArtifacts` to `true`.
-5. Configure `plugins.updater.endpoints` to a GitHub Release `latest.json` URL.
-6. Build with `TAURI_SIGNING_PRIVATE_KEY` set in the environment.
-7. Upload installers, updater signatures, and `latest.json` to GitHub Releases.
+Required for automatic upload:
 
-The current repository is organized for this flow, but updater signing is not enabled until the key and endpoint are configured.
+- `ALIYUN_SSH_USER`
+- `ALIYUN_SSH_KEY`
+
+Optional:
+
+- `ALIYUN_SSH_HOST`, default `8.138.40.16`
+- `ALIYUN_SSH_PORT`, default `22`
+
+## Source Policy
+
+Commit source, tests, scripts, workflows, and docs to `main`.
+
+Do not commit generated outputs:
+
+- `dist/`
+- `out/`
+- `node_modules/`
+- installer binaries
+- local logs and temporary runtime state
