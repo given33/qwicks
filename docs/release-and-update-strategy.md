@@ -3,9 +3,10 @@
 ## Current Flow
 
 - GitHub `main`: source code and CI configuration.
-- GitHub Actions: builds the Windows NSIS installer on every push to `main`.
-- Aliyun server: hosts the Electron update feed and installer files.
-- Client updater: reads `latest.yml` from the Aliyun public update URL.
+- GitHub Actions code-update workflow: builds `code.zip` on every push to `main`.
+- GitHub Actions installer workflow: builds the Windows NSIS installer only when run manually.
+- Aliyun server: hosts `latest.json`, `code.zip`, and the fallback installer feed.
+- Client updater: reads `latest.json` first for code updates, then falls back to `latest.yml` for full installer updates.
 
 Default update URL while there is no domain:
 
@@ -23,12 +24,43 @@ https://update.haoyongai.xyz/qwicks
 Then rebuild and deploy one new version so installed clients learn the new
 update base URL.
 
-## Update Files
+## Code Update Files
 
-The Windows update directory contains:
+The normal update directory contains:
+
+- `latest.json`: code-update manifest read by QWicks.
+- `code.zip`: renderer, preload, and `qwicks/dist` runtime code.
+
+For the stable channel these files live under:
+
+```text
+/var/www/qwicks/channels/stable/latest/
+```
+
+The server should expose that path publicly as:
+
+```text
+http://8.138.40.16/qwicks/channels/stable/latest/
+```
+
+Installed clients need one full hot-update-capable shell before code-only
+updates can apply. After that, ordinary UI/runtime changes can be delivered
+by replacing `latest.json` and `code.zip`, then restarting the app.
+
+The hot `qwicks/dist` runtime reuses the dependency directory from the
+installed shell through a local directory link. That keeps code packages small.
+If a runtime change adds or upgrades dependencies, raise `QWICKS_MIN_SHELL_VERSION`
+and ship a full installer first.
+
+Use a full installer update when changing Electron, native dependencies,
+installer settings, or main-process shell behavior.
+
+## Installer Update Files
+
+The fallback Windows installer feed contains:
 
 - `latest.yml`: Electron updater metadata used by the app.
-- `latest.json`: human/API friendly version manifest for the server.
+- `latest.json`: human/API friendly installer manifest for the server.
 - `QWicks-<version>-win-x64.exe`: installer.
 - `QWicks-<version>-win-x64.exe.blockmap`: differential download metadata.
 

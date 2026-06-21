@@ -60,6 +60,7 @@ function main() {
   const publicBase = `${baseUrl}/channels/${channel}/latest`
   const manifest = {
     product: 'QWicks',
+    kind: 'installer',
     platform,
     channel,
     version,

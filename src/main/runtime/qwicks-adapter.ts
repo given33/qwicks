@@ -10,6 +10,7 @@ import {
   buildQWicksServeArgs,
   resolveQWicksExecutable
 } from '../resolve-qwicks-binary'
+import { resolveHotCodeQWicksRoot } from '../code-update'
 import {
   isQWicksChildRunning,
   reclaimQWicksPort,
@@ -22,9 +23,10 @@ import { getQWicksBaseUrl } from '../qwicks-base-url'
 const QWICKS_RUNTIME_ID = 'qwicks' as const
 
 function appRoot(): string {
-  return app.isPackaged
+  const bundledRoot = app.isPackaged
     ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
     : app.getAppPath()
+  return resolveHotCodeQWicksRoot(bundledRoot)
 }
 
 export const qwicksRuntimeAdapter = {

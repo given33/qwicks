@@ -45,6 +45,7 @@ export function GuiUpdateControl({
   let title = ''
   let detail: string | null = null
   let tone: 'neutral' | 'good' | 'warn' | 'error' = 'neutral'
+  const releaseNotes = info?.ok ? info.releaseNotes?.trim() : ''
 
   if (downloading) {
     title = t('guiUpdateDownloading', { percent: Math.max(0, Math.round(progress?.percent ?? 0)) })
@@ -77,6 +78,7 @@ export function GuiUpdateControl({
     title = info.manualOnly
       ? t('guiUpdateAvailableManual', { current: info.currentVersion, latest: info.latestVersion })
       : t('guiUpdateAvailable', { current: info.currentVersion, latest: info.latestVersion })
+    detail = releaseNotes || null
     tone = 'warn'
   } else if (info?.ok) {
     title = t('guiUpdateCurrent', { version: info.currentVersion })

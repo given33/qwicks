@@ -1,5 +1,6 @@
 import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, dialog, shell } from 'electron'
 import type { MessageBoxOptions } from 'electron'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -15,6 +16,14 @@ import type {
 } from '../shared/gui-update'
 import { nextGuiUpdateCheckDelay } from '../shared/gui-update-schedule'
 import { DEFAULT_GUI_UPDATE_CHANNEL, normalizeGuiUpdateChannel } from '../shared/gui-update'
+import {
+  codeUpdateDownloadDir,
+  codeUpdatePackagePath,
+  currentCodeOrShellVersion,
+  installCodeUpdatePackage,
+  type CodeUpdateManifest,
+  type DownloadedCodeUpdatePackage
+} from './code-update'
 
 const DEFAULT_GITHUB_OWNER = 'given33'
 const DEFAULT_GITHUB_REPO = 'qwicks'
@@ -31,6 +40,8 @@ let lastInfo: Extract<GuiUpdateInfo, { ok: true }> | null = null
 let lastState: GuiUpdateState = { status: 'idle' }
 let downloaded = false
 let downloadPromise: Promise<string[]> | null = null
+let pendingCodeUpdate: CodeUpdateManifest | null = null
+let downloadedCodePackage: DownloadedCodeUpdatePackage | null = null
 let configuredChannel: GuiUpdateChannel = normalizeGuiUpdateChannel(
   envWithLegacyFallback('QWICKS_UPDATE_CHANNEL', 'DEEPSEEK_GUI_UPDATE_CHANNEL') || undefined
 )
@@ -79,6 +90,10 @@ async function writeGuiVersionState(state: GuiVersionState): Promise<void> {
   await writeFile(path, JSON.stringify(state, null, 2), 'utf8')
 }
 
+function currentGuiVersion(): string {
+  return currentCodeOrShellVersion()
+}
+
 function changelogUrl(): string {
   return envWithLegacyFallback('QWICKS_CHANGELOG_URL', 'DEEPSEEK_GUI_CHANGELOG_URL') || DEFAULT_CHANGELOG_URL
 }
@@ -96,12 +111,19 @@ function normalizeReleaseNotes(value: unknown): string | undefined {
 }
 
 async function recordPendingUpdate(updateInfo: UpdateInfo): Promise<void> {
+  return recordPendingUpdateVersion(
+    updateInfo.version.trim(),
+    normalizeReleaseNotes(updateInfo.releaseNotes)
+  )
+}
+
+async function recordPendingUpdateVersion(version: string, releaseNotes?: string): Promise<void> {
   const state = await readGuiVersionState()
   await writeGuiVersionState({
     ...state,
     pendingUpdate: {
-      version: updateInfo.version.trim(),
-      releaseNotes: normalizeReleaseNotes(updateInfo.releaseNotes)
+      version: version.trim(),
+      releaseNotes
     }
   })
 }
@@ -252,14 +274,38 @@ function toGuiInfo(updateInfo: UpdateInfo, hasUpdate: boolean, manualOnly = fals
   const latestVersion = updateInfo.version.trim()
   return {
     ok: true,
-    currentVersion: app.getVersion(),
+    currentVersion: currentGuiVersion(),
     latestVersion,
     hasUpdate,
     releaseUrl: releaseUrlForVersion(latestVersion),
     releaseDate: updateInfo.releaseDate,
     channel: configuredChannel,
+    kind: 'installer',
+    releaseNotes: normalizeReleaseNotes(updateInfo.releaseNotes),
     manualOnly,
     downloaded
+  }
+}
+
+function toCodeGuiInfo(
+  manifest: CodeUpdateManifest,
+  hasUpdate: boolean
+): Extract<GuiUpdateInfo, { ok: true }> {
+  const packageDownloaded = Boolean(
+    downloadedCodePackage && downloadedCodePackage.manifest.version === manifest.version
+  )
+  return {
+    ok: true,
+    currentVersion: currentGuiVersion(),
+    latestVersion: manifest.version,
+    hasUpdate,
+    releaseUrl: releaseUrlForVersion(manifest.version),
+    releaseDate: manifest.releaseDate,
+    channel: configuredChannel,
+    kind: 'code',
+    releaseNotes: manifest.releaseNotes,
+    packageSize: manifest.package.size,
+    downloaded: packageDownloaded
   }
 }
 
@@ -360,6 +406,125 @@ function updateFeedUrl(channel: GuiUpdateChannel): string {
   return `${updateBaseUrl()}/channels/${normalized}/latest/`
 }
 
+function semverParts(value: string): [number, number, number] | null {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) return null
+  return [
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10),
+    Number.parseInt(match[3], 10)
+  ]
+}
+
+function compareSemver(a: string, b: string): number | null {
+  const left = semverParts(a)
+  const right = semverParts(b)
+  if (!left || !right) return null
+  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const compared = compareSemver(latest, current)
+  return compared === null ? latest.trim() !== current.trim() : compared > 0
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function positiveNumberValue(value: unknown): number | undefined {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
+function resolveManifestPackageUrl(channel: GuiUpdateChannel, rawUrl: string, name: string): string {
+  const value = rawUrl || name
+  if (!value) return ''
+  try {
+    return new URL(value, updateFeedUrl(channel)).toString()
+  } catch {
+    return ''
+  }
+}
+
+function normalizeCodeUpdateManifest(raw: unknown, channel: GuiUpdateChannel): CodeUpdateManifest | null {
+  const data = recordValue(raw)
+  if (data.kind !== 'code') return null
+  const version = stringValue(data.version)
+  const packageData = recordValue(data.package)
+  const name = stringValue(packageData.name) || 'code.zip'
+  const url = resolveManifestPackageUrl(channel, stringValue(packageData.url), name)
+  if (!version || !url) return null
+  const normalizedChannel = normalizeGuiUpdateChannel(stringValue(data.channel) || channel)
+  const sha256 = stringValue(packageData.sha256).toLowerCase()
+  return {
+    kind: 'code',
+    product: stringValue(data.product) || 'QWicks',
+    platform: stringValue(data.platform) || process.platform,
+    channel: normalizedChannel,
+    version,
+    releaseDate: stringValue(data.releaseDate) || stringValue(data.generatedAt) || undefined,
+    releaseNotes: normalizeReleaseNotes(
+      data.releaseNotes ?? data.release_notes ?? data.notes ?? data.changelog
+    ),
+    minShellVersion: stringValue(data.minShellVersion) || undefined,
+    fullUpdateRequired: data.fullUpdateRequired === true,
+    package: {
+      name,
+      url,
+      ...(sha256 ? { sha256 } : {}),
+      ...(positiveNumberValue(packageData.size) ? { size: positiveNumberValue(packageData.size) } : {})
+    }
+  }
+}
+
+function codeUpdateCompatibleWithShell(manifest: CodeUpdateManifest): boolean {
+  if (manifest.fullUpdateRequired) return false
+  if (!manifest.minShellVersion) return true
+  const compared = compareSemver(app.getVersion(), manifest.minShellVersion)
+  return compared === null ? app.getVersion() === manifest.minShellVersion : compared >= 0
+}
+
+async function fetchServerLatestJson(channel: GuiUpdateChannel): Promise<unknown | null> {
+  const url = `${updateFeedUrl(channel)}latest.json`
+  const response = await fetch(url, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8_000)
+  })
+  if (response.status === 404) return null
+  if (!response.ok) return null
+  return JSON.parse(await response.text()) as unknown
+}
+
+async function checkCodePackageUpdate(
+  channel: GuiUpdateChannel
+): Promise<Extract<GuiUpdateInfo, { ok: true }> | null> {
+  let raw: unknown | null = null
+  try {
+    raw = await fetchServerLatestJson(channel)
+  } catch (error) {
+    console.warn('[qwicks-gui updater] failed to read code update manifest:', error)
+    return null
+  }
+  const manifest = normalizeCodeUpdateManifest(raw, channel)
+  if (!manifest) return null
+  if (!codeUpdateCompatibleWithShell(manifest)) {
+    pendingCodeUpdate = null
+    return null
+  }
+
+  const hasUpdate = isNewerVersion(manifest.version, currentGuiVersion())
+  pendingCodeUpdate = hasUpdate ? manifest : null
+  downloaded = Boolean(hasUpdate && downloadedCodePackage?.manifest.version === manifest.version)
+  return toCodeGuiInfo(manifest, hasUpdate)
+}
+
 function genericProviderOptions(channel: GuiUpdateChannel) {
   return {
     provider: 'generic' as const,
@@ -379,6 +544,8 @@ function configureUpdaterChannel(channel: GuiUpdateChannel): void {
   if (!changed) return
   downloaded = false
   downloadPromise = null
+  pendingCodeUpdate = null
+  downloadedCodePackage = null
   lastInfo = null
   emitGuiUpdateState({ status: 'idle' })
 }
@@ -395,7 +562,7 @@ async function checkManualUpdate(
   channel: GuiUpdateChannel,
   code: GuiUpdateFailureCode = 'unsupported'
 ): Promise<GuiUpdateInfo> {
-  const currentVersion = app.getVersion()
+  const currentVersion = currentGuiVersion()
   return {
     ok: false,
     currentVersion,
@@ -483,7 +650,7 @@ export function initializeGuiUpdater(
 }
 
 export async function showPostUpdateReleaseNotes(): Promise<void> {
-  const currentVersion = app.getVersion().trim()
+  const currentVersion = currentGuiVersion().trim()
   const state = await readGuiVersionState()
   if (!state.lastSeenVersion) {
     await writeGuiVersionState({ ...state, lastSeenVersion: currentVersion })
@@ -534,9 +701,21 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
   }
 
   emitGuiUpdateState({ status: 'checking', info: lastInfo ?? undefined })
+  const codeInfo = await checkCodePackageUpdate(selectedChannel)
+  if (codeInfo?.hasUpdate) {
+    lastInfo = codeInfo
+    emitGuiUpdateState({ status: 'available', info: codeInfo })
+    return codeInfo
+  }
+
   try {
     const result = await autoUpdater.checkForUpdates()
     if (!result) {
+      if (codeInfo) {
+        lastInfo = codeInfo
+        emitGuiUpdateState({ status: 'not_available', info: codeInfo })
+        return codeInfo
+      }
       return checkManualUpdate(selectedChannel, 'not_configured')
     }
     const info = toGuiInfo(result.updateInfo, result.isUpdateAvailable)
@@ -544,10 +723,15 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
     emitGuiUpdateState(info.hasUpdate ? { status: 'available', info } : { status: 'not_available', info })
     return info
   } catch (e) {
+    if (codeInfo) {
+      lastInfo = codeInfo
+      emitGuiUpdateState({ status: 'not_available', info: codeInfo })
+      return codeInfo
+    }
     const message = sanitizeUpdaterError(e instanceof Error ? e.message : String(e), selectedChannel)
     const info: GuiUpdateInfo = {
       ok: false,
-      currentVersion: app.getVersion(),
+      currentVersion: currentGuiVersion(),
       message,
       code: 'unknown',
       releaseUrl: downloadPageUrl(),
@@ -558,6 +742,104 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
   }
 }
 
+function codeDownloadProgress(
+  total: number,
+  transferred: number,
+  delta: number,
+  startedAt: number
+) {
+  const elapsedSeconds = Math.max(0.001, (Date.now() - startedAt) / 1000)
+  return {
+    total,
+    delta,
+    transferred,
+    percent: total > 0 ? Math.min(100, (transferred / total) * 100) : 0,
+    bytesPerSecond: transferred / elapsedSeconds
+  }
+}
+
+async function responseBufferWithProgress(
+  response: Response,
+  info: Extract<GuiUpdateInfo, { ok: true }>,
+  expectedSize?: number
+): Promise<Buffer> {
+  const headerSize = Number(response.headers.get('content-length') ?? '')
+  const total = Number.isFinite(headerSize) && headerSize > 0 ? headerSize : expectedSize ?? 0
+  const startedAt = Date.now()
+  emitGuiUpdateState({
+    status: 'downloading',
+    info,
+    progress: codeDownloadProgress(total, 0, 0, startedAt)
+  })
+
+  if (!response.body) {
+    const buffer = Buffer.from(await response.arrayBuffer())
+    emitGuiUpdateState({
+      status: 'downloading',
+      info,
+      progress: codeDownloadProgress(buffer.length, buffer.length, buffer.length, startedAt)
+    })
+    return buffer
+  }
+
+  const reader = response.body.getReader()
+  const chunks: Buffer[] = []
+  let transferred = 0
+  for (;;) {
+    const result = await reader.read()
+    if (result.done) break
+    const chunk = Buffer.from(result.value)
+    chunks.push(chunk)
+    transferred += chunk.length
+    emitGuiUpdateState({
+      status: 'downloading',
+      info,
+      progress: codeDownloadProgress(total, transferred, chunk.length, startedAt)
+    })
+  }
+  return Buffer.concat(chunks)
+}
+
+async function downloadCodeUpdate(
+  manifest: CodeUpdateManifest,
+  info: Extract<GuiUpdateInfo, { ok: true }>
+): Promise<string[]> {
+  const response = await fetch(manifest.package.url, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(120_000)
+  })
+  if (!response.ok) {
+    throw new Error(`Code update download failed with HTTP ${response.status}`)
+  }
+
+  const buffer = await responseBufferWithProgress(response, info, manifest.package.size)
+  const sha256 = createHash('sha256').update(buffer).digest('hex')
+  const expectedSha256 = manifest.package.sha256?.trim().toLowerCase()
+  if (expectedSha256 && sha256 !== expectedSha256) {
+    throw new Error('The downloaded code update did not match the expected checksum.')
+  }
+
+  const path = codeUpdatePackagePath(manifest.version, sha256)
+  await mkdir(codeUpdateDownloadDir(), { recursive: true })
+  await writeFile(path, buffer)
+  downloadedCodePackage = { zipPath: path, sha256, manifest }
+  downloaded = true
+  const downloadedInfo: Extract<GuiUpdateInfo, { ok: true }> = {
+    ...info,
+    downloaded: true
+  }
+  lastInfo = downloadedInfo
+  pendingVersionStateWrite = recordPendingUpdateVersion(manifest.version, manifest.releaseNotes)
+    .catch((error) => {
+      console.warn('[qwicks-gui updater] failed to save code update release notes:', error)
+    })
+    .finally(() => {
+      pendingVersionStateWrite = null
+    })
+  emitGuiUpdateState({ status: 'downloaded', info: downloadedInfo })
+  return [path]
+}
+
 export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpdateDownloadResult> {
   const selectedChannel = await resolveUpdateChannel(channel)
   await configureReachableUpdaterChannel(selectedChannel)
@@ -565,7 +847,7 @@ export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<Gui
   if (!macAutoUpdateAllowed()) {
     return {
       ok: false,
-      currentVersion: app.getVersion(),
+      currentVersion: currentGuiVersion(),
       code: 'unsupported',
       message: unsupportedMessage()
     }
@@ -578,13 +860,32 @@ export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<Gui
       if (!checked.hasUpdate || checked.manualOnly) {
         return {
           ok: false,
-          currentVersion: app.getVersion(),
+          currentVersion: currentGuiVersion(),
           code: checked.manualOnly ? 'unsupported' : 'unknown',
           message: checked.manualOnly
             ? unsupportedMessage()
             : 'No downloadable GUI update is available.'
         }
       }
+    }
+
+    if (lastInfo?.kind === 'code') {
+      const manifest =
+        pendingCodeUpdate && pendingCodeUpdate.version === lastInfo.latestVersion
+          ? pendingCodeUpdate
+          : null
+      if (!manifest) {
+        return {
+          ok: false,
+          currentVersion: currentGuiVersion(),
+          code: 'download_failed',
+          message: 'The code update metadata is no longer available. Check for updates again.'
+        }
+      }
+      if (downloadedCodePackage?.manifest.version === manifest.version) {
+        return { ok: true, paths: [downloadedCodePackage.zipPath] }
+      }
+      return { ok: true, paths: await downloadCodeUpdate(manifest, lastInfo) }
     }
 
     if (!downloadPromise) {
@@ -599,7 +900,7 @@ export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<Gui
     emitGuiUpdateState({ status: 'error', info: lastInfo ?? undefined, message, code: 'download_failed' })
     return {
       ok: false,
-      currentVersion: app.getVersion(),
+      currentVersion: currentGuiVersion(),
       code: 'download_failed',
       message
     }
@@ -608,10 +909,27 @@ export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<Gui
 
 export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
   try {
+    if (lastInfo?.kind === 'code') {
+      if (!downloadedCodePackage || downloadedCodePackage.manifest.version !== lastInfo.latestVersion) {
+        return {
+          ok: false,
+          currentVersion: currentGuiVersion(),
+          code: 'install_failed',
+          message: 'The code update has not finished downloading yet.'
+        }
+      }
+      emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
+      await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
+      await installCodeUpdatePackage(downloadedCodePackage)
+      app.relaunch()
+      app.exit(0)
+      return { ok: true }
+    }
+
     if (!downloaded) {
       return {
         ok: false,
-        currentVersion: app.getVersion(),
+        currentVersion: currentGuiVersion(),
         code: 'install_failed',
         message: 'The update has not finished downloading yet.'
       }
@@ -625,7 +943,7 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
     emitGuiUpdateState({ status: 'error', info: lastInfo ?? undefined, message, code: 'install_failed' })
     return {
       ok: false,
-      currentVersion: app.getVersion(),
+      currentVersion: currentGuiVersion(),
       code: 'install_failed',
       message
     }

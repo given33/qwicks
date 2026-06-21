@@ -163,7 +163,7 @@ export function WorkbenchTopBar({
   }, [guiUpdateAction, guiUpdateState, t])
   const guiUpdateTitle = useMemo(() => {
     if (!guiUpdateAction) return ''
-    return guiUpdateAction.manualOnly
+    const base = guiUpdateAction.manualOnly
       ? t('settings:guiUpdateAvailableManual', {
           current: guiUpdateAction.currentVersion,
           latest: guiUpdateAction.latestVersion
@@ -172,6 +172,8 @@ export function WorkbenchTopBar({
           current: guiUpdateAction.currentVersion,
           latest: guiUpdateAction.latestVersion
         })
+    const notes = guiUpdateAction.releaseNotes?.trim()
+    return notes ? `${base}\n\n${notes}` : base
   }, [guiUpdateAction, t])
 
   const chooseEditor = (editor: EditorInfo): void => {

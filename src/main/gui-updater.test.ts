@@ -21,6 +21,7 @@ let appVersion: string
 let mockedFiles: Map<string, string>
 let showMessageBox: ReturnType<typeof vi.fn>
 let openExternal: ReturnType<typeof vi.fn>
+let fetchMock: ReturnType<typeof vi.fn>
 
 function createUpdater(): MockUpdater {
   return Object.assign(new EventEmitter(), {
@@ -46,8 +47,13 @@ beforeEach(() => {
   mockedFiles = new Map()
   showMessageBox = vi.fn().mockResolvedValue({ response: 1 })
   openExternal = vi.fn().mockResolvedValue(undefined)
+  fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 404 }))
+  vi.stubGlobal('fetch', fetchMock)
   vi.doMock('node:fs/promises', () => ({
     mkdir: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
+    symlink: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn(async (path: string) => {
       const value = mockedFiles.get(String(path))
       if (value === undefined) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
@@ -63,7 +69,9 @@ beforeEach(() => {
       getAppPath: () => '/tmp/deepseek-gui-updater-test-app',
       getPath: () => '/tmp/deepseek-gui-updater-test-user-data',
       getVersion: () => appVersion,
-      getLocale: () => 'en-US'
+      getLocale: () => 'en-US',
+      relaunch: vi.fn(),
+      exit: vi.fn()
     },
     autoUpdater: nativeUpdater,
     BrowserWindow: class {},
@@ -148,6 +156,34 @@ describe('checkGuiUpdate feed URL', () => {
       provider: 'generic',
       url: 'https://update.haoyongai.xyz/qwicks/channels/stable/latest/'
     })
+  })
+
+  it('uses code-package update metadata before falling back to the installer feed', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      kind: 'code',
+      version: '0.2.0',
+      releaseDate: '2026-06-06T00:00:00.000Z',
+      releaseNotes: 'Update button now shows release notes on hover.',
+      package: {
+        name: 'code.zip',
+        url: 'code.zip',
+        size: 12345,
+        sha256: 'abc123'
+      }
+    }), { status: 200 }))
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      kind: 'code',
+      latestVersion: '0.2.0',
+      hasUpdate: true,
+      releaseNotes: 'Update button now shows release notes on hover.',
+      packageSize: 12345
+    })
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
 })
 

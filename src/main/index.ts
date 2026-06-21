@@ -52,6 +52,12 @@ import { waitForRuntimeTurnsIdle } from './runtime/managed-runtime-idle'
 import { setQWicksUnexpectedExitHandler, type QWicksUnexpectedExitInfo } from './qwicks-process'
 import { RestartBudget, type QWicksRuntimeStatus } from './qwicks-runtime-supervisor'
 import { configureLogger, logError, logWarn, pruneOnStartup } from './logger'
+import {
+  deactivateActiveCodePackage,
+  isHotCodePath,
+  resolveHotCodePreloadPath,
+  resolveHotCodeRendererIndexPath
+} from './code-update'
 import { createClawRuntime, type ClawRuntime } from './claw-runtime'
 import { createScheduleRuntime, type ScheduleRuntime } from './schedule-runtime'
 import { createWorkflowRuntime, type WorkflowRuntime } from './workflow-runtime'
@@ -125,9 +131,15 @@ function resolveLogDirectory(): string {
 }
 
 function resolvePreloadPath(): string {
+  const hotPath = resolveHotCodePreloadPath()
+  if (hotPath) return hotPath
   const cjsPath = join(__dirname, '../preload/index.cjs')
   if (existsSync(cjsPath)) return cjsPath
   return join(__dirname, '../preload/index.mjs')
+}
+
+function resolveRendererIndexPath(): string {
+  return resolveHotCodeRendererIndexPath() ?? join(__dirname, '../renderer/index.html')
 }
 
 function getClawScheduleMcpLaunchConfig(): ClawScheduleMcpLaunchConfig {
@@ -217,6 +229,7 @@ type GuiUpdaterModule = typeof import('./gui-updater')
 
 let guiUpdaterModulePromise: Promise<GuiUpdaterModule> | null = null
 let guiUpdaterInitialized = false
+let hotCodeRecoveryInProgress = false
 
 function emitClawChannelActivity(payload: { channelId: string; threadId: string }): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -280,6 +293,19 @@ async function readGuiUpdateState(): Promise<GuiUpdateState> {
       code: 'unknown'
     }
   }
+}
+
+function recoverFromBrokenHotCode(reason: string): void {
+  if (hotCodeRecoveryInProgress) return
+  hotCodeRecoveryInProgress = true
+  void deactivateActiveCodePackage(reason)
+    .catch((error) => {
+      console.warn('[qwicks-gui] failed to disable broken hot code package:', error)
+    })
+    .finally(() => {
+      app.relaunch()
+      app.exit(0)
+    })
 }
 
 
@@ -1069,6 +1095,7 @@ async function restartRuntimeOnce(settings: AppSettingsV1): Promise<void> {
 function createWindow(options: { suppressInitialShow?: boolean } = {}): void {
   traceStartup('createWindow:start')
   const preloadPath = resolvePreloadPath()
+  const rendererIndexPath = resolveRendererIndexPath()
   const usesDesktopTitleBar = process.platform === 'win32' || process.platform === 'linux'
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -1097,6 +1124,13 @@ function createWindow(options: { suppressInitialShow?: boolean } = {}): void {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[qwicks-gui] failed to load preload ${preloadPath}:`, error)
     logError('preload', 'Failed to load preload script', { preloadPath, message })
+    if (isHotCodePath(preloadPath)) {
+      recoverFromBrokenHotCode(`Hot update preload failed: ${message}`)
+    }
+  })
+  mainWindow.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame || !isHotCodePath(rendererIndexPath)) return
+    recoverFromBrokenHotCode(`Hot update renderer failed to load: ${errorDescription}`)
   })
   const showWindow = (): void => {
     if (options.suppressInitialShow) return
@@ -1115,7 +1149,7 @@ function createWindow(options: { suppressInitialShow?: boolean } = {}): void {
   if (devUrl) {
     mainWindow.loadURL(devUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(rendererIndexPath)
   }
   mainWindow.once('ready-to-show', () => {
     traceStartup('window:ready-to-show')

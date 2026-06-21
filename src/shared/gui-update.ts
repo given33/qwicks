@@ -4,6 +4,8 @@ export type GuiUpdateChannel = (typeof GUI_UPDATE_CHANNELS)[number]
 
 export const DEFAULT_GUI_UPDATE_CHANNEL: GuiUpdateChannel = 'stable'
 
+export type GuiUpdateKind = 'code' | 'installer'
+
 export function normalizeGuiUpdateChannel(value: unknown): GuiUpdateChannel {
   return value === 'stable' || value === 'frontier' ? value : DEFAULT_GUI_UPDATE_CHANNEL
 }
@@ -36,6 +38,9 @@ export type GuiUpdateInfo =
       releaseUrl: string
       releaseDate?: string
       channel: GuiUpdateChannel
+      kind?: GuiUpdateKind
+      releaseNotes?: string
+      packageSize?: number
       manualOnly?: boolean
       downloaded?: boolean
     }

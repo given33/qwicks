@@ -1,6 +1,9 @@
-name: Build and Deploy Windows Installer
+name: Build and Deploy Code Updates
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       channel:
@@ -12,7 +15,11 @@ on:
           - stable
           - frontier
       version:
-        description: Optional x.y.z version override
+        description: Optional x.y.z code version override
+        required: false
+        type: string
+      release_notes:
+        description: Optional update notes shown in QWicks
         required: false
         type: string
 
@@ -25,12 +32,13 @@ env:
   DEFAULT_DEPLOY_PATH: /var/www/qwicks
 
 jobs:
-  build-windows:
+  build-code-update:
     runs-on: windows-latest
     env:
       QWICKS_UPDATE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
       QWICKS_UPDATE_BASE_URL: ${{ vars.QWICKS_UPDATE_BASE_URL || 'http://8.138.40.16/qwicks' }}
       QWICKS_SERVER_DEPLOY_PATH: ${{ vars.QWICKS_SERVER_DEPLOY_PATH || '/var/www/qwicks' }}
+      QWICKS_MIN_SHELL_VERSION: ${{ vars.QWICKS_MIN_SHELL_VERSION || '0.1.0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,7 +60,7 @@ jobs:
         shell: pwsh
         run: npm ci
 
-      - name: Compute app version
+      - name: Compute code version
         id: version
         shell: pwsh
         run: |
@@ -69,39 +77,73 @@ jobs:
           }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QWICKS_APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Building QWicks $version on $env:QWICKS_UPDATE_CHANNEL"
+          Write-Host "Building QWicks code update $version on $env:QWICKS_UPDATE_CHANNEL"
 
       - name: Typecheck
         shell: pwsh
         run: npm run typecheck
 
-      - name: Build Windows installer
+      - name: Build app code
         shell: pwsh
         run: |
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-          npm run dist:win
+          if (Test-Path out) { Remove-Item -Recurse -Force out }
+          if (Test-Path dist/code-update) { Remove-Item -Recurse -Force dist/code-update }
+          npm run build
 
-      - name: Write server latest.json
+      - name: Package code.zip
         shell: pwsh
         run: |
-          node scripts/write-server-update-json.cjs `
-            --dist dist `
+          $packageRoot = 'dist/code-update/package'
+          New-Item -ItemType Directory -Force -Path "$packageRoot/renderer" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$packageRoot/preload" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$packageRoot/qwicks" | Out-Null
+
+          Copy-Item -Recurse -Force out/renderer/* "$packageRoot/renderer/"
+          Copy-Item -Recurse -Force out/preload/* "$packageRoot/preload/"
+          Copy-Item -Recurse -Force qwicks/dist "$packageRoot/qwicks/dist"
+          Copy-Item -Force qwicks/package.json "$packageRoot/qwicks/package.json"
+
+          if (Test-Path dist/code-update/code.zip) { Remove-Item -Force dist/code-update/code.zip }
+          Compress-Archive -Path "$packageRoot/*" -DestinationPath dist/code-update/code.zip -Force
+
+      - name: Write release notes
+        shell: pwsh
+        env:
+          MANUAL_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          $manualNotes = "$env:MANUAL_RELEASE_NOTES".Trim()
+          if ($manualNotes) {
+            $notes = $manualNotes
+          } else {
+            $subject = git log -1 --pretty=%s
+            $notes = "Update: $subject"
+          }
+          Set-Content -Encoding utf8 -Path dist/code-update/release-notes.md -Value $notes
+
+      - name: Write code latest.json
+        shell: pwsh
+        run: |
+          node scripts/write-code-update-json.cjs `
+            --dist dist/code-update `
+            --package dist/code-update/code.zip `
             --platform win `
             --channel "$env:QWICKS_UPDATE_CHANNEL" `
-            --base-url "$env:QWICKS_UPDATE_BASE_URL"
+            --base-url "$env:QWICKS_UPDATE_BASE_URL" `
+            --version "${{ steps.version.outputs.version }}" `
+            --min-shell-version "$env:QWICKS_MIN_SHELL_VERSION" `
+            --release-notes-file dist/code-update/release-notes.md
 
-      - name: Upload build artifact
+      - name: Upload code update artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QWicks-${{ steps.version.outputs.version }}-win-x64
+          name: QWicks-${{ steps.version.outputs.version }}-code-update
           path: |
-            dist/QWicks-*-win-x64.exe
-            dist/QWicks-*-win-x64.exe.blockmap
-            dist/latest.yml
-            dist/latest.json
+            dist/code-update/code.zip
+            dist/code-update/latest.json
+            dist/code-update/release-notes.md
           if-no-files-found: error
 
-      - name: Deploy update files to Aliyun server
+      - name: Deploy code update to Aliyun server
         shell: pwsh
         env:
           SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST || secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}
@@ -135,14 +177,9 @@ jobs:
           & ssh @sshArgs $remote "mkdir -p '$remoteDir'"
           if ($LASTEXITCODE -ne 0) { throw "Failed to create remote update directory" }
 
-          $files = @(
-            'dist/latest.yml',
-            'dist/latest.json'
-          ) + (Get-ChildItem -Path 'dist/QWicks-*-win-x64.exe','dist/QWicks-*-win-x64.exe.blockmap' -File).FullName
-
-          foreach ($file in $files) {
+          foreach ($file in @('dist/code-update/code.zip', 'dist/code-update/latest.json')) {
             & scp @scpArgs $file "${remote}:$remoteDir/"
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload $file" }
           }
 
-          Write-Host "Uploaded update feed to $env:QWICKS_UPDATE_BASE_URL/channels/$env:QWICKS_UPDATE_CHANNEL/latest/"
+          Write-Host "Uploaded code update feed to $env:QWICKS_UPDATE_BASE_URL/channels/$env:QWICKS_UPDATE_CHANNEL/latest/"

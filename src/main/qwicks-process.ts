@@ -22,6 +22,7 @@ import {
   buildQWicksServeArgs,
   resolveQWicksExecutable
 } from './resolve-qwicks-binary'
+import { resolveHotCodeQWicksRoot } from './code-update'
 import {
   QWicksConfigSchema,
   QWicksServeConfigSchema,
@@ -223,9 +224,10 @@ function createQWicksChildLogCapture(pid: number | undefined): QWicksChildLogCap
 }
 
 function appRoot(): string {
-  return app.isPackaged
+  const bundledRoot = app.isPackaged
     ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
     : app.getAppPath()
+  return resolveHotCodeQWicksRoot(bundledRoot)
 }
 
 function resolveNodeScriptCommand(command: string): string {
