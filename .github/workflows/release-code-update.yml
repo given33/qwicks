@@ -36,7 +36,7 @@ jobs:
     env:
       QWICKS_UPDATE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
       QWICKS_UPDATE_BASE_URL: ${{ vars.QWICKS_UPDATE_BASE_URL || 'http://8.138.40.16/qwicks' }}
-      QWICKS_SERVER_DEPLOY_PATH: ${{ vars.QWICKS_SERVER_DEPLOY_PATH }}
+      QWICKS_SERVER_DEPLOY_PATH: ${{ vars.QWICKS_SERVER_DEPLOY_PATH || '/www/wwwroot/update/qwicks' }}
       QWICKS_MIN_SHELL_VERSION: ${{ vars.QWICKS_MIN_SHELL_VERSION || '0.1.0' }}
     steps:
       - name: Checkout
@@ -200,7 +200,7 @@ jobs:
 
           $deployBase = "$env:QWICKS_SERVER_DEPLOY_PATH".Trim()
           if (-not $deployBase) {
-            $detectRootScript = 'if command -v nginx >/dev/null 2>&1; then nginx -T 2>/dev/null | awk "/^[[:space:]]*(root|alias)[[:space:]]+/ { gsub(\";\", \"\", \$2); print \$2 }"; fi; for p in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/wwwroot/8.138.40.16 /www/server/nginx/html /usr/local/nginx/html /var/www /home/wwwroot/default /data/wwwroot/default; do [ -d "$p" ] && printf "%s\n" "$p"; done'
+            $detectRootScript = 'for base in /usr/share/nginx /var/www /www /home/wwwroot /data/wwwroot /usr/local/nginx; do [ -d "$base" ] && find "$base" -maxdepth 6 -type f -name latest.json -exec dirname {} \; 2>/dev/null; done; if command -v nginx >/dev/null 2>&1; then nginx -T 2>/dev/null | awk "/^[[:space:]]*(root|alias)[[:space:]]+/ { gsub(\";\", \"\", \$2); print \$2 }"; fi; for p in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/wwwroot/8.138.40.16 /www/server/nginx/html /usr/local/nginx/html /var/www /home/wwwroot/default /data/wwwroot/default; do [ -d "$p" ] && printf "%s\n" "$p"; done'
             $candidateLines = @(& ssh @sshArgs $remote $detectRootScript)
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to list remote web root candidates over SSH."
