@@ -254,3 +254,32 @@ export const PeerRecord = z
   })
   .strict()
 export type PeerRecord = z.infer<typeof PeerRecord>
+
+/* ------------------------------------------------------------------ *
+ * Remote tool calling (RFC 003 §6)
+ * ------------------------------------------------------------------ */
+
+export const ToolCallRequest = z
+  .object({
+    callId: z.string().min(1),
+    ownerDeviceId: z.string().min(1),
+    name: z.string().min(1),
+    version: z.string().optional(),
+    arguments: z.record(z.string(), z.unknown()),
+    taskId: z.string().optional(),
+    idempotencyKey: z.string().min(1),
+    deadline: z.string().optional()
+  })
+  .strict()
+export type ToolCallRequest = z.infer<typeof ToolCallRequest>
+
+export const ToolResult = z
+  .object({
+    callId: z.string().min(1),
+    status: z.enum(['success', 'error', 'denied', 'timeout', 'truncated']),
+    output: z.unknown(),
+    truncated: z.boolean().optional(),
+    error: z.string().optional()
+  })
+  .strict()
+export type ToolResult = z.infer<typeof ToolResult>
