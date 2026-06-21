@@ -13,6 +13,7 @@ import qwicksTrayPng from '../asset/img/qwicks_tray.png?url'
 import { createAppIcon, pickTrayIcon, prepareTrayIcon } from './app-icon'
 import { buildTrayMenuTemplate, parseTrayThreads, type TrayThreadSummary } from './tray-session-menu'
 import { configureLinuxWaylandImeSwitches } from './app-command-line'
+import { registerEditContextMenu } from './edit-context-menu'
 import { configureAppIdentity } from './app-identity'
 import { runLegacyQWicksDataMigration } from './legacy-data-migration'
 import {
@@ -1132,6 +1133,8 @@ function createWindow(options: { suppressInitialShow?: boolean } = {}): void {
     if (!isMainFrame || !isHotCodePath(rendererIndexPath)) return
     recoverFromBrokenHotCode(`Hot update renderer failed to load: ${errorDescription}`)
   })
+  // 右键弹出原生编辑菜单:剪切 / 复制 / 粘贴 / 删除 / 全选,每项标注快捷键。
+  registerEditContextMenu(mainWindow.webContents, () => mainWindow)
   const showWindow = (): void => {
     if (options.suppressInitialShow) return
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return
