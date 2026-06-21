@@ -115,15 +115,24 @@ jobs:
           $sshDir = Join-Path $env:USERPROFILE '.ssh'
           New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
           $keyPath = Join-Path $sshDir 'qwicks_aliyun_deploy_key'
-          $key = $env:SERVER_SSH_KEY.Replace("`r`n", "`n").Trim()
-          if ($key -notmatch 'BEGIN OPENSSH PRIVATE KEY') {
-            $key = "-----BEGIN OPENSSH PRIVATE KEY-----`n$key"
+          $beginMarker = '-----BEGIN OPENSSH PRIVATE KEY-----'
+          $endMarker = '-----END OPENSSH PRIVATE KEY-----'
+          $key = [string]$env:SERVER_SSH_KEY
+          $key = $key.Replace('\r\n', "`n").Replace('\n', "`n")
+          $key = $key.Replace("`r`n", "`n").Replace("`r", "`n")
+          $key = $key.Replace([string][char]0xFEFF, '').Replace([string][char]0x200B, '').Trim()
+          $body = $key.Replace($beginMarker, '').Replace($endMarker, '') -replace '\s+', ''
+          if (-not $body) {
+            throw "SERVER_SSH_KEY is empty after normalization."
           }
-          if ($key -notmatch 'END OPENSSH PRIVATE KEY') {
-            $key = "$key`n-----END OPENSSH PRIVATE KEY-----"
-          }
-          $key | Set-Content -NoNewline -Encoding ascii -Path $keyPath
+          $bodyLines = [regex]::Matches($body, '.{1,70}') | ForEach-Object { $_.Value }
+          $normalizedKey = "$beginMarker`n$($bodyLines -join "`n")`n$endMarker`n"
+          [System.IO.File]::WriteAllText($keyPath, $normalizedKey, [System.Text.Encoding]::ASCII)
           icacls $keyPath /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+          & ssh-keygen -y -f $keyPath *> $null
+          if ($LASTEXITCODE -ne 0) {
+            throw "SERVER_SSH_KEY is not a valid OpenSSH private key. Paste the complete key, including BEGIN/END lines, into the GitHub secret."
+          }
 
           $remote = "$env:SERVER_SSH_USER@$env:SERVER_SSH_HOST"
           $sshArgs = @('-i', $keyPath, '-p', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
