@@ -31,10 +31,12 @@ The normal update directory contains:
 - `latest.json`: code-update manifest read by QWicks.
 - `code.zip`: renderer, preload, and `qwicks/dist` runtime code.
 
-For the stable channel these files live under:
+By default the workflow detects the Nginx static web root on the server and
+uploads into its `qwicks` subdirectory. For the stable channel these files live
+under:
 
 ```text
-/var/www/qwicks/channels/stable/latest/
+<nginx-web-root>/qwicks/channels/stable/latest/
 ```
 
 The server should expose that path publicly as:
@@ -67,7 +69,7 @@ The fallback Windows installer feed contains:
 For the stable channel these files live under:
 
 ```text
-/var/www/qwicks/channels/stable/latest/
+<nginx-web-root>/qwicks/channels/stable/latest/
 ```
 
 The server should expose that path publicly as:
@@ -87,6 +89,8 @@ Optional:
 - `SERVER_SSH_USER`, default `root`
 - `SERVER_SSH_HOST`, default `8.138.40.16`
 - `SERVER_SSH_PORT`, default `22`
+- `QWICKS_SERVER_DEPLOY_PATH`, override when the server should upload somewhere
+  other than the detected `<nginx-web-root>/qwicks`
 
 ## Source Policy
 
