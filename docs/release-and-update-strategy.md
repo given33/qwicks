@@ -31,9 +31,9 @@ The normal update directory contains:
 - `latest.json`: code-update manifest read by QWicks.
 - `code.zip`: renderer, preload, and `qwicks/dist` runtime code.
 
-By default the workflow detects the Nginx static web root on the server and
-uploads into its `qwicks` subdirectory. For the stable channel these files live
-under:
+By default the workflow detects the Nginx static web root on the server. It
+first looks for the directory currently serving `/latest.json`, then uploads
+into its `qwicks` subdirectory. For the stable channel these files live under:
 
 ```text
 <nginx-web-root>/qwicks/channels/stable/latest/

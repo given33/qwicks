@@ -151,8 +151,7 @@ jobs:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY || secrets.ALIYUN_SSH_KEY }}
         run: |
           if (-not $env:SERVER_SSH_KEY) {
-            Write-Host "Skipping deploy: set SERVER_SSH_KEY secret to enable server upload."
-            exit 0
+            throw "Set the SERVER_SSH_KEY GitHub secret to enable server upload."
           }
 
           $sshDir = Join-Path $env:USERPROFILE '.ssh'
@@ -175,6 +174,12 @@ jobs:
           $deployBase = "$env:QWICKS_SERVER_DEPLOY_PATH".Trim()
           if (-not $deployBase) {
             $detectRootScript = @'
+          for candidate in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/server/nginx/html /usr/local/nginx/html /var/www; do
+            if [ -f "$candidate/latest.json" ]; then
+              echo "$candidate"
+              exit 0
+            fi
+          done
           root=""
           if command -v nginx >/dev/null 2>&1; then
             root=$(nginx -T 2>/dev/null | awk '/^[[:space:]]*root[[:space:]]+/ { gsub(";", "", $2); print $2; exit }')
