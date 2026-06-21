@@ -175,10 +175,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "SERVER_SSH_KEY is not a valid OpenSSH private key. Paste the complete key, including BEGIN/END lines, into the GitHub secret."
           }
+          Write-Host "SSH key format validated."
+          $fingerprint = (& ssh-keygen -lf $keyPath) -join ' '
+          Write-Host "Deploy key fingerprint: $fingerprint"
 
           $remote = "$env:SERVER_SSH_USER@$env:SERVER_SSH_HOST"
-          $sshArgs = @('-i', $keyPath, '-p', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
-          $scpArgs = @('-i', $keyPath, '-P', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
+          $sshArgs = @('-i', $keyPath, '-p', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no', '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15')
+          $scpArgs = @('-i', $keyPath, '-P', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no', '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15')
+          & ssh @sshArgs $remote "echo QWICKS_SSH_OK"
+          if ($LASTEXITCODE -ne 0) {
+            throw "SSH login failed. Check SERVER_SSH_USER, SERVER_SSH_HOST, SERVER_SSH_PORT, and make sure the matching public key is in the server user's ~/.ssh/authorized_keys."
+          }
 
           $deployBase = "$env:QWICKS_SERVER_DEPLOY_PATH".Trim()
           if (-not $deployBase) {
