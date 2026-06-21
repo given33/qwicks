@@ -107,26 +107,33 @@ jobs:
       - name: Deploy update files to Aliyun server
         shell: pwsh
         env:
-          ALIYUN_SSH_HOST: ${{ secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}
-          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT || '22' }}
-          ALIYUN_SSH_USER: ${{ secrets.ALIYUN_SSH_USER }}
-          ALIYUN_SSH_KEY: ${{ secrets.ALIYUN_SSH_KEY }}
+          SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST || secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}
+          SERVER_SSH_PORT: ${{ secrets.SERVER_SSH_PORT || secrets.ALIYUN_SSH_PORT || '22' }}
+          SERVER_SSH_USER: ${{ secrets.SERVER_SSH_USER || secrets.ALIYUN_SSH_USER || 'root' }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY || secrets.ALIYUN_SSH_KEY }}
         run: |
-          if (-not $env:ALIYUN_SSH_USER -or -not $env:ALIYUN_SSH_KEY) {
-            Write-Host "Skipping deploy: set ALIYUN_SSH_USER and ALIYUN_SSH_KEY secrets to enable server upload."
+          if (-not $env:SERVER_SSH_KEY) {
+            Write-Host "Skipping deploy: set SERVER_SSH_KEY secret to enable server upload."
             exit 0
           }
 
           $sshDir = Join-Path $env:USERPROFILE '.ssh'
           New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
           $keyPath = Join-Path $sshDir 'qwicks_aliyun_deploy_key'
-          $env:ALIYUN_SSH_KEY.Replace("`r`n", "`n") | Set-Content -NoNewline -Encoding ascii -Path $keyPath
+          $key = $env:SERVER_SSH_KEY.Replace("`r`n", "`n").Trim()
+          if ($key -notmatch 'BEGIN OPENSSH PRIVATE KEY') {
+            $key = "-----BEGIN OPENSSH PRIVATE KEY-----`n$key"
+          }
+          if ($key -notmatch 'END OPENSSH PRIVATE KEY') {
+            $key = "$key`n-----END OPENSSH PRIVATE KEY-----"
+          }
+          $key | Set-Content -NoNewline -Encoding ascii -Path $keyPath
           icacls $keyPath /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
 
-          $remote = "$env:ALIYUN_SSH_USER@$env:ALIYUN_SSH_HOST"
+          $remote = "$env:SERVER_SSH_USER@$env:SERVER_SSH_HOST"
           $remoteDir = "$env:QWICKS_SERVER_DEPLOY_PATH/channels/$env:QWICKS_UPDATE_CHANNEL/latest"
-          $sshArgs = @('-i', $keyPath, '-p', $env:ALIYUN_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
-          $scpArgs = @('-i', $keyPath, '-P', $env:ALIYUN_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
+          $sshArgs = @('-i', $keyPath, '-p', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
+          $scpArgs = @('-i', $keyPath, '-P', $env:SERVER_SSH_PORT, '-o', 'StrictHostKeyChecking=no')
 
           & ssh @sshArgs $remote "mkdir -p '$remoteDir'"
           if ($LASTEXITCODE -ne 0) { throw "Failed to create remote update directory" }

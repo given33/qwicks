@@ -48,13 +48,13 @@ http://8.138.40.16/qwicks/channels/stable/latest/
 
 Required for automatic upload:
 
-- `ALIYUN_SSH_USER`
-- `ALIYUN_SSH_KEY`
+- `SERVER_SSH_KEY`
 
 Optional:
 
-- `ALIYUN_SSH_HOST`, default `8.138.40.16`
-- `ALIYUN_SSH_PORT`, default `22`
+- `SERVER_SSH_USER`, default `root`
+- `SERVER_SSH_HOST`, default `8.138.40.16`
+- `SERVER_SSH_PORT`, default `22`
 
 ## Source Policy
 

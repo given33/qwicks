@@ -17,12 +17,15 @@ location /qwicks/ {
 }
 ```
 
-GitHub 仓库需要配置 Secrets:
+GitHub 仓库至少需要配置这个 Secret:
 
-- `ALIYUN_SSH_USER`: 服务器 SSH 用户名
-- `ALIYUN_SSH_KEY`: 对应的私钥
-- `ALIYUN_SSH_HOST`: 可选,默认 `8.138.40.16`
-- `ALIYUN_SSH_PORT`: 可选,默认 `22`
+- `SERVER_SSH_KEY`: 服务器 SSH 私钥,名称必须一字不差
+
+可选 Secrets:
+
+- `SERVER_SSH_USER`: 服务器 SSH 用户名,默认 `root`
+- `SERVER_SSH_HOST`: 默认 `8.138.40.16`
+- `SERVER_SSH_PORT`: 默认 `22`
 
 GitHub 仓库可选配置 Variables:
 
