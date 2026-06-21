@@ -189,29 +189,14 @@ jobs:
 
           $deployBase = "$env:QWICKS_SERVER_DEPLOY_PATH".Trim()
           if (-not $deployBase) {
-            $detectRootScript = @'
-          for candidate in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/server/nginx/html /usr/local/nginx/html /var/www; do
-            if [ -f "$candidate/latest.json" ]; then
-              echo "$candidate"
-              exit 0
-            fi
-          done
-          root=""
-          if command -v nginx >/dev/null 2>&1; then
-            root=$(nginx -T 2>/dev/null | awk '/^[[:space:]]*root[[:space:]]+/ { gsub(";", "", $2); print $2; exit }')
-          fi
-          if [ -n "$root" ]; then
-            echo "$root"
-          elif [ -d /usr/share/nginx/html ]; then
-            echo /usr/share/nginx/html
-          elif [ -d /var/www/html ]; then
-            echo /var/www/html
-          else
-            echo /var/www/qwicks-public
-          fi
-          '@
-            $webRoot = (& ssh @sshArgs $remote $detectRootScript | Select-Object -First 1).Trim()
-            if (-not $webRoot) { throw "Failed to detect remote web root" }
+            $detectRootScript = 'for p in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/server/nginx/html /usr/local/nginx/html /var/www; do [ -f "$p/latest.json" ] && { printf "%s\n" "$p"; exit 0; }; done; for p in /usr/share/nginx/html /var/www/html /www/wwwroot/default /www/server/nginx/html /usr/local/nginx/html /var/www; do [ -d "$p" ] && { printf "%s\n" "$p"; exit 0; }; done; printf "%s\n" /var/www/qwicks-public'
+            $webRootLines = @(& ssh @sshArgs $remote $detectRootScript)
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to detect remote web root over SSH."
+            }
+            $webRoot = ($webRootLines | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1)
+            if (-not $webRoot) { throw "Failed to detect remote web root: remote command returned no output." }
+            $webRoot = $webRoot.Trim()
             $deployBase = "$webRoot/qwicks"
             Write-Host "Detected server deploy path: $deployBase"
           }
