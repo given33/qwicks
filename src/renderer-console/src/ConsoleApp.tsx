@@ -15,6 +15,7 @@ import { SettingsTab } from './tabs/SettingsTab'
 import { PlaceholderTab } from './tabs/PlaceholderTab'
 import { FishingPanel } from './FishingPanel'
 import { FarmPanel } from './FarmPanel'
+import { MinigamePanel } from './MinigamePanel'
 import type { PetState } from '@shared/pet-state'
 import type { PetGrowth, PetStage } from '@shared/pet-growth'
 
@@ -104,7 +105,7 @@ export function ConsoleApp(): ReactElement {
 
       {/* tab 内容 */}
       <div style={contentStyle}>
-        {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} onFarm={() => setPanel('farm')} />}
+        {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} onFarm={() => setPanel('farm')} onMinigame={() => setPanel('minigame')} />}
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
         {tab === 'achievements' && <AchievementsTab state={state} />}
@@ -114,6 +115,7 @@ export function ConsoleApp(): ReactElement {
     </div>
     {panel === 'fishing' && <FishingPanel onClose={() => setPanel('none')} />}
     {panel === 'farm' && <FarmPanel onClose={() => setPanel('none')} />}
+    {panel === 'minigame' && <MinigamePanel onClose={() => setPanel('none')} />}
     </>
   )
 }
