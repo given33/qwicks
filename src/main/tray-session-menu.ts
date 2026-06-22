@@ -14,6 +14,7 @@ type TrayMenuActions = {
   newChat: () => void
   openApp: () => void
   togglePet: () => void
+  openPetConsole: () => void
   quit: () => void
 }
 
@@ -75,6 +76,7 @@ export function buildTrayMenuTemplate(input: {
       label: input.petVisible ? labels.hidePet : labels.showPet,
       click: input.actions.togglePet
     },
+    { label: labels.petConsole, click: input.actions.openPetConsole },
     { type: 'separator' },
     { label: labels.openApp, click: input.actions.openApp },
     { type: 'separator' },
@@ -126,6 +128,7 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
   newChat: string
   showPet: string
   hidePet: string
+  petConsole: string
   openApp: string
   quit: string
 } {
@@ -137,6 +140,7 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
         newChat: '新建会话',
         showPet: '显示桌面宠物',
         hidePet: '隐藏桌面宠物',
+        petConsole: '宠物面板',
         openApp: '打开 QWicks',
         quit: '退出'
       }
@@ -147,6 +151,7 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
         newChat: 'New Chat',
         showPet: 'Show Desktop Pet',
         hidePet: 'Hide Desktop Pet',
+        petConsole: 'Pet Console',
         openApp: 'Open QWicks',
         quit: 'Exit'
       }

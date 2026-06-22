@@ -16,5 +16,5 @@
     },
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/src/**/*", "src/renderer/**/*.tsx", "src/renderer/**/*.ts", "src/renderer-pet/**/*", "src/shared/**/*", "src/preload/index.d.ts"]
+  "include": ["src/renderer/src/**/*", "src/renderer/**/*.tsx", "src/renderer/**/*.ts", "src/renderer-pet/**/*", "src/renderer-console/**/*", "src/shared/**/*", "src/preload/index.d.ts"]
 }

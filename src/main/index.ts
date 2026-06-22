@@ -93,6 +93,7 @@ import { isQWicksHealthResponseBody } from './qwicks-health'
 import { createPetWindow, isPetWindowVisible, registerPetIpc, relayoutPetWindowToDisplays, setPetWindowVisible } from './pet-window'
 import { getPetStateStore } from './pet-state-store'
 import { registerPetStateIpc } from './pet-ipc'
+import { toggleConsoleWindow } from './pet-console-window'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -470,6 +471,7 @@ function createTrayMenu(settings: AppSettingsV1, threads: TrayThreadSummary[]): 
       openThread: (threadId) => dispatchTrayAction({ type: 'open-thread', threadId }),
       newChat: () => dispatchTrayAction({ type: 'new-chat' }),
       togglePet: togglePetFromTray,
+      openPetConsole: () => toggleConsoleWindow(),
       openApp: revealMainWindow,
       quit: quitFromTray
     }

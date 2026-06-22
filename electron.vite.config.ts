@@ -35,17 +35,18 @@ export default defineConfig({
       alias: {
         '@renderer': resolve('src/renderer/src'),
         '@rendererPet': resolve('src/renderer-pet/src'),
+        '@rendererConsole': resolve('src/renderer-console/src'),
         '@petAssets': resolve('src/asset/img/pet'),
         '@shared': resolve('src/shared')
       }
     },
     build: {
       rollupOptions: {
-        // 多页：主窗口 index + 桌面宠物 pet。两个 html 都在 src/renderer/（renderer root 内），
-        // 避免 vite 用相对路径 emit 导致 rollup 报错。pet 源码在 src/renderer-pet/src，经 alias 引用。
+        // 多页：主窗口 index + 桌面宠物 pet + 控制台 console。html 都在 src/renderer/。
         input: {
           index: resolve('src/renderer/index.html'),
-          pet: resolve('src/renderer/pet.html')
+          pet: resolve('src/renderer/pet.html'),
+          console: resolve('src/renderer/console.html')
         }
       }
     },

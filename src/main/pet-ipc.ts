@@ -6,6 +6,7 @@
  */
 import { BrowserWindow, ipcMain } from 'electron'
 import { getPetStateStore } from './pet-state-store'
+import { toggleConsoleWindow } from './pet-console-window'
 import {
   applyItemEffect,
   applySignIn,
@@ -107,5 +108,10 @@ export function registerPetStateIpc(): void {
       return r.state
     })
     return { ok: true, awarded }
+  })
+
+  // 切换控制台窗口显隐（M4-T7）
+  ipcMain.handle('pet:toggle-console', () => {
+    toggleConsoleWindow()
   })
 }
