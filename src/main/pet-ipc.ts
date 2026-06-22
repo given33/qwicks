@@ -19,6 +19,7 @@ import {
 import { addExp } from '../shared/pet-growth'
 import { canMarry, defaultMarriage, divorce, generateSuitor, layEgg, marry } from '../shared/pet-marriage'
 import { TICKLE_REACTIONS, resolveTickle, type TickleType } from '../shared/pet-tickle'
+import { canEnroll, canWork, completeEducation, defaultCareer, EDUCATION_LEVELS, workReward, type EducationLevel, type JobId } from '../shared/pet-career'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -241,5 +242,50 @@ export function registerPetStateIpc(): void {
     recordAndBroadcast('pet')
     void getDiaryStore().append('✨', reaction.text)
     return { ok: true, reaction }
+  })
+
+  // P3 学习：完成某学历（扣心情+时长，加属性+学历）
+  ipcMain.handle('pet:study', (_e, level: string) => {
+    let result: { ok: boolean; reason?: string } = { ok: false, reason: 'invalid' }
+    store.update((state) => {
+      const career = state.career ?? defaultCareer()
+      const check = canEnroll(career, level as EducationLevel)
+      if (!check.ok) {
+        result = { ok: false, reason: check.reason }
+        return state
+      }
+      const def = EDUCATION_LEVELS.find((e) => e.id === level)
+      const mood = Math.max(0, state.vitals.mood - (def?.cost.mood ?? 0))
+      result = { ok: true }
+      void getDiaryStore().append('🎓', `完成了${def?.name}学业`)
+      return {
+        ...state,
+        vitals: { ...state.vitals, mood },
+        career: completeEducation(career, level as EducationLevel)
+      }
+    })
+    return result
+  })
+
+  // P3 打工：得元宝，扣心情（疲劳）
+  ipcMain.handle('pet:work', (_e, jobId: string) => {
+    let result: { ok: boolean; reason?: string; coins?: number } = { ok: false, reason: 'invalid' }
+    store.update((state) => {
+      const career = state.career ?? defaultCareer()
+      const check = canWork(career, jobId as JobId)
+      if (!check.ok) {
+        result = { ok: false, reason: check.reason }
+        return state
+      }
+      const reward = workReward(jobId as JobId)
+      result = { ok: true, coins: reward.coins }
+      void getDiaryStore().append('💼', `打工赚了 ${reward.coins} 元宝`)
+      return {
+        ...state,
+        coins: state.coins + reward.coins,
+        vitals: { ...state.vitals, mood: Math.max(0, state.vitals.mood + reward.moodDelta) }
+      }
+    })
+    return result
   })
 }

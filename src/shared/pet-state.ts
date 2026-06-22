@@ -48,6 +48,8 @@ export type PetState = {
   achievements?: { unlocked: string[]; unlockedAt: Record<string, number> }
   /** M12 婚育状态。 */
   marriage?: import('./pet-marriage').MarriageState
+  /** P3 教育+职业状态。 */
+  career?: import('./pet-career').CareerState
 }
 
 /** 每小时衰减量（按 100 基准）。非线性：低值时衰减减缓。 */
