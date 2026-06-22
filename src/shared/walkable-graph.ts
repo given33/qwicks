@@ -111,8 +111,8 @@ export function findScreenPath(graph: WalkableGraph, from: ScreenId, to: ScreenI
         const path: ScreenId[] = [to]
         let node: ScreenId | null = to
         while (node !== null) {
-          const p = prev.get(node) ?? null
-          if (p === null) break
+          const p = prev.get(node)
+          if (p === undefined || p === null) break
           path.unshift(p)
           node = p
         }
