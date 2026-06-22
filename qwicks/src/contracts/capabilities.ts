@@ -253,7 +253,15 @@ export type AttachmentsCapabilityConfig = z.infer<typeof AttachmentsCapabilityCo
 
 export const MemoryCapabilityConfig = CapabilityToggleConfig.extend({
   scopes: z.array(z.enum(['user', 'workspace', 'project'])).default(['user', 'workspace', 'project']),
-  maxInjectedRecords: z.number().int().positive().default(8)
+  maxInjectedRecords: z.number().int().positive().default(8),
+  /**
+   * Memory storage backend. `'file'` (default) keeps the legacy JSON-per-record
+   * FileMemoryStore; `'dream'` switches to the Dream memory system (SQLite +
+   * embeddings + retrieval + lifecycle, phased in over P0-P6). Strangler
+   * migration: default stays `'file'` so existing behavior is unchanged until a
+   * deployment explicitly opts into Dream.
+   */
+  backend: z.enum(['file', 'dream']).default('file')
 }).strict()
 export type MemoryCapabilityConfig = z.infer<typeof MemoryCapabilityConfig>
 

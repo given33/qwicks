@@ -31,6 +31,7 @@ import { LocalWorkspaceInspector } from '../adapters/workspace/local-workspace-i
 import { createImmutablePrefix, setSystemPrompt } from '../cache/immutable-prefix.js'
 import {
   buildRuntimeCapabilityManifest,
+  type MemoryCapabilityConfig,
   type QWicksCapabilitiesConfig
 } from '../contracts/capabilities.js'
 import type { ApprovalPolicy, SandboxMode } from '../contracts/policy.js'
@@ -74,6 +75,9 @@ import {
 import { SkillRuntime } from '../skills/skill-runtime.js'
 import { resolveConfiguredHooks, type HooksConfig } from '../hooks/hook-config.js'
 import { FileMemoryStore } from '../memory/memory-store.js'
+import type { MemoryStore } from '../memory/memory-store.js'
+import { DreamMemoryStore } from '../dream/dream-store.js'
+import { SqliteMemoryRepository } from '../dream/storage/sqlite-repository.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
 import { createMeshRuntimeSlot } from '../mesh/integration/mesh-runtime-slot.js'
@@ -268,11 +272,7 @@ export async function createQWicksServeRuntime(
       })
     : undefined
   const memoryStore = options.capabilities?.memory.enabled
-    ? new FileMemoryStore({
-        rootDir: join(options.dataDir, 'memory'),
-        config: options.capabilities.memory,
-        nowIso
-      })
+    ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'))
     : undefined
   const imageGenProviders = buildImageGenToolProviders(options.capabilities?.imageGen, {
     attachmentStore,
@@ -765,4 +765,26 @@ export async function startQWicksServe(
       }
     }
   }
+}
+
+/**
+ * Select the memory store backend by capability config.
+ *
+ * Strangler migration: `backend: 'file'` (default) keeps the legacy
+ * JSON-per-record FileMemoryStore unchanged; `backend: 'dream'` switches to
+ * the Dream memory system (SQLite + lifecycle + embeddings, phased in P0-P6).
+ * Both implement the same `MemoryStore` interface, so the rest of the runtime
+ * (HTTP routes, LLM memory tools, agent-loop injection, mesh sync, GUI) is
+ * agnostic to the choice.
+ */
+function buildMemoryStore(
+  config: MemoryCapabilityConfig,
+  legacyRootDir: string
+): MemoryStore {
+  if (config.backend === 'dream') {
+    const sqlitePath = join(legacyRootDir, 'dream_memory.db')
+    const repository = new SqliteMemoryRepository({ sqlitePath })
+    return new DreamMemoryStore({ repository, config, sqlitePath })
+  }
+  return new FileMemoryStore({ rootDir: legacyRootDir, config })
 }
