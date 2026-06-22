@@ -22,6 +22,7 @@ import type { MemoryItem, MemoryLifecycleStatus, MemoryScope, MemoryType } from 
 import { MemoryLifecycleStatus as Status } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
 import type { VectorDb } from '../vectordb/base.js'
+import { recencyScore } from '../temporal/engine.js'
 
 // 对齐 Python _RETRIEVAL_EXCLUDED_STATUSES
 export const RETRIEVAL_EXCLUDED_STATUSES: ReadonlySet<MemoryLifecycleStatus> = new Set([
@@ -156,7 +157,7 @@ export class RetrievalPipeline {
       if (query.tags && !query.tags.every((t) => item.tags.includes(t))) continue
 
       // min_recency 硬过滤(对齐 Python)
-      const recency = recencyScore(item.updatedAt, halfLifeDays, this.now)
+      const recency = recencyScore(item.updatedAt, halfLifeDays, this.now())
       if (this.minRecency > 0 && recency < this.minRecency) continue
 
       const vectorScore = qvec ? this.cosineWithStored(item, qvec) : 0
@@ -270,18 +271,12 @@ export class RetrievalPipeline {
 }
 
 // ----------------------------------------------------------------
-// 时间衰减(对齐 temporal.engine.recency_score):exp(-Δt / half_life)
+// 时间衰减:统一走权威来源 temporal/engine.recencyScore(二进制半衰期 0.5**(age/half)),
+// 与 Python retrieval/pipeline.py(从 temporal.engine import recency_score)一致。
+// recencyScore 在顶部 import;这里 re-export 保持旧 import 路径兼容。
 // ----------------------------------------------------------------
 
-export function recencyScore(updatedAtIso: string, halfLifeDays: number, now: () => Date = () => new Date()): number {
-  try {
-    const updated = new Date(updatedAtIso).getTime()
-    const deltaDays = Math.max(0, (now().getTime() - updated) / 86_400_000)
-    return Math.exp(-deltaDays / Math.max(1, halfLifeDays))
-  } catch {
-    return 0
-  }
-}
+export { recencyScore } from '../temporal/engine.js'
 
 // ----------------------------------------------------------------
 // BM25 / exact / tokenize(对齐 bm25.py / exact_match.py 的简化版)

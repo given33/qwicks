@@ -188,12 +188,12 @@ describe('RetrievalPipeline — 5-channel hybrid scoring', () => {
     expect(scoreA).toBeGreaterThan(scoreB)
   })
 
-  it('recencyScore unit: decays exponentially with age', () => {
-    const now = () => new Date('2026-06-23T00:00:00Z')
+  it('recencyScore unit: binary half-life decay (authoritative, matches Python temporal.engine)', () => {
+    const now = new Date('2026-06-23T00:00:00Z')
     expect(recencyScore('2026-06-23T00:00:00Z', 60, now)).toBeCloseTo(1, 6)
-    // 60 days ago (one half-life) → exp(-1) ≈ 0.368 (exponential decay, not binary halving)
+    // 60 days ago (one half-life) → 0.5 (binary half-life, matches Python)
     const sixtyDaysAgo = new Date('2026-06-23T00:00:00Z').getTime() - 60 * 86_400_000
-    expect(recencyScore(new Date(sixtyDaysAgo).toISOString(), 60, now)).toBeCloseTo(Math.exp(-1), 2)
+    expect(recencyScore(new Date(sixtyDaysAgo).toISOString(), 60, now)).toBeCloseTo(0.5, 6)
     // very old → ~0
     expect(recencyScore('2020-01-01T00:00:00Z', 60, now)).toBeLessThan(0.01)
   })
