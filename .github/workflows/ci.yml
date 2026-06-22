@@ -1,0 +1,49 @@
+name: CI (qwicks runtime)
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.13.1
+
+jobs:
+  qwicks-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: qwicks/package-lock.json
+
+      - name: Setup Python (native modules: better-sqlite3)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install qwicks runtime deps
+        shell: pwsh
+        run: npm --prefix qwicks ci
+
+      - name: Typecheck
+        shell: pwsh
+        run: npm --prefix qwicks run typecheck
+
+      # The mesh feature's tests. The repo also has pre-existing tests that are
+      # environment-flaky; gate the mesh suite here and broaden once those are
+      # stabilized. vitest 4.x requires Node >= 20.12 (matches the release workflows).
+      - name: Run mesh test suite
+        shell: pwsh
+        run: npm --prefix qwicks run test -- tests/mesh
