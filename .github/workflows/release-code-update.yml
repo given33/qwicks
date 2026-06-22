@@ -50,6 +50,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check hot-update-safe change set
+        id: hot_safe
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -ne "push") {
+            "hot_safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Manual workflow dispatch may deploy a code update."
+            exit 0
+          }
+
+          $base = "${{ github.event.before }}".Trim()
+          if (-not $base -or $base -match '^0+$') {
+            $base = 'HEAD~1'
+          }
+          $files = @(git diff --name-only $base $env:GITHUB_SHA)
+          $unsafe = @($files | Where-Object { $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' })
+          if ($unsafe.Count -gt 0) {
+            Write-Host "Skipping server deploy because this push includes non-hot-update-safe files:"
+            $unsafe | ForEach-Object { Write-Host "  $_" }
+            "hot_safe=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "hot_safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -149,6 +173,7 @@ jobs:
           if-no-files-found: error
 
       - name: Deploy code update to Aliyun server
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         env:
           SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST || secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}
