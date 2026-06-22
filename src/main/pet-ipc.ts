@@ -6,6 +6,7 @@
  */
 import { BrowserWindow, ipcMain } from 'electron'
 import { getPetStateStore } from './pet-state-store'
+import { getDiaryStore } from './pet-diary-store'
 import { toggleConsoleWindow } from './pet-console-window'
 import {
   applyItemEffect,
@@ -37,10 +38,21 @@ export function registerPetStateIpc(): void {
     }
   }
 
-  // 记录动作 + 广播新成就的便捷封装
+  // 记录动作 + 广播新成就 + 写档案日志
   const recordAndBroadcast = (action: import('./pet-achievement-tracker').PetAction): void => {
     const newly = store.recordAction(action)
     for (const id of newly) broadcastAchievement(id)
+    // M8 写档案
+    const diaryIcon: Record<string, string> = {
+      feed: '🍖', bath: '🛁', cure: '💊', pet: '🤚', play: '🎾', signIn: '📅',
+      revive: '✨', collapse: '💀', activity: '✨', buy: '🛒'
+    }
+    const diaryText: Record<string, string> = {
+      feed: '吃了一顿饭', bath: '洗了个澡', cure: '看了病', pet: '被摸了摸头',
+      play: '玩了会儿', signIn: '完成了每日签到', revive: '被还魂丹救活',
+      collapse: '倒下了', activity: '做了一个活动', buy: '买了一件东西'
+    }
+    void getDiaryStore().append(diaryIcon[action] ?? '•', diaryText[action] ?? action)
   }
 
   // 状态变化广播
@@ -146,5 +158,18 @@ export function registerPetStateIpc(): void {
   // 切换控制台窗口显隐（M4-T7）
   ipcMain.handle('pet:toggle-console', () => {
     toggleConsoleWindow()
+  })
+
+  // M8 档案：读取日志
+  ipcMain.handle('pet:get-diary', async () => {
+    const d = getDiaryStore()
+    await d.load()
+    return d.get()
+  })
+
+  // M8 档案：追加日志（活动执行器/各事件调用）
+  ipcMain.handle('pet:diary-append', async (_e, icon: string, text: string) => {
+    await getDiaryStore().append(icon, text)
+    return { ok: true }
   })
 }

@@ -10,6 +10,7 @@ import { CareTab } from './tabs/CareTab'
 import { InventoryTab } from './tabs/InventoryTab'
 import { ShopTab } from './tabs/ShopTab'
 import { AchievementsTab } from './tabs/AchievementsTab'
+import { DiaryTab } from './tabs/DiaryTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { PlaceholderTab } from './tabs/PlaceholderTab'
 import type { PetState } from '@shared/pet-state'
@@ -26,7 +27,7 @@ const TABS: { id: TabId; label: string; active: boolean }[] = [
   { id: 'inventory', label: '库存', active: true },
   { id: 'shop', label: '商店', active: true },
   { id: 'achievements', label: '成就', active: true },
-  { id: 'diary', label: '档案', active: false },
+  { id: 'diary', label: '档案', active: true },
   { id: 'settings', label: '设置', active: true }
 ]
 
@@ -103,7 +104,7 @@ export function ConsoleApp(): ReactElement {
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
         {tab === 'achievements' && <AchievementsTab state={state} />}
-        {tab === 'diary' && <PlaceholderTab text="宠物档案（M8 即将开放）" />}
+        {tab === 'diary' && <DiaryTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
