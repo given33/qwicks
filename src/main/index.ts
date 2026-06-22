@@ -91,6 +91,8 @@ import { webhookUrl } from './claw-runtime-helpers'
 import { createTelegramRuntime, type TelegramRuntime, verifyTelegramBotToken } from './telegram-runtime'
 import { isQWicksHealthResponseBody } from './qwicks-health'
 import { createPetWindow, isPetWindowVisible, registerPetIpc, relayoutPetWindowToDisplays, setPetWindowVisible } from './pet-window'
+import { getPetStateStore } from './pet-state-store'
+import { registerPetStateIpc } from './pet-ipc'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -1655,6 +1657,9 @@ app.whenReady().then(async () => {
   // 桌面宠物透明置顶窗口（M1）。注册穿透切换 IPC + 创建窗口 + 监听显示器变化重铺。
   // 受 settings.pet.enabled 控制；关掉则不创建宠物窗口（后台保活也随之失效）。
   registerPetIpc()
+  // M4 生存系统：启动状态 store（读盘+离线补算+30s tick）+ 注册照料 IPC
+  registerPetStateIpc()
+  void getPetStateStore().start()
   screen.on('display-metrics-changed', () => relayoutPetWindowToDisplays())
   screen.on('display-added', () => relayoutPetWindowToDisplays())
   screen.on('display-removed', () => relayoutPetWindowToDisplays())
@@ -1714,6 +1719,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   isQuitting = true
   stopRuntimeWatchdog()
+  // M4: flush 宠物状态到盘（防丢）
+  void getPetStateStore().stop().catch(() => {})
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
   void stopManagedRuntimesForQuit()

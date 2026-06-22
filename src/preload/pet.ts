@@ -1,18 +1,32 @@
 /**
- * 桌面宠物窗口的 preload（M1）。
+ * 桌面宠物窗口的 preload（M1 起，M4 扩展）。
  *
- * petWindow 走 contextIsolation + sandbox，渲染层无法直接用 Node/Electron API。
- * 这里只暴露点击穿透切换这一个最小 API —— 渲染层热区检测后调用它，
- * 主进程据此 setIgnoreMouseEvents。后续模块（状态/动作）按需在此扩展。
- *
- * 用 ESM import（与 index.ts 一致），electron-vite 的 preload 配置会输出为 pet.cjs。
+ * 暴露给渲染层（petWindow + consoleWindow）的 API：
+ *   - setInteractive: 点击穿透切换（M1）
+ *   - getState/onStateChanged: 状态查询/订阅（M4）
+ *   - feed/bath/cure/useItem/buy/toggleConsole: 照料动作（M4）
  */
-
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('pet', {
-  /** 鼠标进入精灵热区时传 true（关穿透、可交互），离开时传 false（恢复穿透） */
   setInteractive: (interactive: boolean): void => {
     void ipcRenderer.invoke('pet:set-ignore-mouse-events', interactive)
+  },
+  getState: (): Promise<unknown> => ipcRenderer.invoke('pet:get-state'),
+  onStateChanged: (cb: (state: unknown) => void): (() => void) => {
+    const listener = (_e: unknown, state: unknown): void => cb(state)
+    ipcRenderer.on('pet:state-changed', listener)
+    return () => ipcRenderer.removeListener('pet:state-changed', listener)
+  },
+  feed: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:feed', itemId),
+  bath: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:bath', itemId),
+  cure: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:cure', itemId),
+  useItem: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:use-item', itemId),
+  buy: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:buy', itemId),
+  pet: (): Promise<unknown> => ipcRenderer.invoke('pet:pet'),
+  play: (): Promise<unknown> => ipcRenderer.invoke('pet:play'),
+  signIn: (): Promise<unknown> => ipcRenderer.invoke('pet:sign-in'),
+  toggleConsole: (): void => {
+    void ipcRenderer.invoke('pet:toggle-console')
   }
 })
