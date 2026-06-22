@@ -283,3 +283,46 @@ export const ToolResult = z
   })
   .strict()
 export type ToolResult = z.infer<typeof ToolResult>
+
+/* ------------------------------------------------------------------ *
+ * Remote memory query (RFC 004 §5)
+ * ------------------------------------------------------------------ */
+
+export const MemoryScope = z.enum(['public', 'collaboration', 'private'])
+
+export const MemoryChunk = z
+  .object({
+    chunkId: z.string().min(1),
+    text: z.string(),
+    score: z.number(),
+    scope: MemoryScope,
+    metadata: z.record(z.string(), z.unknown()),
+    provenance: z.string()
+  })
+  .strict()
+export type MemoryChunk = z.infer<typeof MemoryChunk>
+
+export const MemoryQueryRequest = z
+  .object({
+    queryId: z.string().min(1),
+    ownerDeviceId: z.string().min(1),
+    query: z.string().min(1),
+    topK: z.number().int().positive(),
+    scopes: z.array(MemoryScope).min(1),
+    taskId: z.string().optional(),
+    metadataFilter: z.record(z.string(), z.unknown()).optional(),
+    grantToken: z.string().optional(),
+    deadline: z.string().optional()
+  })
+  .strict()
+export type MemoryQueryRequest = z.infer<typeof MemoryQueryRequest>
+
+export const MemoryQueryResult = z
+  .object({
+    queryId: z.string().min(1),
+    chunks: z.array(MemoryChunk),
+    truncated: z.boolean(),
+    cacheable: z.boolean()
+  })
+  .strict()
+export type MemoryQueryResult = z.infer<typeof MemoryQueryResult>
