@@ -1672,6 +1672,12 @@ app.whenReady().then(async () => {
 }
 
 app.on('window-all-closed', () => {
+  // 后台保活（M1-T7）：当桌面宠物窗口存在时，主窗口关闭不应退出 app——
+  // 宠物继续留在桌面，只有托盘"退出"或 before-quit 才真正退出。
+  // 真退出由 isQuitting 标记驱动（quitFromTray / before-quit 会先置 true）。
+  if (BrowserWindow.getAllWindows().some((win) => win !== mainWindow)) {
+    return
+  }
   void stopManagedRuntimes().catch((error) => {
     console.warn('[qwicks-gui] failed to stop QWicks runtime:', error)
   })
