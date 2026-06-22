@@ -40,5 +40,6 @@ contextBridge.exposeInMainWorld('pet', {
   diaryAppend: (icon: string, text: string): Promise<unknown> => ipcRenderer.invoke('pet:diary-append', icon, text),
   marry: (): Promise<unknown> => ipcRenderer.invoke('pet:marry'),
   layEgg: (): Promise<unknown> => ipcRenderer.invoke('pet:lay-egg'),
-  divorce: (): Promise<unknown> => ipcRenderer.invoke('pet:divorce')
+  divorce: (): Promise<unknown> => ipcRenderer.invoke('pet:divorce'),
+  tickle: (type: string): Promise<unknown> => ipcRenderer.invoke('pet:tickle', type)
 })

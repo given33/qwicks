@@ -7,6 +7,7 @@
  */
 import { useEffect, useState, type ReactElement } from 'react'
 import { CareTab } from './tabs/CareTab'
+import { TickleTab } from './tabs/TickleTab'
 import { InventoryTab } from './tabs/InventoryTab'
 import { ShopTab } from './tabs/ShopTab'
 import { AchievementsTab } from './tabs/AchievementsTab'
@@ -24,10 +25,11 @@ function stageLabel(stage: PetStage): string {
   return stage === 'egg' ? '蛋' : stage === 'kid' ? '幼年' : '成年'
 }
 
-type TabId = 'care' | 'inventory' | 'shop' | 'achievements' | 'diary' | 'settings'
+type TabId = 'care' | 'interact' | 'inventory' | 'shop' | 'achievements' | 'diary' | 'settings'
 
 const TABS: { id: TabId; label: string; active: boolean }[] = [
   { id: 'care', label: '照料', active: true },
+  { id: 'interact', label: '互动', active: true },
   { id: 'inventory', label: '库存', active: true },
   { id: 'shop', label: '商店', active: true },
   { id: 'achievements', label: '成就', active: true },
@@ -107,6 +109,7 @@ export function ConsoleApp(): ReactElement {
       {/* tab 内容 */}
       <div style={contentStyle}>
         {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} onFarm={() => setPanel('farm')} onMinigame={() => setPanel('minigame')} onMarriage={() => setPanel('marriage')} />}
+        {tab === 'interact' && <TickleTab />}
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
         {tab === 'achievements' && <AchievementsTab state={state} />}

@@ -18,6 +18,7 @@ import {
 } from '../shared/pet-state'
 import { addExp } from '../shared/pet-growth'
 import { canMarry, defaultMarriage, divorce, generateSuitor, layEgg, marry } from '../shared/pet-marriage'
+import { TICKLE_REACTIONS, resolveTickle, type TickleType } from '../shared/pet-tickle'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -223,5 +224,22 @@ export function registerPetStateIpc(): void {
   ipcMain.handle('pet:divorce', () => {
     store.update((state) => ({ ...state, marriage: divorce(state.marriage ?? defaultMarriage()) }))
     return { ok: true }
+  })
+
+  // P2 Tickle 互动：摸/戳/逗/挑/痒 等 12 种，每种触发独特反应
+  ipcMain.handle('pet:tickle', (_e, type: string) => {
+    if (!(type in TICKLE_REACTIONS)) return { ok: false }
+    const reaction = resolveTickle(type as TickleType)
+    store.update((state) => ({
+      ...state,
+      vitals: {
+        ...state.vitals,
+        mood: Math.max(0, Math.min(100, state.vitals.mood + reaction.moodDelta)),
+        hunger: Math.max(0, Math.min(100, state.vitals.hunger + (reaction.hungerDelta ?? 0)))
+      }
+    }))
+    recordAndBroadcast('pet')
+    void getDiaryStore().append('✨', reaction.text)
+    return { ok: true, reaction }
   })
 }
