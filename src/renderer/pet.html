@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>QWicks Pet</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        /* 透明窗体：body 必须透明，否则会挡住桌面 */
+        background: transparent;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+      }
+      #root { width: 100vw; height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="../renderer-pet/src/main.tsx"></script>
+  </body>
+</html>

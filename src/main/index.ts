@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, safeStorage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, safeStorage, screen, Tray } from 'electron'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -89,6 +89,7 @@ import {
 import { webhookUrl } from './claw-runtime-helpers'
 import { createTelegramRuntime, type TelegramRuntime, verifyTelegramBotToken } from './telegram-runtime'
 import { isQWicksHealthResponseBody } from './qwicks-health'
+import { createPetWindow, registerPetIpc, relayoutPetWindowToDisplays } from './pet-window'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -1630,6 +1631,14 @@ app.whenReady().then(async () => {
 
   createWindow({ suppressInitialShow: shouldStartHidden(initial) })
   traceStartup('createWindow:returned')
+
+  // 桌面宠物透明置顶窗口（M1）。注册穿透切换 IPC + 创建窗口 + 监听显示器变化重铺。
+  registerPetIpc()
+  createPetWindow()
+  screen.on('display-metrics-changed', () => relayoutPetWindowToDisplays())
+  screen.on('display-added', () => relayoutPetWindowToDisplays())
+  screen.on('display-removed', () => relayoutPetWindowToDisplays())
+  traceStartup('pet window:created')
   void loadGuiUpdaterModule()
     .then((module) => module.showPostUpdateReleaseNotes())
     .catch((error) => {
