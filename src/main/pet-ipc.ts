@@ -172,4 +172,10 @@ export function registerPetStateIpc(): void {
     await getDiaryStore().append(icon, text)
     return { ok: true }
   })
+
+  // M9-M11 奖励元宝（钓鱼/农场/小游戏结算用）
+  ipcMain.handle('pet:reward', (_e, amount: number) => {
+    store.update((state) => ({ ...state, coins: state.coins + Math.max(0, Math.floor(amount)) }))
+    return { ok: true }
+  })
 }

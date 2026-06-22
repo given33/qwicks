@@ -34,5 +34,7 @@ contextBridge.exposeInMainWorld('pet', {
   toggleConsole: (): void => {
     void ipcRenderer.invoke('pet:toggle-console')
   },
-  getDiary: (): Promise<unknown> => ipcRenderer.invoke('pet:get-diary')
+  getDiary: (): Promise<unknown> => ipcRenderer.invoke('pet:get-diary'),
+  reward: (amount: number): Promise<unknown> => ipcRenderer.invoke('pet:reward', amount),
+  diaryAppend: (icon: string, text: string): Promise<unknown> => ipcRenderer.invoke('pet:diary-append', icon, text)
 })

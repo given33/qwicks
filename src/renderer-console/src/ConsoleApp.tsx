@@ -13,6 +13,7 @@ import { AchievementsTab } from './tabs/AchievementsTab'
 import { DiaryTab } from './tabs/DiaryTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { PlaceholderTab } from './tabs/PlaceholderTab'
+import { FishingPanel } from './FishingPanel'
 import type { PetState } from '@shared/pet-state'
 import type { PetGrowth, PetStage } from '@shared/pet-growth'
 
@@ -44,6 +45,7 @@ function getBridge(): PetBridge | null {
 export function ConsoleApp(): ReactElement {
   const [state, setState] = useState<PetState | null>(null)
   const [tab, setTab] = useState<TabId>('care')
+  const [panel, setPanel] = useState<'none' | 'fishing' | 'farm' | 'minigame'>('none')
 
   useEffect(() => {
     const bridge = getBridge()
@@ -55,6 +57,7 @@ export function ConsoleApp(): ReactElement {
 
   const v = state?.vitals
   return (
+    <>
     <div style={panelStyle}>
       {/* 标题栏（拖动区 + 关闭） */}
       <div style={titleBarStyle}>
@@ -100,7 +103,7 @@ export function ConsoleApp(): ReactElement {
 
       {/* tab 内容 */}
       <div style={contentStyle}>
-        {tab === 'care' && <CareTab state={state} />}
+        {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} />}
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
         {tab === 'achievements' && <AchievementsTab state={state} />}
@@ -108,6 +111,8 @@ export function ConsoleApp(): ReactElement {
         {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
+    {panel === 'fishing' && <FishingPanel onClose={() => setPanel('none')} />}
+    </>
   )
 }
 
