@@ -1,43 +1,62 @@
 /**
- * 桌面宠物舞台（M1 最小实现）。
+ * 桌面宠物舞台（M1：占位精灵 + 穿透切换 + 漫步引擎）。
  *
- * 当前职责：
- *   - 渲染一个暖黄占位精灵（M2 裁切精灵图后替换为真实姿态）
- *   - 监听 forward 透传的 mousemove，鼠标进入/离开精灵 bbox 时调 IPC 切换穿透态
- *     （R2 点击穿透准确性的渲染层一半，主进程一半在 pet-window.ts）
+ * 职责：
+ *   - 渲染暖黄占位精灵（M2 裁切精灵图后替换）
+ *   - 监听 forward mousemove 做热区穿透切换（R2）
+ *   - rAF 驱动漫步状态机（M1-T6）：idle 待机 ↔ wander 走向目标，当前屏内
  *
- * 后续扩展：漫步引擎（M1-T6）、物理交互（M3）、情绪表情（M4）都在此挂载。
+ * M3 起会在此扩展 dragging/falling/跨屏寻路/物理阴影/情绪表情等。
  */
 
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { isPointInBbox } from './bbox'
+import {
+  hasReachedTarget,
+  isMotionTimedOut,
+  makeIdle,
+  transitionPetMotion,
+  type MotionContext,
+  type PetMotionState
+} from './pet-motion'
 
-// 暖黄形象的品牌色（M2 裁切后替换为真实精灵图，这里先占位）
 const PET_COLOR = '#f5c451'
 const PET_SIZE = { width: 96, height: 120 }
+const WALK_SPEED_PX_PER_MS = 0.06 // 约 60px/s
 
-// 渲染层通过 preload 暴露的 window.pet 调用穿透切换
 type PetBridge = { setInteractive: (interactive: boolean) => void }
 function getPetBridge(): PetBridge | null {
   return typeof window !== 'undefined' ? (window as unknown as { pet?: PetBridge }).pet ?? null : null
 }
 
+/** 取当前屏（精灵所在屏）的可走区域 = 整个窗口（透明窗铺满虚拟桌面）。M3 起按真实屏 work area 收窄。 */
+function currentWalkArea(): { x: number; y: number; width: number; height: number } {
+  return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
+}
+
 export function PetStage(): ReactElement {
-  // 精灵位置（窗口内坐标）。M1 先固定在窗口中部偏下；漫步引擎（M1-T6）接管后动态变化。
   const [position, setPosition] = useState(() => ({
     x: Math.max(0, Math.floor(window.innerWidth / 2 - PET_SIZE.width / 2)),
     y: Math.max(0, Math.floor(window.innerHeight / 2 - PET_SIZE.height / 2))
   }))
+  const positionRef = useRef(position)
+  positionRef.current = position
+
+  const motionRef = useRef<PetMotionState>(makeIdle(performance.now()))
   const interactiveRef = useRef(false)
 
-  // 监听 forward 透传的 mousemove，做热区检测切换穿透态。
-  // 穿透态下普通鼠标事件（mouseenter/leave on element）不会触发，必须靠 mousemove + bbox 判定。
+  // 热区穿透切换：forward mousemove 检测精灵 bbox
   useEffect(() => {
-    const bbox = () => ({ x: position.x, y: position.y, width: PET_SIZE.width, height: PET_SIZE.height })
     const onMove = (event: MouseEvent): void => {
       const bridge = getPetBridge()
       if (!bridge) return
-      const inside = isPointInBbox({ x: event.clientX, y: event.clientY }, bbox(), 8)
+      const bbox = {
+        x: positionRef.current.x,
+        y: positionRef.current.y,
+        width: PET_SIZE.width,
+        height: PET_SIZE.height
+      }
+      const inside = isPointInBbox({ x: event.clientX, y: event.clientY }, bbox, 8)
       if (inside !== interactiveRef.current) {
         interactiveRef.current = inside
         bridge.setInteractive(inside)
@@ -45,9 +64,47 @@ export function PetStage(): ReactElement {
     }
     window.addEventListener('mousemove', onMove)
     return () => window.removeEventListener('mousemove', onMove)
-  }, [position])
+  }, [])
 
-  // 窗口尺寸变化时把精灵拉回视口内（防显示器变化后跑到屏外）
+  // 漫步引擎：rAF 单循环驱动 idle/wander
+  useEffect(() => {
+    let raf = 0
+    let lastFrame = performance.now()
+    const tick = (now: number): void => {
+      const dt = now - lastFrame
+      lastFrame = now
+      let state = motionRef.current
+      const pos = positionRef.current
+
+      // 处理状态转移（timeout / reached）
+      if (isMotionTimedOut(state, now)) {
+        const ctx: MotionContext = { now, walkArea: currentWalkArea(), position: pos }
+        state = transitionPetMotion(state, { type: 'timeout' }, ctx)
+        motionRef.current = state
+      }
+      if (state.kind === 'wander') {
+        if (hasReachedTarget(pos, state.target)) {
+          const ctx: MotionContext = { now, walkArea: currentWalkArea(), position: pos }
+          state = transitionPetMotion(state, { type: 'reached' }, ctx)
+          motionRef.current = state
+        } else {
+          // 朝目标移动一步
+          const dx = state.target.x - pos.x
+          const dy = state.target.y - pos.y
+          const dist = Math.hypot(dx, dy)
+          const step = Math.min(dist, WALK_SPEED_PX_PER_MS * dt)
+          if (dist > 0) {
+            setPosition({ x: pos.x + (dx / dist) * step, y: pos.y + (dy / dist) * step })
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  // 窗口尺寸变化时把精灵拉回视口内
   useEffect(() => {
     const onResize = (): void => {
       setPosition((prev) => ({
@@ -67,12 +124,10 @@ export function PetStage(): ReactElement {
         top: position.y,
         width: PET_SIZE.width,
         height: PET_SIZE.height,
-        // 占位暖黄椭圆 + 圆润感。M2 替换为 <img src={petFrame('stand')} />
         background: PET_COLOR,
         borderRadius: '48% 48% 42% 42%',
         boxShadow: '0 8px 16px rgba(0,0,0,0.18)',
-        // pointer-events none：穿透态下窗口本身不收事件，靠 forward mousemove；
-        // 切到可交互后整窗可收事件，这个 none 不影响（精灵用单独命中区由 bbox 把控）
+        transition: motionRef.current.kind === 'idle' ? 'none' : undefined,
         pointerEvents: 'none'
       }}
     />
