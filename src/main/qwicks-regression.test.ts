@@ -126,7 +126,8 @@ describe('QWicks single-agent regression', () => {
       workflow: defaultWorkflowSettings(),
       guiUpdate: { channel: 'stable' },
       codePromptPrefix: '',
-      disabledSkillIds: []
+      disabledSkillIds: [],
+      pet: { enabled: true, spriteScale: 1, walkEnabled: true, consoleOnLaunch: false, diaryRetentionDays: 90, growthSpeed: 1 }
     }
 
     expect(qwicksRuntimeAdapter.id).toBe('qwicks')

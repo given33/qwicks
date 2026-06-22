@@ -19,11 +19,13 @@ import {
   defaultWriteSettings,
   mergeClawSettings,
   mergeAppBehaviorSettings,
+  mergePetSettings,
   mergeScheduleSettings,
   mergeWorkflowSettings,
   mergeWriteSettings,
   normalizeAppBehaviorSettings,
   normalizeKeyboardShortcuts,
+  normalizePetSettings,
   migrateLegacyAppSettings,
   normalizeAppSettings,
   type AppSettingsPatch,
@@ -340,6 +342,7 @@ const defaultSettings = (): AppSettingsV1 => ({
     turnComplete: true
   },
   appBehavior: normalizeAppBehaviorSettings(),
+  pet: normalizePetSettings(),
   keyboardShortcuts: normalizeKeyboardShortcuts(),
   guiUpdate: {
     channel: DEFAULT_GUI_UPDATE_CHANNEL
@@ -365,6 +368,7 @@ function buildMergedSettings(parsed: Partial<AppSettingsV1>): AppSettingsV1 {
     log: { ...defaults.log, ...migrated.log },
     notifications: { ...defaults.notifications, ...migrated.notifications },
     appBehavior: mergeAppBehaviorSettings(defaults.appBehavior, migrated.appBehavior),
+    pet: mergePetSettings(defaults.pet, migrated.pet),
     keyboardShortcuts: normalizeKeyboardShortcuts(migrated.keyboardShortcuts),
     write: mergeWriteSettings(defaults.write, migrated.write),
     claw: mergeClawSettings(defaults.claw, migrated.claw),
@@ -559,6 +563,7 @@ export class JsonSettingsStore {
       log: { ...cur.log, ...(partial.log ?? {}) },
       notifications: { ...cur.notifications, ...(partial.notifications ?? {}) },
       appBehavior: mergeAppBehaviorSettings(cur.appBehavior, partial.appBehavior),
+      pet: mergePetSettings(cur.pet, partial.pet),
       keyboardShortcuts: normalizeKeyboardShortcuts({
         bindings: {
           ...cur.keyboardShortcuts.bindings,

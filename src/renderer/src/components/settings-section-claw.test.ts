@@ -103,7 +103,8 @@ function buildSettings(): AppSettingsV1 {
     workflow: defaultWorkflowSettings(),
     guiUpdate: { channel: 'stable' },
     codePromptPrefix: '',
-    disabledSkillIds: []
+    disabledSkillIds: [],
+    pet: { enabled: true, spriteScale: 1, walkEnabled: true, consoleOnLaunch: false, diaryRetentionDays: 90, growthSpeed: 1 }
   }
   settings.claw.enabled = true
   settings.claw.im.workspaceRoot = '/tmp/claw'

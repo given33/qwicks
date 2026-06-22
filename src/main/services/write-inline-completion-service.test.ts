@@ -60,6 +60,7 @@ function createSettings(patch: Partial<AppSettingsV1['write']['inlineCompletion'
     },
     codePromptPrefix: '',
     disabledSkillIds: [],
+    pet: { enabled: true, spriteScale: 1, walkEnabled: true, consoleOnLaunch: false, diaryRetentionDays: 90, growthSpeed: 1 },
     claw: defaultClawSettings()
   }
 }

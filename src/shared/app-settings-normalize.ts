@@ -7,6 +7,7 @@ import {
   type ClawSettingsPatchV1,
   type GuiUpdateConfigV1,
   type NotificationConfigV1,
+  type PetSettingsV1,
   type ScheduleSettingsPatchV1,
   WINDOW_CLOSE_ACTIONS,
   type WindowCloseAction,
@@ -45,6 +46,7 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
     schedule?: ScheduleSettingsPatchV1
     workflow?: WorkflowSettingsPatchV1
     guiUpdate?: Partial<GuiUpdateConfigV1>
+    pet?: Partial<PetSettingsV1>
   }
   const providerSettings = normalizeModelProviderSettings(maybeSettings.provider)
   const runtime = getQWicksRuntimeSettings(maybeSettings)
@@ -102,7 +104,8 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
       )
     },
     codePromptPrefix: typeof maybeSettings.codePromptPrefix === 'string' ? maybeSettings.codePromptPrefix : '',
-    disabledSkillIds: normalizeDisabledSkillIds(maybeSettings.disabledSkillIds)
+    disabledSkillIds: normalizeDisabledSkillIds(maybeSettings.disabledSkillIds),
+    pet: normalizePetSettings(maybeSettings.pet)
   }
 }
 
@@ -149,6 +152,33 @@ export function mergeAppBehaviorSettings(
     ...current,
     ...(translatedPatch ?? {})
   })
+}
+
+/** 桌面宠物设置的默认值与规范化（M1+）。 */
+export function normalizePetSettings(settings?: Partial<PetSettingsV1>): PetSettingsV1 {
+  const spriteScale = typeof settings?.spriteScale === 'number' && settings.spriteScale > 0
+    ? settings.spriteScale
+    : 1
+  const diaryRetentionDays = typeof settings?.diaryRetentionDays === 'number' &&
+    Number.isFinite(settings.diaryRetentionDays) && settings.diaryRetentionDays >= 1
+    ? Math.floor(settings.diaryRetentionDays)
+    : 90
+  const growthSpeed = typeof settings?.growthSpeed === 'number' &&
+    Number.isFinite(settings.growthSpeed) && settings.growthSpeed > 0
+    ? settings.growthSpeed
+    : 1
+  return {
+    enabled: settings?.enabled !== false,
+    spriteScale,
+    walkEnabled: settings?.walkEnabled !== false,
+    consoleOnLaunch: settings?.consoleOnLaunch === true,
+    diaryRetentionDays,
+    growthSpeed
+  }
+}
+
+export function mergePetSettings(current: PetSettingsV1, patch?: Partial<PetSettingsV1>): PetSettingsV1 {
+  return normalizePetSettings({ ...current, ...(patch ?? {}) })
 }
 
 function shouldMigrateLegacySettings(settings: AppSettingsV1): boolean {

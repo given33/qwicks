@@ -56,7 +56,8 @@ function settings(dataDir: string, model = 'settings-model'): AppSettingsV1 {
     workflow: defaultWorkflowSettings(),
     guiUpdate: { channel: 'stable' },
     codePromptPrefix: '',
-    disabledSkillIds: []
+    disabledSkillIds: [],
+    pet: { enabled: true, spriteScale: 1, walkEnabled: true, consoleOnLaunch: false, diaryRetentionDays: 90, growthSpeed: 1 }
   }
 }
 

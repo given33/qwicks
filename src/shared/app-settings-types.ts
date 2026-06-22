@@ -479,6 +479,25 @@ export type AppBehaviorConfigV1 = {
   closeToTray: boolean
 }
 
+/**
+ * 桌面宠物设置（M1+）。整个 QQ 宠物复刻工程的宠物相关开关都挂在这里，
+ * 后续模块（成长/成就/档案）会扩展更多字段。M1 只用到 enabled。
+ */
+export type PetSettingsV1 = {
+  /** 桌面精灵总开关，默认 true。关掉则启动时不创建 petWindow。 */
+  enabled: boolean
+  /** 精灵缩放倍率，默认 1.0 */
+  spriteScale: number
+  /** 随机漫步开关，默认 true */
+  walkEnabled: boolean
+  /** 启动时是否自动打开控制台面板（M4），默认 false */
+  consoleOnLaunch: boolean
+  /** 档案日志保留天数（M8），默认 90 */
+  diaryRetentionDays: number
+  /** 成长速度倍率（M5，调试/调平用），默认 1.0 */
+  growthSpeed: number
+}
+
 export type ScheduleSkillSettingsV1 = {
   defaultNames: string[]
   extraDirs: string[]
@@ -1578,6 +1597,7 @@ export type AppSettingsV1 = {
   codePromptPrefix: string
   /** User-disabled skill IDs. Disabled skills are hidden from command surfaces. */
   disabledSkillIds: string[]
+  pet: PetSettingsV1
 }
 
 export type AppSettingsPatch = Partial<
@@ -1594,4 +1614,5 @@ export type AppSettingsPatch = Partial<
   schedule?: ScheduleSettingsPatchV1
   workflow?: WorkflowSettingsPatchV1
   guiUpdate?: Partial<GuiUpdateConfigV1>
+  pet?: Partial<PetSettingsV1>
 }

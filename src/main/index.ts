@@ -1652,12 +1652,17 @@ app.whenReady().then(async () => {
   traceStartup('createWindow:returned')
 
   // 桌面宠物透明置顶窗口（M1）。注册穿透切换 IPC + 创建窗口 + 监听显示器变化重铺。
+  // 受 settings.pet.enabled 控制；关掉则不创建宠物窗口（后台保活也随之失效）。
   registerPetIpc()
-  createPetWindow()
   screen.on('display-metrics-changed', () => relayoutPetWindowToDisplays())
   screen.on('display-added', () => relayoutPetWindowToDisplays())
   screen.on('display-removed', () => relayoutPetWindowToDisplays())
-  traceStartup('pet window:created')
+  if (initial.pet.enabled) {
+    createPetWindow()
+    traceStartup('pet window:created')
+  } else {
+    traceStartup('pet window:disabled by settings')
+  }
   void loadGuiUpdaterModule()
     .then((module) => module.showPostUpdateReleaseNotes())
     .catch((error) => {

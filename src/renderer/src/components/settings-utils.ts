@@ -17,6 +17,7 @@ import {
   normalizeGuiUpdateChannel,
   normalizeKeyboardShortcuts,
   normalizeModelProviderSettings,
+  normalizePetSettings,
   normalizeScheduleSettings,
   normalizeWorkflowSettings,
   normalizeWriteSettings,
@@ -108,6 +109,7 @@ export function coerceRendererSettings(settings: AppSettingsV1): AppSettingsV1 {
       turnComplete: raw.notifications?.turnComplete !== false
     },
     appBehavior: normalizeAppBehaviorSettings(raw.appBehavior),
+    pet: normalizePetSettings(raw.pet),
     keyboardShortcuts: normalizeKeyboardShortcuts(raw.keyboardShortcuts),
     write: normalizeWriteSettings(raw.write),
     claw: normalizeClawSettings(raw.claw),
