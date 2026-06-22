@@ -178,4 +178,15 @@ export function registerPetStateIpc(): void {
     store.update((state) => ({ ...state, coins: state.coins + Math.max(0, Math.floor(amount)) }))
     return { ok: true }
   })
+
+  // M10 扣元宝（农场买种子等，元宝不足拒绝）
+  ipcMain.handle('pet:pay', (_e, amount: number) => {
+    let ok = false
+    store.update((state) => {
+      if (state.coins < amount) return state
+      ok = true
+      return { ...state, coins: state.coins - Math.max(0, Math.floor(amount)) }
+    })
+    return { ok }
+  })
 }

@@ -12,7 +12,7 @@ function bridge(): Bridge | null {
   return typeof window !== 'undefined' ? (window as unknown as { pet?: Bridge }).pet ?? null : null
 }
 
-export function CareTab({ state, onFish }: { state: PetState | null; onFish?: () => void }): ReactElement {
+export function CareTab({ state, onFish, onFarm }: { state: PetState | null; onFish?: () => void; onFarm?: () => void }): ReactElement {
   const foods = state?.inventory.filter((i) => i.type === 'food') ?? []
   const quickFoods = foods.slice(0, 3)
   return (
@@ -21,6 +21,7 @@ export function CareTab({ state, onFish }: { state: PetState | null; onFish?: ()
       <button style={btnStyle} onClick={() => void bridge()?.play()}>玩耍</button>
       <button style={btnStyle} onClick={() => void bridge()?.signIn()}>每日签到</button>
       {onFish && <button style={btnStyle} onClick={onFish}>🎣 去钓鱼</button>}
+      {onFarm && <button style={btnStyle} onClick={onFarm}>🌾 去农场</button>}
       {quickFoods.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           <div style={{ fontSize: 12, color: '#999' }}>快速喂食</div>

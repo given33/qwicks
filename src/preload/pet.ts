@@ -36,5 +36,6 @@ contextBridge.exposeInMainWorld('pet', {
   },
   getDiary: (): Promise<unknown> => ipcRenderer.invoke('pet:get-diary'),
   reward: (amount: number): Promise<unknown> => ipcRenderer.invoke('pet:reward', amount),
+  pay: (amount: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('pet:pay', amount),
   diaryAppend: (icon: string, text: string): Promise<unknown> => ipcRenderer.invoke('pet:diary-append', icon, text)
 })
