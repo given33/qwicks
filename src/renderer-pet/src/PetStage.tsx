@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { isPointInBbox } from './bbox'
+import { computeGazeTilt } from './gaze'
 import {
   hasReachedTarget,
   isMotionTimedOut,
@@ -44,11 +45,13 @@ export function PetStage(): ReactElement {
 
   const motionRef = useRef<PetMotionState>(makeIdle(performance.now()))
   const interactiveRef = useRef(false)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
 
   // 热区穿透切换：forward mousemove 检测精灵 bbox
   useEffect(() => {
     const onMove = (event: MouseEvent): void => {
       const bridge = getPetBridge()
+      setMousePos({ x: event.clientX, y: event.clientY })
       if (!bridge) return
       const bbox = {
         x: positionRef.current.x,
@@ -116,6 +119,15 @@ export function PetStage(): ReactElement {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  // 桌面感知：idle 时头部朝鼠标方向轻微倾斜（"它注意到你了"）
+  const isIdle = motionRef.current.kind === 'idle'
+  const tilt = isIdle && mousePos
+    ? computeGazeTilt(
+        { x: position.x + PET_SIZE.width / 2, y: position.y + PET_SIZE.height / 2 },
+        mousePos
+      )
+    : 0
+
   return (
     <div
       style={{
@@ -127,7 +139,10 @@ export function PetStage(): ReactElement {
         background: PET_COLOR,
         borderRadius: '48% 48% 42% 42%',
         boxShadow: '0 8px 16px rgba(0,0,0,0.18)',
-        transition: motionRef.current.kind === 'idle' ? 'none' : undefined,
+        // 平滑过渡让倾斜变化柔和；位置变化不过渡（漫步要即时跟手）
+        transition: 'transform 0.4s ease-out',
+        transform: `rotate(${tilt}deg)`,
+        transformOrigin: 'bottom center',
         pointerEvents: 'none'
       }}
     />
