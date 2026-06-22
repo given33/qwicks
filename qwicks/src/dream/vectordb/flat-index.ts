@@ -11,10 +11,8 @@
  * 桌面单用户万级记忆:暴力余弦 O(n*dim) 在 dim=1024、n=10000 时约 10M 次乘加,
  * 现代 CPU < 5ms,远低于 retrieve p95≤300ms 目标。
  */
-import { mkdir } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteFile } from '../../adapters/file/atomic-write.js'
 import type { ScoredHit, VectorDb, VectorDbHealth, VectorSearchOptions } from './base.js'
 
 export interface FlatVectorIndexOptions {
@@ -44,6 +42,7 @@ export class FlatVectorIndex implements VectorDb {
     this.persistDir = opts.persistDir
     this.persistPath = join(opts.persistDir, 'flat_vectors.json')
     this.autoSaveEvery = opts.autoSaveEvery ?? 200
+    mkdirSync(this.persistDir, { recursive: true })
     this.load()
   }
 
@@ -140,10 +139,11 @@ export class FlatVectorIndex implements VectorDb {
     }
   }
 
-  async save(): Promise<void> {
-    await mkdir(this.persistDir, { recursive: true })
+  save(): void {
+    mkdirSync(this.persistDir, { recursive: true })
     const payload: PersistShape = { dim: this.dimValue, ids: this.ids, vectors: this.vectors }
-    await atomicWriteFile(this.persistPath, JSON.stringify(payload))
+    // 同步直写(不用 atomicWriteFile 的 tmp-rename,避免在 close/rm 时留下游离 .tmp)。
+    writeFileSync(this.persistPath, JSON.stringify(payload), 'utf8')
     this.dirty = 0
   }
 
