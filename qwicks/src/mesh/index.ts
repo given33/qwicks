@@ -17,6 +17,7 @@ import { MeshDiscovery, type BonjourLike } from './discovery/mdns.js'
 import { ToolRpcServer } from './remote-tool/tool-rpc.js'
 import { MemoryRpcServer } from './remote-memory/memory-rpc.js'
 import { RateLimiter } from './security/rate-limiter.js'
+import type { TaskLease as TaskLeaseType } from './lease/lease.js'
 import { buildMeshAwareDecide, buildMeshAwareFanOut } from './integration/router-decide.js'
 import { SessionKeyStore } from './identity/session-key-store.js'
 import { verifyEnvelope, ReplayWindow } from './envelope/envelope.js'
@@ -108,6 +109,9 @@ export interface MeshHandle {
   trustStore: PeerTrustStore
   /** The device identity this mesh is running as. */
   identity: DeviceIdentity
+  /** Orchestrator-side lease watchdog (acquire on dispatch, release on
+   *  completion). Exposed so the dispatch bridge can drive lease lifecycle. */
+  lease: TaskLeaseType
   /** Peer model registry for UI model selection across the mesh. */
   peerModelRegistry: PeerModelRegistry
   /** The dispatch-aware decide callback for MeshRuntimeSlot / mesh-aware executor. */
@@ -410,12 +414,15 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
         return responder.handleHello(params as unknown as HelloParams)
       case 'pairing/verify': {
         const result = await responder.handleVerify(params as unknown as VerifyParams)
-        if (result.verified && responder.lastSessionKeyMaterial) {
-          await sessionKeyStore.storeFromPairing(
-            (params as unknown as VerifyParams).initiatorDeviceId,
-            responder.lastSessionKeyMaterial
-          )
-          console.warn(`[qwicks mesh] pairing completed with ${(params as unknown as VerifyParams).initiatorDeviceId.slice(0, 8)}…`)
+        if (result.verified) {
+          // Use the per-initiator getter to avoid the race where two
+          // concurrent pairings overwrite lastSessionKeyMaterial (F14).
+          const initiatorDeviceId = (params as unknown as VerifyParams).initiatorDeviceId
+          const material = responder.sessionKeyMaterialFor(initiatorDeviceId) ?? responder.lastSessionKeyMaterial
+          if (material) {
+            await sessionKeyStore.storeFromPairing(initiatorDeviceId, material)
+            console.warn(`[qwicks mesh] pairing completed with ${initiatorDeviceId.slice(0, 8)}…`)
+          }
         }
         return result
       }
@@ -440,6 +447,9 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
       case 'task/cancel': {
         const { taskId, cancelToken } = params as Record<string, string>
         cancelledTasks.add(taskId)
+        // Abort the in-flight local execution on this worker (F5 fix): without
+        // this the agent loop keeps burning tokens after the orchestrator gave up.
+        taskServer.cancel(taskId)
         void deps.cancelRemote?.(taskId, cancelToken ?? '')
         return { acknowledged: true }
       }
@@ -623,6 +633,7 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     responder,
     trustStore,
     identity: deps.identity,
+    lease,
     peerModelRegistry,
     meshDecide,
     fanOutDecide,

@@ -370,6 +370,9 @@ export async function createQWicksServeRuntime(
         dataDir: meshDataDir,
         localExecutor: meshSlot.executor,
         runRemote: meshBridge.runRemote,
+        cancelRemote: async (taskId, cancelToken) => {
+          await meshBridge!.cancelRemote(taskId, cancelToken)
+        },
         isPeerAuthorized: () => true, // trust store check happens inside bootMesh via envelope verify
         onPeerDiscovered: (peer) => {
           void meshBridge!.onPeerDiscovered(peer)
@@ -389,11 +392,21 @@ export async function createQWicksServeRuntime(
       })
 
       if (meshHandle) {
+        const handle = meshHandle
         meshSlot.slot.install({
-          remoteExecutor: meshHandle.remoteExecutor,
-          decide: meshHandle.meshDecide,
+          remoteExecutor: handle.remoteExecutor,
+          decide: handle.meshDecide,
           onDispatchRemote: (childId, workerDeviceId) => {
             meshBridge!.setDispatchTarget(childId, workerDeviceId)
+            // Arm the lease so a silently-dropped worker (half-open TCP) is
+            // detected and recovered instead of hanging the orchestrator.
+            handle.lease.acquire(childId)
+          },
+          onDispatchComplete: (childId) => {
+            meshBridge!.clearDispatchTarget(childId)
+            // Task completed (or aborted) → release the lease so its expiry
+            // timer doesn't fire a spurious recovery.
+            handle.lease.release(childId)
           }
         })
         // Build the read-only facade the HTTP route layer consumes.

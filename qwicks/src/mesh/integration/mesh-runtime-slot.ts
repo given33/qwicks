@@ -23,6 +23,9 @@ export interface InstalledMesh {
   /** Optional: record the chosen worker before dispatch so the outbound
    *  transport knows which peer to ship the task to. */
   onDispatchRemote?: (childId: string, workerDeviceId: string) => void
+  /** Optional: clear the dispatch record after the task completes so the
+   *  bridge's per-task map doesn't grow unbounded over the process lifetime. */
+  onDispatchComplete?: (childId: string) => void
 }
 
 export interface MeshRuntimeSlot {
@@ -62,7 +65,12 @@ export function createMeshRuntimeSlot(localExecutor: ChildRunExecutor): {
     if (decision.workerDeviceId && mesh.onDispatchRemote) {
       mesh.onDispatchRemote(input.childId, decision.workerDeviceId)
     }
-    return mesh.remoteExecutor(input)
+    try {
+      return await mesh.remoteExecutor(input)
+    } finally {
+      // Clear the dispatch record so the bridge's per-task map doesn't leak.
+      mesh.onDispatchComplete?.(input.childId)
+    }
   }
 
   return { slot, executor }

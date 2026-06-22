@@ -1,4 +1,5 @@
-import { readFile, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, chmod, mkdir, rename } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { toHex, fromHex } from './device-identity.js'
 import type { SessionKeyMaterial } from '../pairing/pairing.js'
@@ -88,8 +89,19 @@ export class SessionKeyStore {
     return this.keys.size
   }
 
-  /** Flush the current key set to disk (best-effort, 0o600). */
-  private async persist(): Promise<void> {
+  /** Flush the current key set to disk (atomic temp+rename, serialized so
+   *  concurrent pairings don't interleave writes and corrupt the file). */
+  private persistChain: Promise<void> = Promise.resolve()
+
+  private persist(): Promise<void> {
+    // Serialize writes: each persist() runs only after the prior one settles.
+    // This prevents two concurrent storeFromPairing calls from truncating each
+    // other's output (F10).
+    this.persistChain = this.persistChain.then(() => this.persistNow()).catch(() => this.persistNow())
+    return this.persistChain
+  }
+
+  private async persistNow(): Promise<void> {
     if (!this.filePath) return
     const entries: StoredEntry[] = [...this.keys.entries()].map(([peerDeviceId, key]) => ({
       peerDeviceId,
@@ -97,8 +109,12 @@ export class SessionKeyStore {
     }))
     try {
       await mkdir(join(this.filePath, '..'), { recursive: true })
-      await writeFile(this.filePath, JSON.stringify(entries, null, 2), 'utf8')
-      await chmod(this.filePath, 0o600).catch(() => {})
+      // Atomic write: temp file + rename. A crash mid-write leaves either the
+      // old file or the new one, never a partial mix.
+      const tmp = `${this.filePath}.${randomUUID()}.tmp`
+      await writeFile(tmp, JSON.stringify(entries, null, 2), 'utf8')
+      await chmod(tmp, 0o600).catch(() => {})
+      await rename(tmp, this.filePath)
     } catch {
       // Persistence is best-effort; in-memory keys still work.
     }

@@ -81,9 +81,15 @@ export class PairingResponder {
   private readonly audit: AuditLog
   private readonly deviceName: string
   private readonly pending = new Map<string, PendingChallenge>()
-  private readonly responderNonce = randomNonce()
-  /** Material derived by the most recent successful verify (for session boot). */
+  /** Material derived by the most recent successful verify (for session boot).
+   *  Kept for backward compat with callers that read it after a single
+   *  pairing; concurrent pairings should read it from the VerifyResult
+   *  instead (see lastSessionKeyMaterialFor). */
   lastSessionKeyMaterial?: SessionKeyMaterial
+  /** Per-initiator session key material, set on successful verify. Avoids the
+   *  race where two concurrent pairings overwrite lastSessionKeyMaterial
+   *  before the dispatch case reads it. Keyed by initiatorDeviceId. */
+  private readonly sessionMaterialByInitiator = new Map<string, SessionKeyMaterial>()
 
   constructor(opts: { identity: DeviceIdentity; trustStore: PeerTrustStore; audit: AuditLog; deviceName: string }) {
     this.identity = opts.identity
@@ -97,10 +103,13 @@ export class PairingResponder {
       return { accepted: false, reason: 'incompatible_protocol' }
     }
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+    // Per-challenge responder nonce (F14): a fresh nonce per handshake prevents
+    // two pairings from sharing identical salt material.
+    const responderNonce = randomNonce()
     this.pending.set(params.initiatorDeviceId, {
       code,
       params,
-      responderNonce: this.responderNonce,
+      responderNonce,
       expiresAt: Date.now() + CODE_TTL_MS,
       tries: 0
     })
@@ -111,7 +120,7 @@ export class PairingResponder {
       responderPublicKey: toHex(this.identity.publicKey),
       responderFingerprint: this.identity.fingerprint,
       responderEphemeralPublic: toHex(this.identity.ephemeralPublicKey),
-      responderNonce: this.responderNonce,
+      responderNonce,
       expiresAt: new Date(this.pending.get(params.initiatorDeviceId)!.expiresAt).toISOString()
     }
   }
@@ -149,6 +158,9 @@ export class PairingResponder {
       info
     })
     this.lastSessionKeyMaterial = material
+    // Also key by initiator so concurrent pairings don't race on the shared
+    // lastSessionKeyMaterial field (F14).
+    this.sessionMaterialByInitiator.set(params.initiatorDeviceId, material)
 
     await this.trustStore.upsert({
       peerDeviceId: params.initiatorDeviceId,
@@ -169,6 +181,13 @@ export class PairingResponder {
     const challenge = this.pending.get(initiatorDeviceId)
     if (!challenge || Date.now() > challenge.expiresAt) return null
     return challenge.code
+  }
+
+  /** Session key material for a specific initiator's completed pairing. Use
+   *  this instead of `lastSessionKeyMaterial` when multiple pairings may
+   *  complete concurrently. */
+  sessionKeyMaterialFor(initiatorDeviceId: string): SessionKeyMaterial | undefined {
+    return this.sessionMaterialByInitiator.get(initiatorDeviceId)
   }
 
   /** List pending pairing challenges (for UI display). Expired entries are

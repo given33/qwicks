@@ -84,6 +84,13 @@ export class MeshDispatchBridge {
     }
     try {
       await client.connect(`ws://${peer.host}:${peer.port}`)
+      // Re-check stopped after the await: close() may have run while we were
+      // connecting. If so, tear down the just-opened socket and bail —
+      // otherwise we'd leak an orphaned client on a shut-down bridge (F9).
+      if (this.stopped) {
+        await client.close().catch(() => {})
+        return
+      }
       this.clients.set(peer.deviceId, client)
       console.warn(`[qwicks mesh] connected to peer ${peer.deviceId.slice(0, 8)}… (${peer.host}:${peer.port})`)
     } catch (error) {
@@ -111,7 +118,9 @@ export class MeshDispatchBridge {
   }
 
   /** The `runRemote` callback handed to `bootMesh`. Ships `task/run` to the
-   *  target peer and awaits its result. */
+   *  target peer and awaits its result. The abort signal is plumbed into the
+   *  underlying request so a half-open socket (no close/error) still times out
+   *  and a user/lease-initiated abort breaks the pending request promptly. */
   runRemote = async (params: TaskRunParams, signal: AbortSignal): Promise<ChildRunResult> => {
     const targetDeviceId =
       this.dispatchTargets.get(params.taskId) ??
@@ -126,10 +135,12 @@ export class MeshDispatchBridge {
       throw new Error(`mesh dispatch bridge: peer ${targetDeviceId} is not connected (discovered: ${this.peers.has(targetDeviceId)})`)
     }
 
-    // Honour the abort signal by surfacing an error promptly.
-    if (signal.aborted) throw new Error('aborted before dispatch')
-
-    const result = (await client.request('task/run', params)) as ChildRunResult
+    // timeoutMs tied to the lease so the request fails before the lease does.
+    const leaseTimeoutMs = (params.lease?.leaseTimeout ?? 300) * 1000
+    const result = (await client.request('task/run', params, {
+      timeoutMs: leaseTimeoutMs,
+      signal
+    })) as ChildRunResult
     return result
   }
 
@@ -138,6 +149,18 @@ export class MeshDispatchBridge {
     const client = this.clients.get(deviceId)
     if (!client) return
     client.notify(method, params)
+  }
+
+  /** Orchestrator-side cancel: looks up the worker that owns `taskId` (via
+   *  the dispatch map) and sends `task/cancel` so the worker aborts its
+   *  in-flight local executor. No-op if the task already completed or the
+   *  peer is disconnected. This is the `cancelRemote` wired into bootMesh. */
+  async cancelRemote(taskId: string, _cancelToken: string): Promise<void> {
+    const targetDeviceId = this.dispatchTargets.get(taskId)
+    if (!targetDeviceId) return
+    const client = this.clients.get(targetDeviceId)
+    if (!client?.isOpen) return
+    client.notify('task/cancel', { taskId, cancelToken: _cancelToken })
   }
 
   /** Send a JSON-RPC request (e.g. `pairing/hello`) to a specific peer. */

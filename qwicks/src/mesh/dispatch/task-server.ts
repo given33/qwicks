@@ -42,9 +42,23 @@ const ERR_DEPTH = { code: -32008, message: 'provenance_depth_exceeded' }
 export class TaskServer {
   private readonly deps: TaskServerDeps
   private readonly cache = new Map<string, CachedResult>()
+  /** taskId → AbortController for the in-flight local execution. Populated
+   *  when a task starts running, used by `cancel()` to abort it promptly. */
+  private readonly inflight = new Map<string, AbortController>()
 
   constructor(deps: TaskServerDeps) {
     this.deps = deps
+  }
+
+  /** Abort an in-flight task (called from the task/cancel handler or on lease
+   *  expiry). Returns true if a running task was aborted, false if it had
+   *  already completed or was never seen. */
+  cancel(taskId: string): boolean {
+    const controller = this.inflight.get(taskId)
+    if (!controller) return false
+    controller.abort()
+    this.inflight.delete(taskId)
+    return true
   }
 
   async handleTaskRun(params: TaskRunParams, callerDeviceId: string): Promise<ChildRunResult> {
@@ -59,7 +73,7 @@ export class TaskServer {
     }
     if (cached && cached.status === 'running') {
       // A concurrent identical request is in flight; reject as a duplicate so
-      // the caller retries after the first completes (Phase 1: no waiters).
+      // the caller retries after the first completes.
       throw { code: -32009, message: 'duplicate_in_flight' }
     }
 
@@ -77,11 +91,9 @@ export class TaskServer {
       detail: { idempotencyKey: params.idempotencyKey, retryCount: params.retryCount }
     })
 
+    const controller = new AbortController()
+    this.inflight.set(params.taskId, controller)
     try {
-      const controller = new AbortController()
-      // Phase 1: no lease binding; Task 13 wires heartbeat→lease and abort on
-      // timeout/cancel. The worker still honors the orchestrator's cancel via
-      // a separate task/cancel handler (bootMesh wires it).
       const execResult = await this.deps.localExecutor({
         childId: params.taskId,
         parentThreadId: params.parentThreadId,
@@ -124,6 +136,8 @@ export class TaskServer {
       // but the transport layer surfaces it as a JSON-RPC error response.
       if (isMeshError(error)) throw error
       return result
+    } finally {
+      this.inflight.delete(params.taskId)
     }
   }
 

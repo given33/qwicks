@@ -115,12 +115,17 @@ export class MemoryRpcServer {
 export class MemoryRpcClient {
   private readonly cache = new Map<string, { result: MemoryQueryResult; expiresAt: number }>()
   private readonly ttlMs: number
+  /** Upper bound on cached entries. When exceeded, the oldest entries are
+   *  evicted (the Map preserves insertion order, so the first entries are the
+   *  oldest). Prevents unbounded growth under high query churn (F12). */
+  private readonly maxEntries: number
 
   constructor(
     private readonly send: Send,
-    opts?: { ttlMs?: number }
+    opts?: { ttlMs?: number; maxEntries?: number }
   ) {
     this.ttlMs = opts?.ttlMs ?? 600_000
+    this.maxEntries = opts?.maxEntries ?? 1024
   }
 
   async query(req: MemoryQueryRequest): Promise<MemoryQueryResult> {
@@ -130,9 +135,26 @@ export class MemoryRpcClient {
 
     const result = (await this.send('memory/query', req)) as MemoryQueryResult
     if (result.cacheable) {
+      // Evict expired + overflow entries before inserting (F12).
+      this.evictIfNeeded()
       this.cache.set(key, { result, expiresAt: Date.now() + this.ttlMs })
     }
     return result
+  }
+
+  /** Drop expired entries and, if still over the limit, the oldest live ones. */
+  private evictIfNeeded(): void {
+    const now = Date.now()
+    // First pass: drop expired.
+    for (const [key, entry] of this.cache) {
+      if (now > entry.expiresAt) this.cache.delete(key)
+    }
+    // Second pass: if still over the cap, evict oldest (insertion-order first).
+    while (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value
+      if (oldestKey === undefined) break
+      this.cache.delete(oldestKey)
+    }
   }
 
   /**
@@ -172,6 +194,9 @@ export class MemoryRpcClient {
 
   private cacheKey(req: MemoryQueryRequest): string {
     const hash = toHex(sha256(new TextEncoder().encode(req.query)))
-    return `${req.ownerDeviceId}|${hash}|${req.scopes.join(',')}`
+    // Sort scopes so ['public','private'] and ['private','public'] hit the
+    // same cache entry (F12: order-sensitivity caused wasted RPCs).
+    const scopes = req.scopes.slice().sort().join(',')
+    return `${req.ownerDeviceId}|${hash}|${scopes}`
   }
 }

@@ -49,7 +49,11 @@ export class MeshTransportServer {
             if (msg.type !== 'request') return // no id → nothing to reply to
             const text =
               'result' in r ? encodeJsonRpcResponse(msg.id, r.result) : encodeJsonRpcError(msg.id, r.error.code, r.error.message)
-            ws.send(text)
+            try {
+              ws.send(text)
+            } catch (err) {
+              this.onClientEvent?.('error', `reply send failed: ${err instanceof Error ? err.message : String(err)}`)
+            }
           })
         })
         ws.on('close', () => {
@@ -72,7 +76,14 @@ export class MeshTransportServer {
     const text = JSON.stringify({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) })
     for (const ws of this.clients) {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(text)
+        // Guard each send individually: a readyState→CLOSING race between the
+        // check and send would otherwise throw and abort the whole loop,
+        // dropping the broadcast for every peer after the throwing one.
+        try {
+          ws.send(text)
+        } catch (err) {
+          this.onClientEvent?.('error', `broadcast send failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
     }
   }
@@ -147,14 +158,72 @@ export class MeshTransportClient {
     }
   }
 
-  request(method: string, params?: unknown): Promise<unknown> {
+  request(method: string, params?: unknown, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<unknown> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error('socket not open'))
     }
     const id = this.nextId()
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.ws!.send(encodeJsonRpcRequest(id, method, params))
+      const timeoutMs = opts?.timeoutMs ?? 60_000
+      let settled = false
+
+      // Hard timeout: protects against half-open TCP where neither close nor
+      // error fires (NAT timeout, Wi-Fi roam, laptop sleep). Without this a
+      // dropped peer hangs the orchestrator for the OS TCP keepalive window.
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.pending.delete(id)
+        reject(new Error(`request timed out after ${timeoutMs}ms (${method})`))
+      }, timeoutMs)
+
+      // Honour an AbortSignal: lets the caller cancel a pending request on
+      // user-initiated abort or lease expiry, instead of waiting for timeout.
+      const onAbort = () => {
+        if (settled) return
+        settled = true
+        this.pending.delete(id)
+        clearTimeout(timer)
+        reject(new Error(`aborted (${method})`))
+      }
+      if (opts?.signal) {
+        if (opts.signal.aborted) {
+          settled = true
+          clearTimeout(timer)
+          reject(new Error(`aborted (${method})`))
+          return
+        }
+        opts.signal.addEventListener('abort', onAbort, { once: true })
+      }
+
+      this.pending.set(id, {
+        resolve: (v) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (opts?.signal) opts.signal.removeEventListener('abort', onAbort)
+          resolve(v)
+        },
+        reject: (e) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (opts?.signal) opts.signal.removeEventListener('abort', onAbort)
+          reject(e)
+        }
+      })
+      try {
+        this.ws!.send(encodeJsonRpcRequest(id, method, params))
+      } catch (err) {
+        // send can throw if readyState slipped to CLOSING between the check
+        // above and the send. Clean up the pending entry we just added.
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          this.pending.delete(id)
+        }
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
     })
   }
 
