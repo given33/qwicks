@@ -64,16 +64,27 @@ export class DreamMemoryStore implements MemoryStore {
     if (patch.content !== undefined) existing.content = patch.content
     if (patch.tags !== undefined) existing.tags = [...patch.tags]
     if (patch.confidence !== undefined) existing.confidence = patch.confidence
+    // qwicks 扁平 API 的 `disabled` 语义 = "不注入"(≠ 删除)。映射到 dream 富结构
+    // 的 SUPPRESSED 状态(disabledAt 来自 metadata.dont_mention_at),这样 retrieve()
+    // 的默认 includeSuppressed:false 会真正排除它。两个方向都要 transition,
+    // 否则 disable/re-enable 的扁平路径形同虚设(FileMemoryStore 行为退化)。
     if (patch.disabled === true && existing.status !== MemoryLifecycleStatus.SUPPRESSED) {
-      // 保留 disabledAt 作为扁平层语义;在富结构里用 SUPPRESSED 表示"不注入"。
-      // (注意:disabled ≠ deleted;disabled 只是不注入,仍可被 list 看到。)
+      existing.transitionStatus(MemoryLifecycleStatus.SUPPRESSED, {
+        actor: 'store.update',
+        reason: 'disabled'
+      })
+    } else if (
+      patch.disabled === false &&
+      existing.status === MemoryLifecycleStatus.SUPPRESSED
+    ) {
+      existing.transitionStatus(MemoryLifecycleStatus.ACTIVE, {
+        actor: 'store.update',
+        reason: 're-enabled'
+      })
     }
     existing.updatedAt = this.now()
     this.options.repository.upsert(existing)
-    const record = itemToRecord(existing)
-    if (patch.disabled === true) record.disabledAt = record.disabledAt ?? this.now()
-    if (patch.disabled === false) record.disabledAt = undefined
-    return record
+    return itemToRecord(existing)
   }
 
   async delete(id: string): Promise<MemoryRecord> {
@@ -138,6 +149,14 @@ export class DreamMemoryStore implements MemoryStore {
   /** Dream 内部用:取富结构 MemoryItem(暴露 type/importance/status/provenance)。 */
   getRich(id: string): MemoryItem | null {
     return this.options.repository.get(id)
+  }
+
+  /**
+   * 释放底层后端的资源(SQLite 文件句柄 / 文件锁)。runtime shutdown 时调用,
+   * 保证进程退出/重启时数据库文件可被清理。对不持有句柄的后端是 no-op。
+   */
+  close(): void {
+    this.options.repository.close()
   }
 }
 

@@ -271,9 +271,10 @@ export async function createQWicksServeRuntime(
         nowIso
       })
     : undefined
-  const memoryStore = options.capabilities?.memory.enabled
+  const memory = options.capabilities?.memory.enabled
     ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'))
     : undefined
+  const memoryStore = memory?.store
   const imageGenProviders = buildImageGenToolProviders(options.capabilities?.imageGen, {
     attachmentStore,
     nowIso
@@ -651,6 +652,8 @@ export async function createQWicksServeRuntime(
           await meshHandle.shutdown().catch(() => {})
         }
         await stores.shutdown?.()
+        // 释放 memory 后端可能持有的原生句柄(Dream SQLite 文件锁 / fd)。
+        memory?.close()
       }
     }
   }
@@ -776,15 +779,29 @@ export async function startQWicksServe(
  * Both implement the same `MemoryStore` interface, so the rest of the runtime
  * (HTTP routes, LLM memory tools, agent-loop injection, mesh sync, GUI) is
  * agnostic to the choice.
+ *
+ * Returns the store plus a `close()` for any backend holding native handles
+ * (the Dream SQLite repository). The runtime must call `close()` on shutdown
+ * to release file locks / file descriptors.
  */
 function buildMemoryStore(
   config: MemoryCapabilityConfig,
   legacyRootDir: string
-): MemoryStore {
+): { store: MemoryStore; close: () => void } {
   if (config.backend === 'dream') {
     const sqlitePath = join(legacyRootDir, 'dream_memory.db')
     const repository = new SqliteMemoryRepository({ sqlitePath })
-    return new DreamMemoryStore({ repository, config, sqlitePath })
+    const store = new DreamMemoryStore({ repository, config, sqlitePath })
+    return {
+      store,
+      close: () => {
+        try {
+          store.close()
+        } catch {
+          // 防御性:关闭失败不应阻塞 shutdown。
+        }
+      }
+    }
   }
-  return new FileMemoryStore({ rootDir: legacyRootDir, config })
+  return { store: new FileMemoryStore({ rootDir: legacyRootDir, config }), close: () => {} }
 }

@@ -20,7 +20,11 @@ describe('DreamMemoryStore (qwicks MemoryStore adapter)', () => {
     })
   })
   afterEach(async () => {
-    repo.close()
+    try {
+      repo.close()
+    } catch {
+      // store.close() in the close-leak test already closed the handle.
+    }
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -45,18 +49,43 @@ describe('DreamMemoryStore (qwicks MemoryStore adapter)', () => {
     expect(all.map((r) => r.id)).toContain(created.id)
   })
 
-  it('updates content/tags/confidence and disables via disabled flag', async () => {
-    const created = await store.create({ content: 'v1', tags: ['a'] })
-    const updated = await store.update(created.id, { content: 'v2', tags: ['b'], confidence: 0.4 })
-    expect(updated.content).toBe('v2')
+  it('updates content/tags/confidence', async () => {
+    const created = await store.create({ content: 'alpha beta', tags: ['a'] })
+    const updated = await store.update(created.id, {
+      content: 'gamma delta',
+      tags: ['b'],
+      confidence: 0.4
+    })
+    expect(updated.content).toBe('gamma delta')
     expect(updated.tags).toEqual(['b'])
     expect(updated.confidence).toBe(0.4)
+  })
+
+  it('disabled:true transitions to SUPPRESSED so the memory is NOT retrieved (regression: must match FileMemoryStore)', async () => {
+    const created = await store.create({ content: 'postgres replication lag', scope: 'workspace' })
+    // before disable it is retrievable
+    const before = await store.retrieve({ query: 'postgres replication', limit: 5 })
+    expect(before.some((r) => r.id === created.id)).toBe(true)
 
     const disabled = await store.update(created.id, { disabled: true })
     expect(disabled.disabledAt).toBeTruthy()
-    // disabled records are excluded from retrieve by default
-    const retrieved = await store.retrieve({ query: 'v2', limit: 5 })
-    expect(retrieved.map((r) => r.id)).not.toContain(created.id)
+    // rich status must reflect suppression (the real contract)
+    expect(store.getRich(created.id)!.status).toBe('suppressed')
+    // disabled records must be excluded from retrieve by default
+    const after = await store.retrieve({ query: 'postgres replication', limit: 5 })
+    expect(after.some((r) => r.id === created.id)).toBe(false)
+  })
+
+  it('disabled:false re-enables a suppressed memory back to ACTIVE', async () => {
+    const created = await store.create({ content: 'redis cache config', scope: 'workspace' })
+    await store.update(created.id, { disabled: true })
+    expect(store.getRich(created.id)!.status).toBe('suppressed')
+
+    const reEnabled = await store.update(created.id, { disabled: false })
+    expect(reEnabled.disabledAt).toBeUndefined()
+    expect(store.getRich(created.id)!.status).toBe('active')
+    const hits = await store.retrieve({ query: 'redis cache', limit: 5 })
+    expect(hits.some((r) => r.id === created.id)).toBe(true)
   })
 
   it('soft-deletes (tombstone) and excludes from list by default', async () => {
@@ -118,5 +147,14 @@ describe('DreamMemoryStore (qwicks MemoryStore adapter)', () => {
     expect(rich).not.toBeNull()
     expect(rich!.type).toBe('preference') // "prefer/preference" heuristic default
     expect(rich!.status).toBe('active')
+  })
+
+  it('close() releases the SQLite handle so the db file can be deleted (regression: Windows file-lock leak)', async () => {
+    await store.create({ content: 'persisted then closed', scope: 'workspace' })
+    store.close()
+    // After close, the SQLite file handle must be released. On Windows an open
+    // better-sqlite3 handle holds an exclusive lock; rm would throw EBUSY.
+    // This must not throw.
+    await expect(rm(join(dir, 'memory.db'), { force: true })).resolves.toBeUndefined()
   })
 })
