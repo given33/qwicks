@@ -1353,7 +1353,7 @@
   "guiUpdateTopbarAvailable": "更新到 {{version}}",
   "guiUpdateTopbarDownloading": "更新中 {{percent}}%",
   "guiUpdateTopbarInstalling": "安装中…",
-  "guiUpdateTopbarManual": "下载 {{version}}",
+  "guiUpdateTopbarManual": "更新 {{version}}",
   "turnCompleteNotificationTitle": "QWicks 回复已完成",
   "turnCompleteNotificationBody": "「{{title}}」已完成回复。",
   "busyTimeout": "已等待 {{minutes}} 分钟仍未收到运行时完成事件。深度思考任务可能需要更长时间,如果仍然卡住可中断后重试。",

@@ -1,6 +1,9 @@
 name: Build and Deploy Windows Installer
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       channel:
@@ -36,22 +39,51 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check full-installer change set
+        id: full_release
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -ne "push") {
+            "needed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Manual workflow dispatch will build and deploy a full installer."
+            exit 0
+          }
+
+          $base = "${{ github.event.before }}".Trim()
+          if (-not $base -or $base -match '^0+$') {
+            $base = 'HEAD~1'
+          }
+          $files = @(git diff --name-only $base $env:GITHUB_SHA)
+          $hotOnly = @($files | Where-Object { $_ -and $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' }).Count -eq 0
+          if ($hotOnly) {
+            Write-Host "Skipping full installer because this push is hot-update safe."
+            "needed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Host "Full installer required because this push includes shell/native/CI files:"
+            $files | Where-Object { $_ -and $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' } | ForEach-Object { Write-Host "  $_" }
+            "needed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - name: Setup Node.js
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Python
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh
         run: npm ci
 
       - name: Compute app version
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         id: version
         shell: pwsh
         run: |
@@ -71,16 +103,19 @@ jobs:
           Write-Host "Building QWicks $version on $env:QWICKS_UPDATE_CHANNEL"
 
       - name: Typecheck
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh
         run: npm run typecheck
 
       - name: Build Windows installer
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh
         run: |
           if (Test-Path dist) { Remove-Item -Recurse -Force dist }
           npm run dist:win
 
       - name: Write server latest.json
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh
         run: |
           node scripts/write-server-update-json.cjs `
@@ -90,6 +125,7 @@ jobs:
             --base-url "$env:QWICKS_UPDATE_BASE_URL"
 
       - name: Upload build artifact
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: QWicks-${{ steps.version.outputs.version }}-win-x64
@@ -101,6 +137,7 @@ jobs:
           if-no-files-found: error
 
       - name: Deploy update files to Aliyun server
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh
         env:
           SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST || secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}

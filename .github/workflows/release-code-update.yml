@@ -4,12 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'src/renderer/**'
-      - 'src/preload/**'
-      - 'src/asset/**'
-      - 'qwicks/src/**'
-      - 'qwicks/tests/**'
   workflow_dispatch:
     inputs:
       channel:
@@ -75,21 +69,25 @@ jobs:
           }
 
       - name: Setup Node.js
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Python
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: npm ci
 
       - name: Compute code version
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         id: version
         shell: pwsh
         run: |
@@ -109,10 +107,12 @@ jobs:
           Write-Host "Building QWicks code update $version on $env:QWICKS_UPDATE_CHANNEL"
 
       - name: Typecheck
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: npm run typecheck
 
       - name: Build app code
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: |
           if (Test-Path out) { Remove-Item -Recurse -Force out }
@@ -120,6 +120,7 @@ jobs:
           npm run build
 
       - name: Package code.zip
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: |
           $packageRoot = 'dist/code-update/package'
@@ -136,6 +137,7 @@ jobs:
           Compress-Archive -Path "$packageRoot/*" -DestinationPath dist/code-update/code.zip -Force
 
       - name: Write release notes
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         env:
           MANUAL_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
@@ -150,6 +152,7 @@ jobs:
           Set-Content -Encoding utf8 -Path dist/code-update/release-notes.md -Value $notes
 
       - name: Write code latest.json
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: |
           node scripts/write-code-update-json.cjs `
@@ -163,6 +166,7 @@ jobs:
             --release-notes-file dist/code-update/release-notes.md
 
       - name: Upload code update artifact
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: QWicks-${{ steps.version.outputs.version }}-code-update

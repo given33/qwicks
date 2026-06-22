@@ -292,7 +292,8 @@ function toGuiInfo(updateInfo: UpdateInfo, hasUpdate: boolean, manualOnly = fals
 
 function toCodeGuiInfo(
   manifest: CodeUpdateManifest,
-  hasUpdate: boolean
+  hasUpdate: boolean,
+  manualOnly = false
 ): Extract<GuiUpdateInfo, { ok: true }> {
   const packageDownloaded = Boolean(
     downloadedCodePackage && downloadedCodePackage.manifest.version === manifest.version
@@ -308,6 +309,7 @@ function toCodeGuiInfo(
     kind: 'code',
     releaseNotes: manifest.releaseNotes,
     packageSize: manifest.package.size,
+    manualOnly,
     downloaded: packageDownloaded
   }
 }
@@ -410,10 +412,14 @@ function updateFeedUrl(channel: GuiUpdateChannel): string {
 }
 
 function insecureUpdatesAllowed(): boolean {
-  return (
-    process.env.QWICKS_ALLOW_INSECURE_UPDATES === '1' ||
-    process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES === '1'
-  )
+  if (
+    process.env.QWICKS_BLOCK_INSECURE_UPDATES === '1' ||
+    process.env.QWICKS_ALLOW_INSECURE_UPDATES === '0' ||
+    process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES === '0'
+  ) {
+    return false
+  }
+  return true
 }
 
 function isLoopbackUpdateHost(hostname: string): boolean {
@@ -544,7 +550,8 @@ async function fetchServerLatestJson(channel: GuiUpdateChannel): Promise<unknown
 }
 
 async function checkCodePackageUpdate(
-  channel: GuiUpdateChannel
+  channel: GuiUpdateChannel,
+  manualOnly = false
 ): Promise<Extract<GuiUpdateInfo, { ok: true }> | null> {
   let raw: unknown | null = null
   try {
@@ -563,7 +570,7 @@ async function checkCodePackageUpdate(
   const hasUpdate = isNewerVersion(manifest.version, currentGuiVersion())
   pendingCodeUpdate = hasUpdate ? manifest : null
   downloaded = Boolean(hasUpdate && downloadedCodePackage?.manifest.version === manifest.version)
-  return toCodeGuiInfo(manifest, hasUpdate)
+  return toCodeGuiInfo(manifest, hasUpdate, manualOnly)
 }
 
 function genericProviderOptions(channel: GuiUpdateChannel) {
@@ -735,8 +742,17 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
   const selectedChannel = await resolveUpdateChannel(channel)
   await configureReachableUpdaterChannel(selectedChannel)
   const feedUrl = updateFeedUrl(selectedChannel)
+  const untrustedFeed = !insecureUpdatesAllowed() && !isTrustedUpdateUrl(feedUrl)
 
-  if (!insecureUpdatesAllowed() && !isTrustedUpdateUrl(feedUrl)) {
+  emitGuiUpdateState({ status: 'checking', info: lastInfo ?? undefined })
+  const codeInfo = await checkCodePackageUpdate(selectedChannel, untrustedFeed)
+  if (codeInfo?.hasUpdate) {
+    lastInfo = codeInfo
+    emitGuiUpdateState({ status: 'available', info: codeInfo })
+    return codeInfo
+  }
+
+  if (untrustedFeed) {
     const info = insecureUpdateInfo(selectedChannel, feedUrl)
     emitGuiUpdateState({
       status: 'error',
@@ -749,14 +765,6 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
 
   if (!macAutoUpdateAllowed()) {
     return checkManualUpdate(selectedChannel, 'unsupported')
-  }
-
-  emitGuiUpdateState({ status: 'checking', info: lastInfo ?? undefined })
-  const codeInfo = await checkCodePackageUpdate(selectedChannel)
-  if (codeInfo?.hasUpdate) {
-    lastInfo = codeInfo
-    emitGuiUpdateState({ status: 'available', info: codeInfo })
-    return codeInfo
   }
 
   try {

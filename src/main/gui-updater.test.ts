@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -159,9 +160,51 @@ describe('checkGuiUpdate feed URL', () => {
     })
   })
 
-  it('blocks automatic updates from public HTTP feeds unless explicitly allowed', async () => {
+  it('downloads code update packages from public HTTP feeds by default', async () => {
     delete process.env.QWICKS_ALLOW_INSECURE_UPDATES
     delete process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES
+    const packageBody = Buffer.from('qwicks code package')
+    const sha256 = createHash('sha256').update(packageBody).digest('hex')
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      kind: 'code',
+      version: '0.2.0',
+      releaseDate: '2026-06-06T00:00:00.000Z',
+      releaseNotes: 'Update button now shows release notes on hover.',
+      package: {
+        name: 'code.zip',
+        url: 'code.zip',
+        size: packageBody.length,
+        sha256
+      }
+    }), { status: 200 }))
+    fetchMock.mockResolvedValueOnce(new Response(packageBody, {
+      status: 200,
+      headers: { 'content-length': String(packageBody.length) }
+    }))
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      kind: 'code',
+      latestVersion: '0.2.0',
+      hasUpdate: true,
+      manualOnly: false,
+      releaseNotes: 'Update button now shows release notes on hover.'
+    })
+    await expect(module.downloadGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      paths: [expect.stringContaining('0.2.0')]
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('blocks automatic installer updates from public HTTP feeds when explicitly disabled', async () => {
+    delete process.env.QWICKS_ALLOW_INSECURE_UPDATES
+    delete process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES
+    process.env.QWICKS_BLOCK_INSECURE_UPDATES = '1'
 
     const module = await import('./gui-updater')
     module.initializeGuiUpdater(() => null, () => 'stable')
@@ -171,7 +214,7 @@ describe('checkGuiUpdate feed URL', () => {
       code: 'insecure_update',
       message: expect.stringContaining('insecure HTTP')
     })
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
 

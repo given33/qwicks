@@ -3,8 +3,10 @@
 ## Current Flow
 
 - GitHub `main`: source code and CI configuration.
-- GitHub Actions code-update workflow: builds `code.zip` on every push to `main`.
-- GitHub Actions installer workflow: builds the Windows NSIS installer only when run manually.
+- GitHub Actions code-update workflow: checks every push to `main`, then builds
+  and uploads `code.zip` when the change set is hot-update safe.
+- GitHub Actions installer workflow: builds and uploads the Windows NSIS
+  installer for non-hot-update-safe pushes, and can also be run manually.
 - Aliyun server: hosts `latest.json`, `code.zip`, and the fallback installer feed.
 - Client updater: reads `latest.json` first for code updates, then falls back to `latest.yml` for full installer updates.
 
@@ -48,6 +50,15 @@ http://8.138.40.16/qwicks/channels/stable/latest/
 Installed clients need one full hot-update-capable shell before code-only
 updates can apply. After that, ordinary UI/runtime changes can be delivered
 by replacing `latest.json` and `code.zip`, then restarting the app.
+
+While there is no domain, QWicks allows the public HTTP update feed at the
+server IP. The client still verifies the downloaded `code.zip` against the
+SHA256 recorded in `latest.json` before installing it. If you need to disable
+public HTTP updates temporarily, start the app with:
+
+```text
+QWICKS_BLOCK_INSECURE_UPDATES=1
+```
 
 The hot `qwicks/dist` runtime reuses the dependency directory from the
 installed shell through a local directory link. That keeps code packages small.

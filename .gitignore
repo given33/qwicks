@@ -1,6 +1,7 @@
 # JavaScript / Node
 node_modules/
 dist/
+dist-local-*/
 out/
 npm-debug.log*
 yarn-debug.log*
