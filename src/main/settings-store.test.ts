@@ -4,9 +4,15 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_APPROVAL_POLICY, defaultQWicksRuntimeSettings, defaultModelProviderSettings } from '../shared/app-settings'
 import { DEFAULT_GUI_UPDATE_CHANNEL } from '../shared/gui-update'
-import { JsonSettingsStore } from './settings-store'
+import { JsonSettingsStore, type SettingsSecretCipher } from './settings-store'
 
 describe('JsonSettingsStore', () => {
+  const fakeSecretCipher: SettingsSecretCipher = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8').toString('base64'),
+    decryptString: (value) => Buffer.from(value, 'base64').toString('utf8')
+  }
+
   it('defaults GUI updates to the stable channel for new settings', async () => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'ds-gui-settings-'))
 
@@ -21,6 +27,59 @@ describe('JsonSettingsStore', () => {
       closeAction: 'ask',
       closeToTray: false
     })
+  })
+
+  it('encrypts secret fields on disk while loading decrypted settings', async () => {
+    const userDataDir = await mkdtemp(join(tmpdir(), 'ds-gui-settings-'))
+    const settingsPath = join(userDataDir, 'qwicks-settings.json')
+    const store = new JsonSettingsStore(userDataDir, { secretCipher: fakeSecretCipher })
+    const loaded = await store.load()
+
+    await store.save({
+      ...loaded,
+      provider: {
+        ...loaded.provider,
+        apiKey: 'sk-main'
+      },
+      agents: {
+        qwicks: {
+          ...loaded.agents.qwicks,
+          runtimeToken: 'runtime-token'
+        }
+      },
+      workflow: {
+        ...loaded.workflow,
+        webhookSecret: 'webhook-secret'
+      }
+    })
+
+    const raw = await readFile(settingsPath, 'utf8')
+    expect(raw).toContain('__qwicksEncryptedSecret')
+    expect(raw).not.toContain('sk-main')
+    expect(raw).not.toContain('runtime-token')
+    expect(raw).not.toContain('webhook-secret')
+
+    const reloaded = await new JsonSettingsStore(userDataDir, { secretCipher: fakeSecretCipher }).load()
+    expect(reloaded.provider.apiKey).toBe('sk-main')
+    expect(reloaded.agents.qwicks.runtimeToken).toBe('runtime-token')
+    expect(reloaded.workflow.webhookSecret).toBe('webhook-secret')
+  })
+
+  it('rewrites existing plaintext secrets with encrypted envelopes on load', async () => {
+    const userDataDir = await mkdtemp(join(tmpdir(), 'ds-gui-settings-'))
+    const settingsPath = join(userDataDir, 'qwicks-settings.json')
+    await writeFile(
+      settingsPath,
+      JSON.stringify({ version: 1, provider: { apiKey: 'sk-plaintext' } }),
+      'utf8'
+    )
+
+    const loaded = await new JsonSettingsStore(userDataDir, { secretCipher: fakeSecretCipher }).load()
+    expect(loaded.provider.apiKey).toBe('sk-plaintext')
+
+    const raw = await readFile(settingsPath, 'utf8')
+    expect(raw).toContain('__qwicksEncryptedSecret')
+    expect(raw).not.toContain('sk-plaintext')
   })
 
   it('creates a default write workspace with welcome.md', async () => {

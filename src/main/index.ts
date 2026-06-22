@@ -1,11 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, safeStorage, Tray } from 'electron'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   JsonSettingsStore,
-  devServerHintUrl
+  devServerHintUrl,
+  type SettingsSecretCipher
 } from './settings-store'
 import qwicksLogoPng from '../asset/img/qwicks.png?url'
 import qwicksMacLogoPng from '../asset/img/qwicks_mac.png?url'
@@ -1399,6 +1400,14 @@ if (runningClawScheduleMcpServer) {
     process.exit(1)
   })
 } else {
+function createSettingsSecretCipher(): SettingsSecretCipher {
+  return {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (value: string) => safeStorage.encryptString(value).toString('base64'),
+    decryptString: (value: string) => safeStorage.decryptString(Buffer.from(value, 'base64'))
+  }
+}
+
 app.whenReady().then(async () => {
   traceStartup('app.whenReady:start')
   if (!gotSingleInstanceLock) return
@@ -1412,7 +1421,9 @@ app.whenReady().then(async () => {
     app.dock.setIcon(macDockIcon.isEmpty() ? appIcon : macDockIcon)
   }
 
-  store = new JsonSettingsStore(app.getPath('userData'))
+  store = new JsonSettingsStore(app.getPath('userData'), {
+    secretCipher: createSettingsSecretCipher()
+  })
   traceStartup('settings load:start')
   const initial = await store.load()
   traceStartup('settings load:done')

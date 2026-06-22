@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { atomicWriteFile } from '../../qwicks/src/adapters/file/atomic-write.js'
@@ -33,6 +33,31 @@ import {
 } from '../shared/app-settings'
 
 export type { AppSettingsV1 }
+
+export type SettingsSecretCipher = {
+  isEncryptionAvailable: () => boolean
+  encryptString: (value: string) => string
+  decryptString: (value: string) => string
+}
+
+type EncryptedSecretEnvelope = {
+  __qwicksEncryptedSecret: 1
+  algorithm: 'electron-safe-storage'
+  value: string
+}
+
+const ENCRYPTED_SECRET_MARKER = '__qwicksEncryptedSecret'
+const SECRET_DISK_FIELD_NAMES = new Set([
+  'apikey',
+  'authorization',
+  'runtimetoken',
+  'webhooksecret',
+  'clientsecret',
+  'appsecret',
+  'password',
+  'secret',
+  'bottoken'
+])
 
 // 数据默认根目录从 ~/.deepseekgui 升级为 ~/.qwicks。老安装的既有目录由
 // legacy-data-migration.ts 在启动期搬迁并留兼容链接;settings 里存的旧
@@ -157,8 +182,110 @@ function normalizeStoredSettings(settings: AppSettingsV1): AppSettingsV1 {
   }
 }
 
-function serializeSettingsForDisk(settings: AppSettingsV1): string {
-  return JSON.stringify(normalizeStoredSettings(settings), null, 2)
+function serializeSettingsForDisk(
+  settings: AppSettingsV1,
+  secretCipher?: SettingsSecretCipher | null
+): string {
+  const normalized = normalizeStoredSettings(settings)
+  return JSON.stringify(prepareSettingsForDisk(normalized, secretCipher), null, 2)
+}
+
+async function restrictFileToOwner(path: string): Promise<void> {
+  try {
+    await chmod(path, 0o600)
+  } catch {
+    /* best effort only; Windows ACLs and some filesystems may ignore chmod */
+  }
+}
+
+function canUseSecretCipher(secretCipher?: SettingsSecretCipher | null): secretCipher is SettingsSecretCipher {
+  try {
+    return Boolean(secretCipher?.isEncryptionAvailable())
+  } catch {
+    return false
+  }
+}
+
+function normalizedDiskFieldKey(key: string): string {
+  return key.replace(/[-_\s]/g, '').toLowerCase()
+}
+
+function isSecretDiskField(key: string): boolean {
+  const normalized = normalizedDiskFieldKey(key)
+  return (
+    SECRET_DISK_FIELD_NAMES.has(normalized) ||
+    normalized.endsWith('apikey') ||
+    normalized.endsWith('secret') ||
+    normalized.endsWith('token')
+  )
+}
+
+function isEncryptedSecretEnvelope(value: unknown): value is EncryptedSecretEnvelope {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const data = value as Partial<EncryptedSecretEnvelope>
+  return (
+    data.__qwicksEncryptedSecret === 1 &&
+    data.algorithm === 'electron-safe-storage' &&
+    typeof data.value === 'string'
+  )
+}
+
+function encryptSecretForDisk(value: string, secretCipher?: SettingsSecretCipher | null): string | EncryptedSecretEnvelope {
+  if (!value || !canUseSecretCipher(secretCipher)) return value
+  try {
+    return {
+      [ENCRYPTED_SECRET_MARKER]: 1,
+      algorithm: 'electron-safe-storage',
+      value: secretCipher.encryptString(value)
+    }
+  } catch {
+    return value
+  }
+}
+
+function decryptSecretFromDisk(value: EncryptedSecretEnvelope, secretCipher?: SettingsSecretCipher | null): string {
+  if (!canUseSecretCipher(secretCipher)) return ''
+  try {
+    return secretCipher.decryptString(value.value)
+  } catch {
+    return ''
+  }
+}
+
+function prepareSettingsForDisk(value: unknown, secretCipher?: SettingsSecretCipher | null, key = ''): unknown {
+  if (typeof value === 'string') {
+    return isSecretDiskField(key) ? encryptSecretForDisk(value, secretCipher) : value
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => prepareSettingsForDisk(item, secretCipher))
+  }
+  if (!value || typeof value !== 'object') return value
+  const next: Record<string, unknown> = {}
+  for (const [childKey, childValue] of Object.entries(value)) {
+    next[childKey] = prepareSettingsForDisk(childValue, secretCipher, childKey)
+  }
+  return next
+}
+
+function containsPlainSecretField(value: unknown, key = ''): boolean {
+  if (typeof value === 'string') return Boolean(value) && isSecretDiskField(key)
+  if (Array.isArray(value)) return value.some((item) => containsPlainSecretField(item))
+  if (!value || typeof value !== 'object') return false
+  for (const [childKey, childValue] of Object.entries(value)) {
+    if (containsPlainSecretField(childValue, childKey)) return true
+  }
+  return false
+}
+
+function decryptSettingsFromDisk(value: unknown, secretCipher?: SettingsSecretCipher | null): unknown {
+  if (isEncryptedSecretEnvelope(value)) return decryptSecretFromDisk(value, secretCipher)
+  if (Array.isArray(value)) return value.map((item) => decryptSettingsFromDisk(item, secretCipher))
+  if (!value || typeof value !== 'object') return value
+  const next: Record<string, unknown> = {}
+  for (const [childKey, childValue] of Object.entries(value)) {
+    next[childKey] = decryptSettingsFromDisk(childValue, secretCipher)
+  }
+  return next
 }
 
 export async function ensureWorkspaceRootExists(workspaceRoot: string): Promise<string> {
@@ -281,6 +408,7 @@ async function writeInvalidSettingsBackup(path: string, raw: string): Promise<st
   )
   try {
     await writeFile(backupPath, raw, 'utf8')
+    await restrictFileToOwner(backupPath)
     return backupPath
   } catch {
     return null
@@ -353,9 +481,11 @@ async function readSettingsFileWithCompatibility(
 export class JsonSettingsStore {
   private path: string
   private cache: AppSettingsV1 | null = null
+  private secretCipher: SettingsSecretCipher | null
 
-  constructor(userDataPath: string) {
+  constructor(userDataPath: string, options: { secretCipher?: SettingsSecretCipher | null } = {}) {
     this.path = join(userDataPath, SETTINGS_FILE_NAME)
+    this.secretCipher = options.secretCipher ?? null
   }
 
   async load(): Promise<AppSettingsV1> {
@@ -387,16 +517,22 @@ export class JsonSettingsStore {
       throw new Error(`Failed to parse settings file ${sourcePath}: ${message}`, { cause: error })
     }
 
-    if (!isRecord(parsed)) {
+    const decrypted = decryptSettingsFromDisk(parsed, this.secretCipher)
+
+    if (!isRecord(decrypted)) {
       return replaceInvalidSettingsWithDefaults(this, sourcePath, raw, 'top-level value is not an object')
     }
 
-    const normalized = normalizeStoredSettings(buildMergedSettings(parsed as Partial<AppSettingsV1>))
+    const normalized = normalizeStoredSettings(buildMergedSettings(decrypted as Partial<AppSettingsV1>))
     await ensureWorkspaceRootExists(normalized.workspaceRoot)
     await ensureWriteWorkspaceRootsExist(normalized)
     await ensureClawChannelWorkspaceRootsExist(normalized)
     this.cache = normalized
-    if (sourcePath !== this.path) {
+    const shouldRewriteEncryptedSettings =
+      canUseSecretCipher(this.secretCipher) &&
+      !raw.includes(ENCRYPTED_SECRET_MARKER) &&
+      containsPlainSecretField(normalized)
+    if (sourcePath !== this.path || shouldRewriteEncryptedSettings) {
       await this.save(normalized)
     }
     return this.cache
@@ -409,7 +545,8 @@ export class JsonSettingsStore {
     await ensureClawChannelWorkspaceRootsExist(normalized)
     this.cache = normalized
     await mkdir(dirname(this.path), { recursive: true })
-    await atomicWriteFile(this.path, serializeSettingsForDisk(normalized))
+    await atomicWriteFile(this.path, serializeSettingsForDisk(normalized, this.secretCipher))
+    await restrictFileToOwner(this.path)
   }
 
   async patch(partial: AppSettingsPatch): Promise<AppSettingsV1> {

@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -56,6 +56,7 @@ import {
 import { defaultQWicksDataDir } from './runtime/qwicks-adapter'
 import { isQWicksHealthResponseBody } from './qwicks-health'
 import { appendManagedLogLine } from './logger'
+import { redactSecretText } from '../shared/secret-redaction'
 import {
   comparableSkillRootPath,
   guiSkillManagedComparablePaths,
@@ -148,6 +149,10 @@ function appendTail(current: string, nextChunk: string, maxChars = STDERR_TAIL_M
   return combined.length > maxChars ? combined.slice(-maxChars) : combined
 }
 
+function appendRedactedTail(current: string, nextChunk: string, maxChars = STDERR_TAIL_MAX_CHARS): string {
+  return redactSecretText(appendTail(current, nextChunk, maxChars))
+}
+
 function formatQWicksLogLine(
   stream: QWicksLogStream,
   pid: number | undefined,
@@ -155,11 +160,19 @@ function formatQWicksLogLine(
 ): string {
   const stamp = new Date().toISOString()
   const pidLabel = typeof pid === 'number' ? `qwicks pid=${pid}` : 'qwicks'
-  return `[${stamp}] [${stream.toUpperCase()}] [${pidLabel}] ${message}\n`
+  return `[${stamp}] [${stream.toUpperCase()}] [${pidLabel}] ${redactSecretText(message)}\n`
 }
 
 function normalizeCapturedChunk(chunk: Buffer | string): string {
   return String(chunk).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+async function restrictFileToOwner(path: string): Promise<void> {
+  try {
+    await chmod(path, 0o600)
+  } catch {
+    /* best effort only; Windows ACLs and some filesystems may ignore chmod */
+  }
 }
 
 function createQWicksChildLogCapture(pid: number | undefined): QWicksChildLogCapture {
@@ -342,7 +355,7 @@ async function startQWicksChildOnce(
   startedLogCapture.logLifecycle(`spawned on port ${runtime.port} using data dir ${dataDir}`)
   startedChild.stdout?.on('data', startedLogCapture.captureStdout)
   startedChild.stderr?.on('data', (chunk: Buffer | string) => {
-    childStderrTail = appendTail(childStderrTail, normalizeCapturedChunk(chunk))
+    childStderrTail = appendRedactedTail(childStderrTail, normalizeCapturedChunk(chunk))
     startedLogCapture.captureStderr(chunk)
   })
   child.on('exit', (code, signal) => {
@@ -517,6 +530,7 @@ export async function syncGuiManagedQWicksConfig(
   if (existing && nextText === `${JSON.stringify(existing, null, 2)}\n`) return
   await mkdir(dirname(configPath), { recursive: true })
   await writeFile(configPath, nextText, 'utf8')
+  await restrictFileToOwner(configPath)
 }
 
 function buildGuiScheduleQWicksMcpServer(
@@ -1423,7 +1437,7 @@ async function waitForQWicksStartup(startedChild: ChildProcess, port?: number): 
       if (tryParseReady()) settleReady()
     }
     const onStderr = (chunk: Buffer | string): void => {
-      stderrTail = appendTail(stderrTail, String(chunk))
+      stderrTail = appendRedactedTail(stderrTail, String(chunk))
     }
     const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
       if (settled) return
@@ -1449,14 +1463,16 @@ function describeQWicksExit(
   signal: NodeJS.Signals | null,
   stderrTail = ''
 ): string {
-  const suffix = stderrTail.trim() ? `\n${stderrTail.trim()}` : ''
+  const safeStderrTail = redactSecretText(stderrTail).trim()
+  const suffix = safeStderrTail ? `\n${safeStderrTail}` : ''
   if (signal) return `QWicks exited during startup with signal ${signal}${suffix}`
   if (typeof code === 'number') return `QWicks exited during startup with code ${code}${suffix}`
   return `QWicks exited during startup${suffix}`
 }
 
 function describeQWicksStartupTimeout(stderrTail: string): string {
-  const suffix = stderrTail.trim() ? `\n${stderrTail.trim()}` : ''
+  const safeStderrTail = redactSecretText(stderrTail).trim()
+  const suffix = safeStderrTail ? `\n${safeStderrTail}` : ''
   return `QWicks did not report ready within ${QWICKS_STARTUP_TIMEOUT_MS}ms${suffix}`
 }
 

@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DEFAULT_LOG_RETENTION_DAYS } from '../shared/app-settings'
+import { redactSecrets, redactSecretText } from '../shared/secret-redaction'
 
 export type LogLevel = 'error' | 'warn' | 'info'
 export type ManagedLogFilePrefix = 'deepseek-gui' | 'qwicks'
@@ -32,10 +33,6 @@ function isManagedLogFile(entry: string): boolean {
   )
 }
 
-/**
- * Best-effort prune of old log files. Runs on every write so it stays
- * tidy without a dedicated timer.
- */
 async function pruneOldLogs(): Promise<void> {
   try {
     const entries = await readdir(cfg.dir)
@@ -52,7 +49,7 @@ async function pruneOldLogs(): Promise<void> {
       }
     }
   } catch {
-    /* directory may not exist yet — that's fine */
+    /* directory may not exist yet */
   }
 }
 
@@ -62,12 +59,12 @@ export async function appendManagedLogLine(
 ): Promise<void> {
   if (!cfg.enabled || !cfg.dir) return
 
-  const text = line.endsWith('\n') ? line : `${line}\n`
+  const redactedLine = redactSecretText(line)
+  const text = redactedLine.endsWith('\n') ? redactedLine : `${redactedLine}\n`
 
   try {
     await mkdir(cfg.dir, { recursive: true })
     await appendFile(join(cfg.dir, logFileName(prefix, new Date())), text, 'utf8')
-    // prune after write — cheap since most writes succeed pruning
     await pruneOldLogs()
   } catch {
     /* never crash the app because of logging */
@@ -76,31 +73,30 @@ export async function appendManagedLogLine(
 
 async function writeLogLine(level: LogLevel, category: string, message: string): Promise<void> {
   const stamp = new Date().toISOString()
-  const line = `[${stamp}] [${level.toUpperCase()}] [${category}] ${message}\n`
+  const line = `[${stamp}] [${level.toUpperCase()}] [${category}] ${redactSecretText(message)}\n`
   await appendManagedLogLine('qwicks', line)
 }
 
 export function logError(category: string, message: string, detail?: unknown): void {
+  const redactedMessage = redactSecretText(message)
   const full = detail !== undefined
-    ? `${message} — detail: ${safeStringify(detail)}`
-    : message
+    ? `${redactedMessage} - detail: ${safeStringify(detail)}`
+    : redactedMessage
   void writeLogLine('error', category, full)
 }
 
 export function logWarn(category: string, message: string, detail?: unknown): void {
+  const redactedMessage = redactSecretText(message)
   const full = detail !== undefined
-    ? `${message} — detail: ${safeStringify(detail)}`
-    : message
+    ? `${redactedMessage} - detail: ${safeStringify(detail)}`
+    : redactedMessage
   void writeLogLine('warn', category, full)
 }
 
 export function logInfo(category: string, message: string): void {
-  void writeLogLine('info', category, message)
+  void writeLogLine('info', category, redactSecretText(message))
 }
 
-/**
- * On startup, prune old logs immediately and log the action.
- */
 export async function pruneOnStartup(): Promise<void> {
   await pruneOldLogs()
   logInfo('logger', `Pruned logs older than ${cfg.retentionDays} day(s) on startup`)
@@ -108,9 +104,9 @@ export async function pruneOnStartup(): Promise<void> {
 
 function safeStringify(value: unknown): string {
   try {
-    if (typeof value === 'string') return value.slice(0, 2000)
-    return JSON.stringify(value, null, 2).slice(0, 2000)
+    if (typeof value === 'string') return redactSecretText(value).slice(0, 2000)
+    return redactSecretText(JSON.stringify(redactSecrets(value), null, 2)).slice(0, 2000)
   } catch {
-    return String(value).slice(0, 2000)
+    return redactSecretText(String(value)).slice(0, 2000)
   }
 }

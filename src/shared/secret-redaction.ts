@@ -1,8 +1,6 @@
 const SECRET_KEY_PATTERN = /(api[-_]?key|authorization|bearer|client[-_]?secret|password|secret|token)/i
-const SECRET_TEXT_PATTERNS = [
-  /\b(authorization|api[-_]?key|client[-_]?secret|password|token)\s*[:=]\s*((?:Bearer\s+)?[^\s,;]+)/gi,
-  /\bbearer\s+([^\s,;]+)/gi
-]
+const LABELED_SECRET_TEXT_PATTERN = /\b([A-Z0-9_.-]*(?:api[-_]?key|authorization|client[-_]?secret|password|secret|token)[A-Z0-9_.-]*)\b(["']?\s*[:=]\s*["']?)(Bearer\s+)?([^"',\s;]+)/gi
+const BARE_BEARER_SECRET_TEXT_PATTERN = /\bbearer\s+([^"',\s;]+)/gi
 
 export const REDACTED_SECRET = '<redacted>'
 
@@ -27,10 +25,11 @@ function redact(value: unknown, key = ''): unknown {
 }
 
 export function redactSecretText(value: string): string {
-  return SECRET_TEXT_PATTERNS.reduce((current, pattern) =>
-    current.replace(pattern, (match, key) =>
-      match.toLowerCase().startsWith('bearer ')
-        ? `Bearer ${REDACTED_SECRET}`
-        : `${key}=${REDACTED_SECRET}`
-    ), value)
+  return value
+    .replace(
+      LABELED_SECRET_TEXT_PATTERN,
+      (_match, key: string, separator: string, bearerPrefix: string | undefined) =>
+        `${key}${separator}${bearerPrefix ? `Bearer ${REDACTED_SECRET}` : REDACTED_SECRET}`
+    )
+    .replace(BARE_BEARER_SECRET_TEXT_PATTERN, `Bearer ${REDACTED_SECRET}`)
 }

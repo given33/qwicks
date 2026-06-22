@@ -16,6 +16,7 @@ import type {
 } from '../shared/gui-update'
 import { nextGuiUpdateCheckDelay } from '../shared/gui-update-schedule'
 import { DEFAULT_GUI_UPDATE_CHANNEL, normalizeGuiUpdateChannel } from '../shared/gui-update'
+import { redactSecretText } from '../shared/secret-redaction'
 import {
   codeUpdateDownloadDir,
   codeUpdatePackagePath,
@@ -270,6 +271,14 @@ function sanitizeUpdaterError(raw: string, channel: GuiUpdateChannel): string {
   return message.split(/\n(?:Headers:|Data:)/, 1)[0].trim() || message
 }
 
+function sanitizeConsoleValue(value: unknown): string {
+  try {
+    return redactSecretText(typeof value === 'string' ? value : JSON.stringify(value))
+  } catch {
+    return redactSecretText(String(value))
+  }
+}
+
 function toGuiInfo(updateInfo: UpdateInfo, hasUpdate: boolean, manualOnly = false): Extract<GuiUpdateInfo, { ok: true }> {
   const latestVersion = updateInfo.version.trim()
   return {
@@ -404,6 +413,44 @@ function updateFeedUrl(channel: GuiUpdateChannel): string {
     envWithLegacyFallback('QWICKS_UPDATE_URL', 'DEEPSEEK_GUI_UPDATE_URL')
   if (direct) return ensureTrailingSlash(direct.replace(/\{channel\}/g, normalized))
   return `${updateBaseUrl()}/channels/${normalized}/latest/`
+}
+
+function insecureUpdatesAllowed(): boolean {
+  return (
+    process.env.QWICKS_ALLOW_INSECURE_UPDATES === '1' ||
+    process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES === '1'
+  )
+}
+
+function isLoopbackUpdateHost(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '')
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1'
+}
+
+function isTrustedUpdateUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol === 'https:') return true
+    if (url.protocol === 'http:' && isLoopbackUpdateHost(url.hostname)) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+function insecureUpdateMessage(rawUrl: string): string {
+  return `Automatic updates are blocked because the update feed uses insecure HTTP (${rawUrl}). Use HTTPS or a signed update feed before enabling automatic updates.`
+}
+
+function insecureUpdateInfo(channel: GuiUpdateChannel, rawUrl: string): Extract<GuiUpdateInfo, { ok: false }> {
+  return {
+    ok: false,
+    currentVersion: currentGuiVersion(),
+    code: 'insecure_update',
+    message: insecureUpdateMessage(rawUrl),
+    releaseUrl: downloadPageUrl(),
+    channel
+  }
 }
 
 function semverParts(value: string): [number, number, number] | null {
@@ -594,9 +641,9 @@ export function initializeGuiUpdater(
   }
 
   autoUpdater.logger = {
-    info: (message?: unknown) => console.info('[qwicks-gui updater]', message),
-    warn: (message?: unknown) => console.warn('[qwicks-gui updater]', message),
-    error: (message?: unknown) => console.error('[qwicks-gui updater]', message)
+    info: (message?: unknown) => console.info('[qwicks-gui updater]', sanitizeConsoleValue(message)),
+    warn: (message?: unknown) => console.warn('[qwicks-gui updater]', sanitizeConsoleValue(message)),
+    error: (message?: unknown) => console.error('[qwicks-gui updater]', sanitizeConsoleValue(message))
   }
 
   autoUpdater.on('checking-for-update', () => {
@@ -695,6 +742,18 @@ export function getGuiUpdateState(): GuiUpdateState {
 export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpdateInfo> {
   const selectedChannel = await resolveUpdateChannel(channel)
   await configureReachableUpdaterChannel(selectedChannel)
+  const feedUrl = updateFeedUrl(selectedChannel)
+
+  if (!insecureUpdatesAllowed() && !isTrustedUpdateUrl(feedUrl)) {
+    const info = insecureUpdateInfo(selectedChannel, feedUrl)
+    emitGuiUpdateState({
+      status: 'error',
+      info,
+      message: info.message,
+      code: 'insecure_update'
+    })
+    return info
+  }
 
   if (!macAutoUpdateAllowed()) {
     return checkManualUpdate(selectedChannel, 'unsupported')
@@ -804,6 +863,10 @@ async function downloadCodeUpdate(
   manifest: CodeUpdateManifest,
   info: Extract<GuiUpdateInfo, { ok: true }>
 ): Promise<string[]> {
+  if (!insecureUpdatesAllowed() && !isTrustedUpdateUrl(manifest.package.url)) {
+    throw new Error(insecureUpdateMessage(manifest.package.url))
+  }
+
   const response = await fetch(manifest.package.url, {
     cache: 'no-store',
     signal: AbortSignal.timeout(120_000)
@@ -843,6 +906,18 @@ async function downloadCodeUpdate(
 export async function downloadGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpdateDownloadResult> {
   const selectedChannel = await resolveUpdateChannel(channel)
   await configureReachableUpdaterChannel(selectedChannel)
+  const feedUrl = updateFeedUrl(selectedChannel)
+
+  if (!insecureUpdatesAllowed() && !isTrustedUpdateUrl(feedUrl)) {
+    const message = insecureUpdateMessage(feedUrl)
+    emitGuiUpdateState({ status: 'error', info: lastInfo ?? undefined, message, code: 'insecure_update' })
+    return {
+      ok: false,
+      currentVersion: currentGuiVersion(),
+      code: 'insecure_update',
+      message
+    }
+  }
 
   if (!macAutoUpdateAllowed()) {
     return {

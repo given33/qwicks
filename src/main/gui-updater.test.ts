@@ -39,6 +39,7 @@ function createUpdater(): MockUpdater {
 
 beforeEach(() => {
   originalEnv = { ...process.env }
+  process.env.QWICKS_ALLOW_INSECURE_UPDATES = '1'
   vi.useFakeTimers()
   vi.resetModules()
   updater = createUpdater()
@@ -156,6 +157,22 @@ describe('checkGuiUpdate feed URL', () => {
       provider: 'generic',
       url: 'https://update.haoyongai.xyz/qwicks/channels/stable/latest/'
     })
+  })
+
+  it('blocks automatic updates from public HTTP feeds unless explicitly allowed', async () => {
+    delete process.env.QWICKS_ALLOW_INSECURE_UPDATES
+    delete process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: false,
+      code: 'insecure_update',
+      message: expect.stringContaining('insecure HTTP')
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
 
   it('uses code-package update metadata before falling back to the installer feed', async () => {

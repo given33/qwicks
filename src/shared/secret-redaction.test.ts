@@ -16,7 +16,13 @@ describe('secret redaction', () => {
 
   it('redacts inline bearer and token text', () => {
     expect(redactSecretText('Authorization: Bearer abc123 token=secret-value')).toBe(
-      'Authorization=<redacted> token=<redacted>'
+      'Authorization: Bearer <redacted> token=<redacted>'
+    )
+  })
+
+  it('redacts secret fields embedded in JSON-like text', () => {
+    expect(redactSecretText('{"apiKey":"sk-test","OPENAI_API_KEY":"env-secret"}')).toBe(
+      '{"apiKey":"<redacted>","OPENAI_API_KEY":"<redacted>"}'
     )
   })
 })
