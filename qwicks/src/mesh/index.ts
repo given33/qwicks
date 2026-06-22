@@ -10,6 +10,7 @@ import { ManifestStore, buildManifest, type ToolInput, type ModelInput } from '.
 import { createRemoteChildExecutor, type RemoteExecutorDeps } from './dispatch/remote-executor.js'
 import { TaskServer } from './dispatch/task-server.js'
 import { TaskLease } from './lease/lease.js'
+import { decideRecovery } from './lease/recovery.js'
 import { MeshTransportServer } from './transport/transport.js'
 import { MeshDiscovery, type BonjourLike } from './discovery/mdns.js'
 import { ToolRpcServer } from './remote-tool/tool-rpc.js'
@@ -76,6 +77,8 @@ export interface BootDeps {
   queryLocalMemory?: (req: MemoryQueryRequest) => Promise<MemoryChunk[]>
   /** Maximum topK for memory queries (default 20). */
   maxTopK?: number
+  /** Called when a remote tool execution emits progress (RFC 003 §7.1). */
+  onToolProgress?: (event: { callId: string; taskId?: string; progress: number; message?: string }) => void
 
   /* Phase 4 — Routing */
   /** Periodic manifest refresh interval in ms (default 30_000). */
@@ -95,6 +98,10 @@ export interface MeshHandle {
   responder: PairingResponder
   /** The dispatch-aware decide callback for MeshRuntimeSlot / mesh-aware executor. */
   meshDecide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => { executor: 'local' | 'remote'; workerDeviceId?: string; reason?: string }
+  /** Broadcast a JSON-RPC notification to all connected peers. */
+  broadcast: (method: string, params?: unknown) => void
+  /** The port the transport server is listening on (0 if discovery disabled). */
+  transportPort: number
   shutdown: () => Promise<void>
 }
 
@@ -174,24 +181,63 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   }
   const remoteExecutor = createRemoteChildExecutor(executorDeps)
 
+  /* ---- Task retry tracking (Phase 4 recovery) ---- */
+  const taskRetries = new Map<string, number>()
+
   /* ---- Lease ---- */
   const lease = new TaskLease(
     {
       leaseTimeoutMs: config.task.defaultLeaseTimeout * 1000,
       heartbeatIntervalMs: config.task.defaultHeartbeatInterval * 1000
     },
-    (taskId) => {
-      void deps.cancelRemote?.(taskId, '')
-      void audit.record({
+    async (taskId) => {
+      const retryCount = taskRetries.get(taskId) ?? 0
+      const maxRetries = config.task.maxRetries ?? 3
+      const taskEntry = inflightTasks.get(taskId)
+
+      // Determine worker reachability: if we have a worker and it hasn't
+      // explicitly disconnected, consider it reachable (lease just timed out).
+      const originalWorkerReachable = taskEntry != null
+      const alternativeWorkersAvailable = manifestStore.list().length > 1
+
+      const decision = decideRecovery({
+        retryCount,
+        maxRetries,
+        originalWorkerReachable,
+        alternativeWorkersAvailable,
+        retryable: true // lease timeout is retryable
+      })
+
+      await audit.record({
         kind: 'lease_expired',
         from: deps.identity.deviceId,
-        to: '?',
-        outcome: 'timeout',
+        to: taskEntry?.workerDeviceId ?? '?',
+        outcome: decision.action === 'fail' ? 'failure' : 'timeout',
         traceId: taskId,
         taskId,
         timestamp: new Date().toISOString(),
-        detail: {}
+        detail: { retryCount, maxRetries, action: decision.action, reason: decision.reason }
       })
+
+      switch (decision.action) {
+        case 'retry_same_worker':
+          taskRetries.set(taskId, retryCount + 1)
+          lease.heartbeat(taskId) // re-arm lease for retry
+          break
+        case 'reassign':
+        case 'take_over_locally':
+          void deps.cancelRemote?.(taskId, 'lease_expired')
+          inflightTasks.delete(taskId)
+          lease.release(taskId)
+          taskRetries.delete(taskId)
+          break
+        case 'fail':
+          void deps.cancelRemote?.(taskId, 'lease_expired')
+          inflightTasks.delete(taskId)
+          lease.release(taskId)
+          taskRetries.delete(taskId)
+          break
+      }
     }
   )
 
@@ -350,6 +396,16 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
         const { callId } = params as Record<string, string>
         return { acknowledged: true, callId }
       }
+      case 'tools/progress': {
+        const { callId, taskId, progress, message } = params as Record<string, unknown>
+        deps.onToolProgress?.({
+          callId: String(callId ?? ''),
+          taskId: taskId != null ? String(taskId) : undefined,
+          progress: Number(progress ?? 0),
+          message: message != null ? String(message) : undefined
+        })
+        return { acknowledged: true }
+      }
 
       /* ---- memory (Phase 3) ---- */
       case 'memory/query': {
@@ -399,6 +455,10 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
             lastSeenAt: new Date().toISOString()
           })
         }
+        // Revoke session keys for this peer (they must re-pair)
+        sessionKeyStore.revoke(deviceId)
+        // Propagate to all other connected peers (RFC 006 §7.2)
+        transport.broadcast('identity/rotated', params)
         return { acknowledged: true }
       }
 
@@ -409,6 +469,13 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
 
   if (config.discovery.enabled) {
     const started = await transport.start((msg, reply) => {
+      if (msg.type === 'notification') {
+        // Fire-and-forget: verify envelope, dispatch, ignore result
+        verifyAndUnwrap(msg.method, msg.params)
+          .then(({ method, params }) => dispatch(method, params))
+          .catch(() => { /* notifications are best-effort */ })
+        return
+      }
       if (msg.type !== 'request') return
       verifyAndUnwrap(msg.method, msg.params)
         .then(({ method, params }) => dispatch(method, params))
@@ -463,6 +530,8 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     taskServer,
     responder,
     meshDecide,
+    broadcast: (method: string, params?: unknown) => transport.broadcast(method, params),
+    transportPort,
     shutdown: async () => {
       if (stopped) return
       stopped = true
@@ -475,6 +544,7 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
       }
       inflightTasks.clear()
       cancelledTasks.clear()
+      taskRetries.clear()
       audit.close()
       trustStore.close()
     }

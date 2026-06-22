@@ -99,4 +99,68 @@ describe('MeshTransport loopback (RFC 000 §8.1)', () => {
     await client.connect(`ws://127.0.0.1:${port}`)
     await expect(client.request('whatever', {})).rejects.toMatchObject({ code: -32002 })
   })
+
+  it('broadcasts a notification to all connected clients (RFC 006 §5.4)', async () => {
+    const server = new MeshTransportServer()
+    servers.push(server)
+
+    const received: string[] = []
+
+    const { port } = await server.start(() => {
+      // handler not needed for broadcast — clients track received notifications
+    })
+
+    // Connect two clients and listen for notifications
+    const client1 = new MeshTransportClient()
+    const client2 = new MeshTransportClient()
+    clients.push(client1, client2)
+
+    let c1msg = ''
+    let c2msg = ''
+
+    await client1.connect(`ws://127.0.0.1:${port}`)
+    await client2.connect(`ws://127.0.0.1:${port}`)
+
+    // Hack: we need to listen on the underlying ws for notifications
+    // since MeshTransportClient doesn't expose a notification listener.
+    // Instead, we use a raw approach: connect via ws directly.
+    // Actually, let's just test the server-side broadcast count.
+
+    // Connect a third raw WebSocket to read the broadcast
+    const { WebSocket } = await import('ws')
+    const raw1 = new WebSocket(`ws://127.0.0.1:${port}`)
+    const raw2 = new WebSocket(`ws://127.0.0.1:${port}`)
+
+    await Promise.all([
+      new Promise<void>((resolve) => raw1.on('open', resolve)),
+      new Promise<void>((resolve) => raw2.on('open', resolve))
+    ])
+
+    let raw1Received = ''
+    let raw2Received = ''
+    raw1.on('message', (data) => { raw1Received = String(data) })
+    raw2.on('message', (data) => { raw2Received = String(data) })
+
+    // Give the server a moment to register connections
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    server.broadcast('mesh/hello', { version: '1' })
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const msg1 = parseJsonRpcMessage(raw1Received)
+    const msg2 = parseJsonRpcMessage(raw2Received)
+
+    expect(msg1?.type).toBe('notification')
+    if (msg1?.type === 'notification') {
+      expect(msg1.method).toBe('mesh/hello')
+    }
+    expect(msg2?.type).toBe('notification')
+    if (msg2?.type === 'notification') {
+      expect(msg2.method).toBe('mesh/hello')
+    }
+
+    raw1.close()
+    raw2.close()
+  })
 })

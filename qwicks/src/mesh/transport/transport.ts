@@ -26,6 +26,7 @@ export type Reply =
 export class MeshTransportServer {
   private wss?: WebSocketServer
   private port = 0
+  private readonly clients = new Set<WebSocket>()
 
   async start(handler: (msg: JsonRpcMessage, reply: (r: Reply) => void) => void): Promise<{ port: number }> {
     return new Promise((resolve) => {
@@ -36,6 +37,7 @@ export class MeshTransportServer {
         resolve({ port: this.port })
       })
       this.wss.on('connection', (ws) => {
+        this.clients.add(ws)
         ws.on('message', (data) => {
           const msg = parseJsonRpcMessage(String(data))
           if (!msg) return
@@ -46,8 +48,29 @@ export class MeshTransportServer {
             ws.send(text)
           })
         })
+        ws.on('close', () => {
+          this.clients.delete(ws)
+        })
+        ws.on('error', () => {
+          this.clients.delete(ws)
+        })
       })
     })
+  }
+
+  /** Broadcast a JSON-RPC notification to all connected peers (RFC 006 §5.4). */
+  broadcast(method: string, params?: unknown): void {
+    const text = JSON.stringify({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) })
+    for (const ws of this.clients) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(text)
+      }
+    }
+  }
+
+  /** Number of currently connected peers. */
+  get clientCount(): number {
+    return this.clients.size
   }
 
   async stop(): Promise<void> {
