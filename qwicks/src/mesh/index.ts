@@ -11,7 +11,6 @@ import { createRemoteChildExecutor, type RemoteExecutorDeps } from './dispatch/r
 import { createFanOutDispatcher, type FanOutDispatcherDeps, type FanOutParams, type FanOutResult } from './dispatch/fan-out.js'
 import { TaskServer } from './dispatch/task-server.js'
 import { TaskLease } from './lease/lease.js'
-import { decideRecovery } from './lease/recovery.js'
 import { MeshTransportServer } from './transport/transport.js'
 import { MeshDiscovery, type BonjourLike } from './discovery/mdns.js'
 import { ToolRpcServer } from './remote-tool/tool-rpc.js'
@@ -216,7 +215,16 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   /* ---- Task retry tracking (Phase 4 recovery) ---- */
   const taskRetries = new Map<string, number>()
 
-  /* ---- Lease ---- */
+  /* ---- Lease ----
+   * The lease watchdog fires when an outbound dispatch hasn't heartbeated
+   * within the lease window. Because the request() in runRemote now has its
+   * own timeout (tied to the same lease duration) AND honours the abort
+   * signal, the lease's job is to break a hung dispatch — not to spin in a
+   * retry loop. On expiry we cancel the remote work and let the pending
+   * request reject; the caller's DelegationRuntime then sees the failure
+   * and decides whether to retry at a higher level. retry_same_worker just
+   * re-arming the lease indefinitely (the old behaviour) was a no-op that
+   * masked the hang. */
   const lease = new TaskLease(
     {
       leaseTimeoutMs: config.task.defaultLeaseTimeout * 1000,
@@ -225,51 +233,22 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     async (taskId) => {
       const retryCount = taskRetries.get(taskId) ?? 0
       const maxRetries = config.task.maxRetries ?? 3
-      const taskEntry = inflightTasks.get(taskId)
-
-      // Determine worker reachability: if we have a worker and it hasn't
-      // explicitly disconnected, consider it reachable (lease just timed out).
-      const originalWorkerReachable = taskEntry != null
-      const alternativeWorkersAvailable = manifestStore.list().length > 1
-
-      const decision = decideRecovery({
-        retryCount,
-        maxRetries,
-        originalWorkerReachable,
-        alternativeWorkersAvailable,
-        retryable: true // lease timeout is retryable
-      })
 
       await audit.record({
         kind: 'lease_expired',
         from: deps.identity.deviceId,
-        to: taskEntry?.workerDeviceId ?? '?',
-        outcome: decision.action === 'fail' ? 'failure' : 'timeout',
+        to: '?',
+        outcome: retryCount >= maxRetries ? 'failure' : 'timeout',
         traceId: taskId,
         taskId,
         timestamp: new Date().toISOString(),
-        detail: { retryCount, maxRetries, action: decision.action, reason: decision.reason }
+        detail: { retryCount, maxRetries, action: 'cancel_and_fail', reason: 'lease_expired_dispatch_cancelled' }
       })
 
-      switch (decision.action) {
-        case 'retry_same_worker':
-          taskRetries.set(taskId, retryCount + 1)
-          lease.heartbeat(taskId) // re-arm lease for retry
-          break
-        case 'reassign':
-        case 'take_over_locally':
-          void deps.cancelRemote?.(taskId, 'lease_expired')
-          inflightTasks.delete(taskId)
-          lease.release(taskId)
-          taskRetries.delete(taskId)
-          break
-        case 'fail':
-          void deps.cancelRemote?.(taskId, 'lease_expired')
-          inflightTasks.delete(taskId)
-          lease.release(taskId)
-          taskRetries.delete(taskId)
-          break
-      }
+      // Cancel the remote work (sends task/cancel to the worker if connected).
+      // The pending runRemote request() will reject on its own timeout/abort.
+      void deps.cancelRemote?.(taskId, 'lease_expired')
+      taskRetries.delete(taskId)
     }
   )
 

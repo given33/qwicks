@@ -42,6 +42,10 @@ export class MeshDispatchBridge {
   /** Per-task target deviceId, set by the mesh runtime slot just before it
    *  invokes the remote executor. Keyed by taskId (= childId). */
   private readonly dispatchTargets = new Map<string, string>()
+  /** Per-task AbortController, aborted when the lease expires or the task is
+   *  cancelled. runRemote passes this into client.request() so a lease-expiry
+   *  or external cancel breaks the pending request immediately (G3). */
+  private readonly dispatchControllers = new Map<string, AbortController>()
   /** Reconnect timers per peer, so we can cancel them on shutdown. */
   private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private stopped = false
@@ -51,14 +55,23 @@ export class MeshDispatchBridge {
   }
 
   /** Record which peer a task should be dispatched to. Called by the mesh
-   *  runtime slot right before it hands off to `remoteExecutor`. */
+   *  runtime slot just before it hands off to `remoteExecutor`. */
   setDispatchTarget(taskId: string, targetDeviceId: string): void {
     this.dispatchTargets.set(taskId, targetDeviceId)
+    this.dispatchControllers.set(taskId, new AbortController())
   }
 
   /** Clear a dispatch target after the task completes. */
   clearDispatchTarget(taskId: string): void {
     this.dispatchTargets.delete(taskId)
+    this.dispatchControllers.delete(taskId)
+  }
+
+  /** Abort the pending request for a task (called on lease expiry or cancel).
+   *  Breaks the client.request() promise so the caller's runRemote rejects
+   *  promptly instead of waiting for the request's own timeout. */
+  abortDispatch(taskId: string): void {
+    this.dispatchControllers.get(taskId)?.abort()
   }
 
   /** Called by `bootMesh`'s `onPeerDiscovered` hook when mDNS surfaces a peer. */
@@ -135,11 +148,17 @@ export class MeshDispatchBridge {
       throw new Error(`mesh dispatch bridge: peer ${targetDeviceId} is not connected (discovered: ${this.peers.has(targetDeviceId)})`)
     }
 
+    // Merge the caller's abort signal with the bridge's per-task controller
+    // so either one (user cancel, lease expiry via abortDispatch, or the
+    // caller's own signal) breaks the pending request promptly.
+    const taskController = this.dispatchControllers.get(params.taskId)
+    const effectiveSignal = mergeAbortSignals(signal, taskController?.signal)
+
     // timeoutMs tied to the lease so the request fails before the lease does.
     const leaseTimeoutMs = (params.lease?.leaseTimeout ?? 300) * 1000
     const result = (await client.request('task/run', params, {
       timeoutMs: leaseTimeoutMs,
-      signal
+      signal: effectiveSignal
     })) as ChildRunResult
     return result
   }
@@ -153,9 +172,12 @@ export class MeshDispatchBridge {
 
   /** Orchestrator-side cancel: looks up the worker that owns `taskId` (via
    *  the dispatch map) and sends `task/cancel` so the worker aborts its
-   *  in-flight local executor. No-op if the task already completed or the
-   *  peer is disconnected. This is the `cancelRemote` wired into bootMesh. */
+   *  in-flight local executor. Also aborts the pending request() on this
+   *  side so runRemote rejects immediately instead of waiting for timeout.
+   *  No-op if the task already completed or the peer is disconnected. */
   async cancelRemote(taskId: string, _cancelToken: string): Promise<void> {
+    // Abort the pending request locally first (fast path).
+    this.abortDispatch(taskId)
     const targetDeviceId = this.dispatchTargets.get(taskId)
     if (!targetDeviceId) return
     const client = this.clients.get(targetDeviceId)
@@ -201,4 +223,20 @@ export class MeshDispatchBridge {
     this.clients.clear()
     this.peers.clear()
   }
+}
+
+/** Merge two abort signals into one that fires when EITHER source aborts.
+ *  If both are undefined, returns a never-aborting signal. Used by runRemote
+ *  to combine the caller's signal (user/DelegationRuntime) with the bridge's
+ *  per-task controller (lease expiry / cancelRemote). */
+function mergeAbortSignals(a: AbortSignal | undefined, b: AbortSignal | undefined): AbortSignal {
+  if (!a) return b ?? new AbortController().signal
+  if (!b) return a
+  if (a.aborted) return a
+  if (b.aborted) return b
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  a.addEventListener('abort', onAbort, { once: true })
+  b.addEventListener('abort', onAbort, { once: true })
+  return controller.signal
 }
