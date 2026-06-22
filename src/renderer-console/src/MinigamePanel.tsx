@@ -5,7 +5,10 @@
  * 统一面板框架 + 菜单选择 + 各游戏简化可玩实现。得分换元宝 + 写档案。
  */
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { rpsJudge, rpsRandom, scoreToCoins, whackJudge, whackSpawn, type RpsChoice } from '@shared/minigame-logic'
+import {
+  PAOPAO_RANK_CONFIG, rpsJudge, rpsRandom, scoreToCoins,
+  whackJudge, whackSpawn, type PaopaoRank, type RpsChoice
+} from '@shared/minigame-logic'
 
 type Bridge = {
   reward: (amount: number) => Promise<unknown>
@@ -165,23 +168,53 @@ function MouseGame({ onBack }: { onBack: () => void }): ReactElement {
   )
 }
 
-/** 占位简化游戏（跳绳/泡泡/连连看/100层：M11 框架内，逻辑已就绪可扩展） */
+/** 升级版简化游戏（跳绳/泡泡/连连看/100层）：难度递进 + 连击 + 失误封顶 */
 function SimpleGame({ name, desc, onBack }: { name: string; desc: string; onBack: () => void }): ReactElement {
   const [taps, setTaps] = useState(0)
+  const [combo, setCombo] = useState(0)
+  const [misses, setMisses] = useState(0)
+  const maxMisses = 3
+
+  // 难度按得分递进（参考 QQ 三段难度）
+  const rank: PaopaoRank = taps < 10 ? 'simple' : taps < 25 ? 'center' : 'difficult'
+  const rankName = { simple: '简单', center: '中等', difficult: '困难' }[rank]
+
+  const hit = (): void => {
+    setTaps((t) => t + 1)
+    setCombo((c) => c + 1)
+  }
+  const miss = (): void => {
+    setCombo(0)
+    setMisses((m) => m + 1)
+  }
+
+  const gameOver = misses >= maxMisses
+
   const finish = async (): Promise<void> => {
     const coins = scoreToCoins(taps)
     await bridge()?.reward(coins)
-    if (coins > 0) await bridge()?.diaryAppend('🎮', `${name} 得分 ${taps}，换 ${coins} 元宝`)
+    if (coins > 0) await bridge()?.diaryAppend('🎮', `${name} 得分 ${taps}（${rankName}），换 ${coins} 元宝`)
     onBack()
   }
+
   return (
     <div style={{ textAlign: 'center' }}>
       <button onClick={onBack} style={backBtnStyle}>← 返回</button>
-      <div style={{ fontSize: 15, marginBottom: 12 }}>{name}</div>
-      <div style={{ fontSize: 13, color: '#bbb', marginBottom: 20 }}>{desc}</div>
-      <button style={{ ...playBtnStyle, width: 120, height: 120, fontSize: 40 }} onClick={() => setTaps((t) => t + 1)}>
-        {taps}
-      </button>
+      <div style={{ fontSize: 15, marginBottom: 8 }}>{name}</div>
+      <div style={{ fontSize: 12, color: '#bbb', marginBottom: 12 }}>{desc}</div>
+      <div style={{ fontSize: 12, color: rank === 'difficult' ? '#f85' : rank === 'center' ? '#fc5' : '#8f8', marginBottom: 12 }}>
+        难度：{rankName} · 连击 x{combo} · 失误 {misses}/{maxMisses}
+      </div>
+      {gameOver ? (
+        <div style={{ fontSize: 18, color: '#f66', marginBottom: 16 }}>游戏结束！得分 {taps}</div>
+      ) : (
+        <>
+          <button style={{ ...playBtnStyle, width: 120, height: 120, fontSize: 40 }} onClick={hit}>
+            {taps}
+          </button>
+          <button style={{ ...cashBtnStyle, background: '#e88', marginLeft: 8 }} onClick={miss}>失误</button>
+        </>
+      )}
       <div style={{ marginTop: 16 }}>
         <button style={cashBtnStyle} onClick={() => void finish()}>结算 {scoreToCoins(taps)} 元宝</button>
       </div>

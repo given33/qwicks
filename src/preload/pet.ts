@@ -43,5 +43,6 @@ contextBridge.exposeInMainWorld('pet', {
   divorce: (): Promise<unknown> => ipcRenderer.invoke('pet:divorce'),
   tickle: (type: string): Promise<unknown> => ipcRenderer.invoke('pet:tickle', type),
   study: (level: string): Promise<unknown> => ipcRenderer.invoke('pet:study', level),
-  work: (jobId: string): Promise<unknown> => ipcRenderer.invoke('pet:work', jobId)
+  work: (jobId: string): Promise<unknown> => ipcRenderer.invoke('pet:work', jobId),
+  getObstacles: (): Promise<unknown> => ipcRenderer.invoke('pet:get-obstacles')
 })

@@ -20,6 +20,7 @@ import { addExp } from '../shared/pet-growth'
 import { canMarry, defaultMarriage, divorce, generateSuitor, layEgg, marry } from '../shared/pet-marriage'
 import { TICKLE_REACTIONS, resolveTickle, type TickleType } from '../shared/pet-tickle'
 import { canEnroll, canWork, completeEducation, defaultCareer, EDUCATION_LEVELS, workReward, type EducationLevel, type JobId } from '../shared/pet-career'
+import { filterValidObstacles } from '../shared/pet-obstacles'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -287,5 +288,14 @@ export function registerPetStateIpc(): void {
       }
     })
     return result
+  })
+
+  // P6 桌面深度互动：返回当前桌面上其他可见窗口的 bounds（供宠物避让）
+  ipcMain.handle('pet:get-obstacles', () => {
+    const obstacles = BrowserWindow.getAllWindows()
+      .filter((w) => !w.isDestroyed() && w.isVisible() && !w.isAlwaysOnTop())
+      .map((w) => w.getBounds())
+      .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
+    return filterValidObstacles(obstacles)
   })
 }
