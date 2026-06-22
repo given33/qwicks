@@ -15,6 +15,7 @@ import {
   todayString,
   type PetItem
 } from '../shared/pet-state'
+import { addExp } from '../shared/pet-growth'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -80,32 +81,42 @@ export function registerPetStateIpc(): void {
     return result
   })
 
-  // 摸头：免费提升 mood
+  // 摸头：免费提升 mood + 经验
   ipcMain.handle('pet:pet', () => {
-    store.update((state) => ({
-      ...state,
-      vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + 5) }
-    }))
+    store.update((state) => {
+      const { growth } = state.growth ? addExp(state.growth, 10) : { growth: state.growth }
+      return {
+        ...state,
+        vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + 5) },
+        growth
+      }
+    })
     return { ok: true }
   })
 
-  // 玩耍：免费提升 mood（玩具效果，无需道具）
+  // 玩耍：免费提升 mood + 经验
   ipcMain.handle('pet:play', () => {
-    store.update((state) => ({
-      ...state,
-      vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + 10) }
-    }))
+    store.update((state) => {
+      const { growth } = state.growth ? addExp(state.growth, 15) : { growth: state.growth }
+      return {
+        ...state,
+        vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + 10) },
+        growth
+      }
+    })
     return { ok: true }
   })
 
-  // 每日签到
+  // 每日签到 + 经验
   ipcMain.handle('pet:sign-in', () => {
     const today = todayString()
     let awarded = false
     store.update((state) => {
       const r = applySignIn(state, today)
       awarded = r.awarded
-      return r.state
+      if (!awarded) return state
+      const { growth } = r.state.growth ? addExp(r.state.growth, 20) : { growth: r.state.growth }
+      return { ...r.state, growth }
     })
     return { ok: true, awarded }
   })

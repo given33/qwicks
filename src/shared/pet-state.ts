@@ -23,6 +23,8 @@ export type PetStatus = 'healthy' | 'hungry' | 'dirty' | 'sick' | 'critical' | '
 /** 道具类型 */
 export type PetItemType = 'food' | 'bath' | 'medicine' | 'revive' | 'toy'
 
+import { defaultGrowth, type PetGrowth } from './pet-growth'
+
 export type PetItem = {
   id: string
   type: PetItemType
@@ -40,6 +42,7 @@ export type PetState = {
   inventory: PetItem[]
   lastTickAt: number       // ISO 时间戳（ms），离线补算用
   lastSignInDate?: string  // YYYY-MM-DD，签到去重
+  growth?: PetGrowth // M5 成长（缺省时按蛋初始化）
 }
 
 /** 每小时衰减量（按 100 基准）。非线性：低值时衰减减缓。 */
@@ -63,7 +66,8 @@ export function defaultPetState(now: number): PetState {
     status: 'healthy',
     coins: 200,
     inventory: [],
-    lastTickAt: now
+    lastTickAt: now,
+    growth: defaultGrowth(now)
   }
 }
 

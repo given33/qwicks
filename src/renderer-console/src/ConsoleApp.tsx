@@ -12,6 +12,11 @@ import { ShopTab } from './tabs/ShopTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { PlaceholderTab } from './tabs/PlaceholderTab'
 import type { PetState } from '@shared/pet-state'
+import type { PetGrowth, PetStage } from '@shared/pet-growth'
+
+function stageLabel(stage: PetStage): string {
+  return stage === 'egg' ? '蛋' : stage === 'kid' ? '幼年' : '成年'
+}
 
 type TabId = 'care' | 'inventory' | 'shop' | 'achievements' | 'diary' | 'settings'
 
@@ -66,6 +71,14 @@ export function ConsoleApp(): ReactElement {
           <VitalBar label="健康" value={v.health} color="#7ed287" />
           <VitalBar label="心情" value={v.mood} color="#e87fa3" />
           <div style={{ marginTop: 8, fontSize: 13 }}>🪙 元宝：{state!.coins}</div>
+          {state!.growth && (
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8a7a5a' }}>
+              {stageLabel(state!.growth.stage)} · Lv.{state!.growth.level} · {state!.growth.gender}
+              {state!.growth.stage === 'egg' && state!.growth.eggProgress !== undefined && (
+                <span> · 孵化 {Math.round(state!.growth.eggProgress)}%</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

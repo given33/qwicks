@@ -16,6 +16,7 @@ import {
   deriveStatus,
   type PetState
 } from '../shared/pet-state'
+import { advanceToAdult, canAdvanceToAdult, defaultGrowth, tickEgg } from '../shared/pet-growth'
 
 const PET_STATE_DIR = join(homedir(), '.qwicks')
 const PET_STATE_FILE = join(PET_STATE_DIR, 'pet-state.json')
@@ -77,7 +78,8 @@ export class PetStateStore {
       const merged: PetState = {
         ...base,
         ...parsed,
-        vitals: { ...base.vitals, ...parsed.vitals }
+        vitals: { ...base.vitals, ...parsed.vitals },
+        growth: parsed.growth ?? defaultGrowth(Date.now())
       }
       this.state = applyOfflineCatchUp(merged, Date.now())
     } catch {
@@ -113,10 +115,18 @@ export class PetStateStore {
       const elapsed = now - this.state.lastTickAt
       if (elapsed < 1000) return
       const vitals = tickVitals(this.state.vitals, elapsed)
+      // M5 成长推进：蛋孵化 + 幼年晋升检查
+      let growth = this.state.growth ?? defaultGrowth(now)
+      if (growth.stage === 'egg') {
+        growth = tickEgg(growth, elapsed)
+      } else if (growth.stage === 'kid' && canAdvanceToAdult(growth, now)) {
+        growth = advanceToAdult(growth, now)
+      }
       this.state = {
         ...this.state,
         vitals,
         status: deriveStatus(vitals),
+        growth,
         lastTickAt: now
       }
       this.scheduleSave()
