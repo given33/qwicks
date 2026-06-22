@@ -23,7 +23,7 @@ describe('tray session menu', () => {
     })
 
     expect(menu.map((item) => item.label).filter(Boolean)).toEqual([
-      'Running', 'Fix tests', 'Recent', 'Review PR', 'New Chat', 'Open QWicks', 'Exit'
+      'Running', 'Fix tests', 'Recent', 'Review PR', 'New Chat', 'Show Desktop Pet', 'Open QWicks', 'Exit'
     ])
     expect(menu.find((item) => item.label === 'Fix tests')?.sublabel).toBe('QWicks')
     expect(menu.find((item) => item.label === 'Review PR')?.sublabel).toBe('Docs')
@@ -49,6 +49,7 @@ describe('tray session menu', () => {
       'thread-4',
       '更多',
       '新建会话',
+      '显示桌面宠物',
       '打开 QWicks',
       '退出'
     ])
@@ -69,6 +70,7 @@ function fakeActions() {
   return {
     openThread: vi.fn(),
     newChat: vi.fn(),
+    togglePet: vi.fn(),
     openApp: vi.fn(),
     quit: vi.fn()
   }

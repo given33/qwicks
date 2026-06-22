@@ -13,6 +13,7 @@ type TrayMenuActions = {
   openThread: (threadId: string) => void
   newChat: () => void
   openApp: () => void
+  togglePet: () => void
   quit: () => void
 }
 
@@ -45,6 +46,8 @@ export function parseTrayThreads(body: string): TrayThreadSummary[] {
 export function buildTrayMenuTemplate(input: {
   locale: AppSettingsV1['locale']
   threads: TrayThreadSummary[]
+  /** 桌面宠物当前是否可见，决定菜单项文案（显示/隐藏） */
+  petVisible?: boolean
   actions: TrayMenuActions
 }): MenuItemConstructorOptions[] {
   const labels = traySessionLabels(input.locale)
@@ -66,6 +69,12 @@ export function buildTrayMenuTemplate(input: {
   if (template.length > 0) template.push({ type: 'separator' })
   template.push(
     { label: labels.newChat, click: input.actions.newChat },
+    { type: 'separator' },
+    // 桌面宠物显隐切换（M1-T8）：文案随当前可见状态切换
+    {
+      label: input.petVisible ? labels.hidePet : labels.showPet,
+      click: input.actions.togglePet
+    },
     { type: 'separator' },
     { label: labels.openApp, click: input.actions.openApp },
     { type: 'separator' },
@@ -115,6 +124,8 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
   recent: string
   more: string
   newChat: string
+  showPet: string
+  hidePet: string
   openApp: string
   quit: string
 } {
@@ -124,6 +135,8 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
         recent: '最近会话',
         more: '更多',
         newChat: '新建会话',
+        showPet: '显示桌面宠物',
+        hidePet: '隐藏桌面宠物',
         openApp: '打开 QWicks',
         quit: '退出'
       }
@@ -132,6 +145,8 @@ function traySessionLabels(locale: AppSettingsV1['locale']): {
         recent: 'Recent',
         more: 'More',
         newChat: 'New Chat',
+        showPet: 'Show Desktop Pet',
+        hidePet: 'Hide Desktop Pet',
         openApp: 'Open QWicks',
         quit: 'Exit'
       }

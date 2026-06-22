@@ -89,7 +89,7 @@ import {
 import { webhookUrl } from './claw-runtime-helpers'
 import { createTelegramRuntime, type TelegramRuntime, verifyTelegramBotToken } from './telegram-runtime'
 import { isQWicksHealthResponseBody } from './qwicks-health'
-import { createPetWindow, registerPetIpc, relayoutPetWindowToDisplays } from './pet-window'
+import { createPetWindow, isPetWindowVisible, registerPetIpc, relayoutPetWindowToDisplays, setPetWindowVisible } from './pet-window'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -441,13 +441,32 @@ function quitFromTray(): void {
   app.quit()
 }
 
+/** 托盘"显示/隐藏桌面宠物"切换（M1-T8）。切换后刷新托盘菜单文案。 */
+function togglePetFromTray(): void {
+  setPetWindowVisible(!isPetWindowVisible())
+  void refreshTrayMenu().catch((error) => {
+    console.warn('[qwicks-gui] failed to refresh tray after pet toggle:', error)
+  })
+}
+
+async function refreshTrayMenu(): Promise<void> {
+  if (!tray || tray.isDestroyed()) return
+  const settings = await store.load()
+  if (tray.isDestroyed()) return
+  const threads = await loadTrayThreads(settings)
+  if (tray.isDestroyed()) return
+  trayMenu = createTrayMenu(settings, threads)
+}
+
 function createTrayMenu(settings: AppSettingsV1, threads: TrayThreadSummary[]): Menu {
   return Menu.buildFromTemplate(buildTrayMenuTemplate({
     locale: settings.locale,
     threads,
+    petVisible: isPetWindowVisible(),
     actions: {
       openThread: (threadId) => dispatchTrayAction({ type: 'open-thread', threadId }),
       newChat: () => dispatchTrayAction({ type: 'new-chat' }),
+      togglePet: togglePetFromTray,
       openApp: revealMainWindow,
       quit: quitFromTray
     }
