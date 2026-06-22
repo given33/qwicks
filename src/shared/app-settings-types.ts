@@ -504,6 +504,11 @@ export type ScheduledTaskV1 = {
   workspaceRoot: string
   /** Optional Claw IM channel whose persona/defaults should drive this scheduled task. */
   clawChannelId: string
+  /** IM chat id the task originated from (so the reminder can be pushed back to
+   *  the same conversation when the task fires). Empty for desktop-originated tasks. */
+  clawChatId?: string
+  /** IM sender id the task originated from. Stored for audit / reply routing. */
+  clawSenderId?: string
   /** Selected model provider for this scheduled task. Empty means the current/default runtime provider. */
   providerId?: string
   model: string

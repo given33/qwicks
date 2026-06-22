@@ -42,6 +42,8 @@ export type ClawRuntimeDeps = {
     options?: {
       workspaceRoot?: string | null
       clawChannelId?: string | null
+      clawChatId?: string | null
+      clawSenderId?: string | null
       providerId?: string | null
       modelHint?: string | null
       reasoningEffort?: ScheduleReasoningEffort | null

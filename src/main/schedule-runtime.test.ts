@@ -598,4 +598,116 @@ describe('ScheduleRuntime', () => {
       .syncPowerSaveBlocker({ ...scheduled, schedule: { ...scheduled.schedule, keepAwake: false } })
     expect(powerSaveBlocker.stop).toHaveBeenCalledWith(1)
   })
+
+  it('pushes reminder to IM channel when a channel-originated task fires', async () => {
+    const channel = makeClawChannel()
+    const task = makeTask({
+      clawChannelId: channel.id,
+      clawChatId: 'chat-im-1',
+      clawSenderId: 'user-im-1',
+      lastStatus: 'running',
+      schedule: { kind: 'at', everyMinutes: 60, timeOfDay: '09:00', atTime: '2099-06-03T09:00:00.000Z' }
+    })
+    const initial = settingsWith([task])
+    initial.claw.channels = [channel]
+    const store = createStore(initial)
+    const pushReminderToChannel = vi.fn(async () => true)
+    const showDesktopNotification = vi.fn()
+    const runtime = new ScheduleRuntime({
+      store: store as never,
+      runtimeRequest: vi.fn() as never,
+      logError: vi.fn(),
+      pushReminderToChannel,
+      showDesktopNotification
+    })
+    ;(runtime as unknown as { waitForAssistantText: () => Promise<string> })
+      .waitForAssistantText = vi.fn(async () => 'Meeting at noon tomorrow')
+
+    await (runtime as unknown as {
+      monitorTaskTurn: (taskId: string, threadId: string, turnId: string) => Promise<void>
+    }).monitorTaskTurn(task.id, 'thr_1', 'turn_1')
+
+    // IM push called with the channel + chat + summary
+    expect(pushReminderToChannel).toHaveBeenCalledTimes(1)
+    expect(pushReminderToChannel).toHaveBeenCalledWith({
+      channelId: channel.id,
+      chatId: 'chat-im-1',
+      text: expect.stringContaining('Meeting at noon tomorrow')
+    })
+    // Desktop notification also shown (secondary alert alongside IM)
+    expect(showDesktopNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to desktop-only when IM push fails', async () => {
+    const channel = makeClawChannel()
+    const task = makeTask({
+      clawChannelId: channel.id,
+      clawChatId: 'chat-im-1',
+      lastStatus: 'running',
+      schedule: { kind: 'at', everyMinutes: 60, timeOfDay: '09:00', atTime: '2099-06-03T09:00:00.000Z' }
+    })
+    const initial = settingsWith([task])
+    initial.claw.channels = [channel]
+    const store = createStore(initial)
+    const pushReminderToChannel = vi.fn(async () => false) // IM delivery failed
+    const showDesktopNotification = vi.fn()
+    const logError = vi.fn()
+    const runtime = new ScheduleRuntime({
+      store: store as never,
+      runtimeRequest: vi.fn() as never,
+      logError,
+      pushReminderToChannel,
+      showDesktopNotification
+    })
+    ;(runtime as unknown as { waitForAssistantText: () => Promise<string> })
+      .waitForAssistantText = vi.fn(async () => 'Reminder text')
+
+    await (runtime as unknown as {
+      monitorTaskTurn: (taskId: string, threadId: string, turnId: string) => Promise<void>
+    }).monitorTaskTurn(task.id, 'thr_1', 'turn_1')
+
+    // IM push attempted but returned false
+    expect(pushReminderToChannel).toHaveBeenCalledTimes(1)
+    // Desktop notification shown as fallback
+    expect(showDesktopNotification).toHaveBeenCalledTimes(1)
+    // Failure logged
+    expect(logError).toHaveBeenCalledWith(
+      'schedule-reminder',
+      expect.stringContaining('false'),
+      expect.objectContaining({ channelId: channel.id })
+    )
+  })
+
+  it('shows desktop notification only for desktop-originated tasks', async () => {
+    const task = makeTask({
+      clawChannelId: '', // desktop-originated — no IM channel
+      lastStatus: 'running',
+      schedule: { kind: 'at', everyMinutes: 60, timeOfDay: '09:00', atTime: '2099-06-03T09:00:00.000Z' }
+    })
+    const store = createStore(settingsWith([task]))
+    const pushReminderToChannel = vi.fn(async () => true)
+    const showDesktopNotification = vi.fn()
+    const runtime = new ScheduleRuntime({
+      store: store as never,
+      runtimeRequest: vi.fn() as never,
+      logError: vi.fn(),
+      pushReminderToChannel,
+      showDesktopNotification
+    })
+    ;(runtime as unknown as { waitForAssistantText: () => Promise<string> })
+      .waitForAssistantText = vi.fn(async () => 'Desktop reminder')
+
+    await (runtime as unknown as {
+      monitorTaskTurn: (taskId: string, threadId: string, turnId: string) => Promise<void>
+    }).monitorTaskTurn(task.id, 'thr_1', 'turn_1')
+
+    // No IM push for desktop-originated tasks
+    expect(pushReminderToChannel).not.toHaveBeenCalled()
+    // Desktop notification shown
+    expect(showDesktopNotification).toHaveBeenCalledTimes(1)
+    expect(showDesktopNotification).toHaveBeenCalledWith(
+      expect.stringContaining('⏰'),
+      'Desktop reminder'
+    )
+  })
 })

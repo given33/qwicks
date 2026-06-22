@@ -38,6 +38,13 @@ export type ScheduleRuntimeDeps = {
   runtimeRequest: RuntimeRequestFn
   logError: (category: string, message: string, detail?: unknown) => void
   powerSaveBlocker?: PowerSaveBlockerLike
+  /** Push a reminder summary back to the originating IM channel (WeChat /
+   *  Feishu / Telegram). Returns true if delivered. Absent → reminders from
+   *  IM-originated tasks only get the desktop fallback. */
+  pushReminderToChannel?: (input: { channelId: string; chatId: string; text: string }) => Promise<boolean>
+  /** Show an OS-level desktop notification as a delivery fallback / primary
+   *  channel for desktop-originated reminders. */
+  showDesktopNotification?: (title: string, body: string) => void
 }
 
 export type ThreadRecordJson = {

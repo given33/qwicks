@@ -111,6 +111,8 @@ export class ScheduleRuntime {
     options: {
       workspaceRoot?: string | null
       clawChannelId?: string | null
+      clawChatId?: string | null
+      clawSenderId?: string | null
       providerId?: string | null
       modelHint?: string | null
       reasoningEffort?: ScheduleReasoningEffort | null
@@ -143,6 +145,12 @@ export class ScheduleRuntime {
         id: randomUUID()
       })
       task.clawChannelId = clawChannel?.id ?? ''
+      // Remember the originating IM chat so the reminder can be pushed back
+      // to the same conversation when the task fires.
+      const chatId = options.clawChatId?.trim() || clawChannel?.remoteSession?.chatId.trim() || ''
+      if (chatId) task.clawChatId = chatId
+      const senderId = options.clawSenderId?.trim() || clawChannel?.remoteSession?.senderId.trim() || ''
+      if (senderId) task.clawSenderId = senderId
       const saved = await this.deps.store.patch({
         schedule: {
           enabled: true,
@@ -440,16 +448,19 @@ export class ScheduleRuntime {
         TASK_RESPONSE_TIMEOUT_MS,
         task?.workspaceRoot || this.resolveDefaultWorkspaceRoot(settings)
       )
+      const summary = summarizeTaskResult(text)
       const finishedAt = new Date()
       await this.updateTask(taskId, (current) => ({
         ...current,
         ...(current.schedule.kind === 'at' ? { enabled: false } : {}),
         nextRunAt: current.schedule.kind === 'at' ? '' : computeScheduleNextRunAt(current, finishedAt),
         lastStatus: 'success',
-        lastMessage: summarizeTaskResult(text),
+        lastMessage: summary,
         lastThreadId: threadId,
         updatedAt: finishedAt.toISOString()
       }))
+      // Deliver the reminder to the originating channel + desktop fallback.
+      void this.deliverReminder(task, summary)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const finishedAt = new Date()
@@ -463,9 +474,55 @@ export class ScheduleRuntime {
         updatedAt: finishedAt.toISOString()
       }))
       this.deps.logError('schedule-task', 'Scheduled task failed', { message, taskId, threadId })
+      // Even on error, notify the desktop so the user knows a reminder fired
+      // but failed — unless the task has an IM channel (the IM push below
+      // handles that path).
     } finally {
       this.runningTaskIds.delete(taskId)
     }
+  }
+
+  /**
+   * Deliver a fired reminder to the appropriate channel(s):
+   *   - IM-originated task (clawChannelId + clawChatId) → push summary to the
+   *     IM channel, then ALSO show a desktop notification as a fallback.
+   *   - Desktop-originated task → desktop notification only.
+   *   - IM push failure → desktop notification + error log.
+   *
+   * Best-effort: delivery errors never surface as task failures (the task
+   * itself already succeeded — the AI produced a result).
+   */
+  private async deliverReminder(task: ScheduledTaskV1 | undefined, summary: string): Promise<void> {
+    if (!task) return
+    const title = `⏰ ${task.title.trim() || 'Scheduled reminder'}`
+    const channelId = task.clawChannelId?.trim() ?? ''
+    const chatId = task.clawChatId?.trim() ?? ''
+
+    if (channelId && chatId && this.deps.pushReminderToChannel) {
+      try {
+        const delivered = await this.deps.pushReminderToChannel({ channelId, chatId, text: `${title}\n${summary}` })
+        if (delivered) {
+          // IM delivery succeeded — still show a desktop notification as a
+          // secondary alert (the user may not be looking at their phone).
+          this.deps.showDesktopNotification?.(title, summary)
+          return
+        }
+        // IM delivery returned false (channel offline / unavailable) → fall
+        // through to desktop-only.
+        this.deps.logError('schedule-reminder', 'IM channel delivery returned false; falling back to desktop', {
+          taskId: task.id, channelId, chatId
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.deps.logError('schedule-reminder', 'IM channel delivery threw; falling back to desktop', {
+          taskId: task.id, channelId, chatId, message
+        })
+      }
+    }
+
+    // Desktop notification (primary for desktop-originated tasks, fallback for
+    // IM-originated tasks where the push failed or wasn't available).
+    this.deps.showDesktopNotification?.(title, summary)
   }
 
   private runPrompt(settings: AppSettingsV1, options: RunPromptOptions): Promise<ScheduleRunResult> {

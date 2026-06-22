@@ -613,6 +613,30 @@ async function showTurnCompleteNotification(
   }
 }
 
+/**
+ * Show a desktop notification for a fired scheduled reminder. This is the
+ * primary delivery channel for desktop-originated reminders and the fallback
+ * for IM-originated reminders (shown alongside the IM push so the user sees
+ * the alert even if they're not looking at their phone).
+ */
+function showReminderNotification(title: string, body: string): void {
+  if (!Notification.isSupported()) return
+  try {
+    const notification = new Notification({
+      title: normalizeNotificationText(title, '⏰ Reminder', 80),
+      body: normalizeNotificationText(body, '', 200),
+      icon: appIcon.isEmpty() ? undefined : appIcon
+    })
+    notification.on('click', () => {
+      revealMainWindow()
+    })
+    notification.show()
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    logError('notification', 'Failed to show reminder notification', { message, title })
+  }
+}
+
 async function probeThreadApi(settings: AppSettingsV1): Promise<
   | { ok: true }
   | { ok: false; error: string; message: string }
@@ -1442,7 +1466,24 @@ app.whenReady().then(async () => {
     retentionDays: initial.log.retentionDays
   })
   traceStartup('logger configured')
-  scheduleRuntime = createScheduleRuntime({ store, runtimeRequest, logError, powerSaveBlocker })
+  scheduleRuntime = createScheduleRuntime({
+    store,
+    runtimeRequest,
+    logError,
+    powerSaveBlocker,
+    // Reminder delivery: push to the originating IM channel (WeChat / Feishu /
+    // Telegram) when the task came from one. `clawRuntime` is assigned below —
+    // by the time a timed task fires it will be set.
+    pushReminderToChannel: async (input) => {
+      if (!clawRuntime) return false
+      return clawRuntime.pushReminderToChannel(input)
+    },
+    // Desktop notification fallback (always shown; primary for desktop-originated
+    // tasks, secondary alert for IM-originated ones).
+    showDesktopNotification: (title, body) => {
+      showReminderNotification(title, body)
+    }
+  })
   scheduleRuntime.sync(initial)
   workflowRuntime = createWorkflowRuntime({ store, runtimeRequest, logError, powerSaveBlocker })
   workflowRuntime.sync(initial)
@@ -1463,7 +1504,7 @@ app.whenReady().then(async () => {
     resolveWeixinAccountUserId: getWeixinBridgeAccountUserId,
     telegramRuntime,
     createScheduledTaskFromText: (text, options) =>
-      scheduleRuntime?.createScheduledTaskFromText(text, options) ?? Promise.resolve({ kind: 'noop' })
+      scheduleRuntime?.createScheduledTaskFromText(text, options) ?? Promise.resolve({ kind: 'noop' as const })
   })
   clawRuntime.sync(initial)
   // ClawRuntime.sync delegates Telegram reconciliation to telegramRuntime.sync,

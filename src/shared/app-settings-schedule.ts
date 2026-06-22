@@ -35,6 +35,8 @@ export function normalizeScheduledTask(
     prompt: typeof task.prompt === 'string' ? task.prompt : '',
     workspaceRoot: typeof task.workspaceRoot === 'string' ? task.workspaceRoot.trim() : '',
     clawChannelId: typeof task.clawChannelId === 'string' ? task.clawChannelId.trim() : '',
+    clawChatId: typeof task.clawChatId === 'string' ? task.clawChatId.trim() : '',
+    clawSenderId: typeof task.clawSenderId === 'string' ? task.clawSenderId.trim() : '',
     providerId: typeof task.providerId === 'string' ? task.providerId.trim() : '',
     model,
     reasoningEffort: normalizeScheduleReasoningEffort(task.reasoningEffort),

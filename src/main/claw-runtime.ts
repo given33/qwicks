@@ -953,6 +953,36 @@ export class ClawRuntime {
     }
   }
 
+  /**
+   * Push a reminder summary to a specific IM channel + chat. Public so the
+   * schedule runtime can call it when a timed task fires. Returns true if the
+   * message was delivered, false if the channel was not found / offline.
+   *
+   * This is a thin wrapper around `pushImMessage` that resolves the channel
+   * from settings and synthesizes a minimal remote session from the chatId.
+   */
+  async pushReminderToChannel(input: { channelId: string; chatId: string; text: string }): Promise<boolean> {
+    const settings = await this.deps.store.load()
+    const channel = settings.claw.channels.find((c) => c.id === input.channelId)
+    if (!channel || !channel.enabled) return false
+    const chatId = input.chatId.trim()
+    if (!chatId) return false
+    try {
+      await this.pushImMessage(
+        channel,
+        { chatId, messageId: '', threadId: '', senderId: '', senderName: '' },
+        input.text
+      )
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.deps.logError('claw-reminder', 'Failed to push reminder to IM channel', {
+        channelId: input.channelId, chatId, message
+      })
+      return false
+    }
+  }
+
   private resolveChannelWorkspaceRoot(settings: AppSettingsV1, channel?: ClawImChannelV1): string {
     return channel?.workspaceRoot.trim() || settings.claw.im.workspaceRoot.trim() || settings.workspaceRoot
   }
@@ -1668,6 +1698,8 @@ export class ClawRuntime {
     const taskCreation = await this.deps.createScheduledTaskFromText?.(text, {
       workspaceRoot: this.resolveChannelWorkspaceRoot(settings, channel),
       clawChannelId: channel.id,
+      clawChatId: remoteSession.chatId,
+      clawSenderId: remoteSession.senderId,
       providerId: channel.providerId?.trim() || settings.claw.im.providerId?.trim() || null,
       modelHint: channel.model,
       mode: settings.claw.im.mode
@@ -1823,6 +1855,8 @@ export class ClawRuntime {
     const taskCreation = await this.deps.createScheduledTaskFromText?.(message.content, {
       workspaceRoot: this.resolveChannelWorkspaceRoot(settings, channel),
       clawChannelId: channel.id,
+      clawChatId: message.chatId,
+      clawSenderId: message.senderId,
       providerId: channel.providerId?.trim() || settings.claw.im.providerId?.trim() || null,
       modelHint: channel.model,
       mode: settings.claw.im.mode
@@ -2449,6 +2483,8 @@ export class ClawRuntime {
       const taskCreation = await this.deps.createScheduledTaskFromText?.(prompt, {
         workspaceRoot: this.resolveChannelWorkspaceRoot(settings, channel),
         clawChannelId: channel?.id ?? null,
+        clawChatId: remoteSession?.chatId ?? channel?.remoteSession?.chatId ?? null,
+        clawSenderId: remoteSession?.senderId ?? channel?.remoteSession?.senderId ?? null,
         providerId: channel?.providerId?.trim() || im.providerId?.trim() || null,
         modelHint: channel?.model ?? im.model,
         mode: im.mode
