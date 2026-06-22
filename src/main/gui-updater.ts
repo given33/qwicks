@@ -43,6 +43,7 @@ let downloaded = false
 let downloadPromise: Promise<string[]> | null = null
 let pendingCodeUpdate: CodeUpdateManifest | null = null
 let downloadedCodePackage: DownloadedCodeUpdatePackage | null = null
+let cachedInstallerManifest: ServerInstallerUpdateManifest | null = null
 let configuredChannel: GuiUpdateChannel = normalizeGuiUpdateChannel(
   envWithLegacyFallback('QWICKS_UPDATE_CHANNEL', 'DEEPSEEK_GUI_UPDATE_CHANNEL') || undefined
 )
@@ -63,6 +64,13 @@ type GuiVersionState = {
     version: string
     releaseNotes?: string
   }
+}
+
+type ServerInstallerUpdateManifest = {
+  kind: 'installer'
+  version: string
+  releaseDate?: string
+  releaseNotes?: string
 }
 
 function guiUpdateSchedulePath(): string {
@@ -103,13 +111,6 @@ function normalizeReleaseNotes(value: unknown): string | undefined {
     })
     .filter(Boolean)
   return notes.length > 0 ? notes.join('\n\n') : undefined
-}
-
-async function recordPendingUpdate(updateInfo: UpdateInfo): Promise<void> {
-  return recordPendingUpdateVersion(
-    updateInfo.version.trim(),
-    normalizeReleaseNotes(updateInfo.releaseNotes)
-  )
 }
 
 async function recordPendingUpdateVersion(version: string, releaseNotes?: string): Promise<void> {
@@ -287,6 +288,18 @@ function toGuiInfo(updateInfo: UpdateInfo, hasUpdate: boolean, manualOnly = fals
     releaseNotes: normalizeReleaseNotes(updateInfo.releaseNotes),
     manualOnly,
     downloaded
+  }
+}
+
+function withInstallerManifestReleaseNotes(
+  info: Extract<GuiUpdateInfo, { ok: true }>,
+  manifest: ServerInstallerUpdateManifest | null
+): Extract<GuiUpdateInfo, { ok: true }> {
+  if (!manifest || manifest.version !== info.latestVersion) return info
+  return {
+    ...info,
+    releaseDate: info.releaseDate || manifest.releaseDate,
+    releaseNotes: info.releaseNotes || manifest.releaseNotes
   }
 }
 
@@ -531,6 +544,21 @@ function normalizeCodeUpdateManifest(raw: unknown, channel: GuiUpdateChannel): C
   }
 }
 
+function normalizeInstallerUpdateManifest(raw: unknown): ServerInstallerUpdateManifest | null {
+  const data = recordValue(raw)
+  if (data.kind !== 'installer') return null
+  const version = stringValue(data.version)
+  if (!version) return null
+  return {
+    kind: 'installer',
+    version,
+    releaseDate: stringValue(data.releaseDate) || stringValue(data.generatedAt) || undefined,
+    releaseNotes: normalizeReleaseNotes(
+      data.releaseNotes ?? data.release_notes ?? data.notes ?? data.changelog
+    )
+  }
+}
+
 function codeUpdateCompatibleWithShell(manifest: CodeUpdateManifest): boolean {
   if (manifest.fullUpdateRequired) return false
   if (!manifest.minShellVersion) return true
@@ -547,6 +575,17 @@ async function fetchServerLatestJson(channel: GuiUpdateChannel): Promise<unknown
   if (response.status === 404) return null
   if (!response.ok) return null
   return JSON.parse(await response.text()) as unknown
+}
+
+async function fetchInstallerUpdateManifest(
+  channel: GuiUpdateChannel
+): Promise<ServerInstallerUpdateManifest | null> {
+  try {
+    return normalizeInstallerUpdateManifest(await fetchServerLatestJson(channel))
+  } catch (error) {
+    console.warn('[qwicks-gui updater] failed to read installer update manifest:', error)
+    return null
+  }
 }
 
 async function checkCodePackageUpdate(
@@ -594,6 +633,7 @@ function configureUpdaterChannel(channel: GuiUpdateChannel): void {
   downloadPromise = null
   pendingCodeUpdate = null
   downloadedCodePackage = null
+  cachedInstallerManifest = null
   lastInfo = null
   emitGuiUpdateState({ status: 'idle' })
 }
@@ -653,14 +693,14 @@ export function initializeGuiUpdater(
 
   autoUpdater.on('update-available', (updateInfo: UpdateInfo) => {
     downloaded = false
-    const info = toGuiInfo(updateInfo, true)
+    const info = withInstallerManifestReleaseNotes(toGuiInfo(updateInfo, true), cachedInstallerManifest)
     lastInfo = info
     emitGuiUpdateState({ status: 'available', info })
   })
 
   autoUpdater.on('update-not-available', (updateInfo: UpdateInfo) => {
     downloaded = false
-    const info = toGuiInfo(updateInfo, false)
+    const info = withInstallerManifestReleaseNotes(toGuiInfo(updateInfo, false), cachedInstallerManifest)
     lastInfo = info
     emitGuiUpdateState({ status: 'not_available', info })
   })
@@ -671,9 +711,9 @@ export function initializeGuiUpdater(
 
   autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
     downloaded = true
-    const info = toGuiInfo(event, true)
+    const info = withInstallerManifestReleaseNotes(toGuiInfo(event, true), cachedInstallerManifest)
     lastInfo = info
-    pendingVersionStateWrite = recordPendingUpdate(event)
+    pendingVersionStateWrite = recordPendingUpdateVersion(info.latestVersion, info.releaseNotes)
       .catch((error) => {
         console.warn('[qwicks-gui updater] failed to save release notes:', error)
       })
@@ -768,6 +808,7 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
   }
 
   try {
+    cachedInstallerManifest = await fetchInstallerUpdateManifest(selectedChannel)
     const result = await autoUpdater.checkForUpdates()
     if (!result) {
       if (codeInfo) {
@@ -777,7 +818,10 @@ export async function checkGuiUpdate(channel?: GuiUpdateChannel): Promise<GuiUpd
       }
       return checkManualUpdate(selectedChannel, 'not_configured')
     }
-    const info = toGuiInfo(result.updateInfo, result.isUpdateAvailable)
+    const info = withInstallerManifestReleaseNotes(
+      toGuiInfo(result.updateInfo, result.isUpdateAvailable),
+      cachedInstallerManifest
+    )
     lastInfo = info
     emitGuiUpdateState(info.hasUpdate ? { status: 'available', info } : { status: 'not_available', info })
     return info

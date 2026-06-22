@@ -21,6 +21,15 @@ function normalizeBaseUrl(value) {
   return String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, '')
 }
 
+function readTextFileIfPresent(path) {
+  if (!path) return ''
+  try {
+    return readFileSync(path, 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
 function quoteJson(value) {
   return JSON.stringify(value, null, 2)
 }
@@ -42,6 +51,9 @@ function main() {
   const platform = argValue('platform', 'win')
   const channel = trimSlashes(argValue('channel', process.env.QWICKS_UPDATE_CHANNEL || 'stable')) || 'stable'
   const baseUrl = normalizeBaseUrl(argValue('base-url', process.env.QWICKS_UPDATE_BASE_URL || DEFAULT_BASE_URL))
+  const releaseNotes =
+    String(argValue('release-notes', '')).trim() ||
+    readTextFileIfPresent(argValue('release-notes-file', ''))
   const updateFile = platform === 'mac' ? 'latest-mac.yml' : platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'
   const updatePath = join(distDir, updateFile)
   const updateYaml = readFileSync(updatePath, 'utf8')
@@ -68,6 +80,7 @@ function main() {
     generatedAt: new Date().toISOString(),
     updateBaseUrl: `${publicBase}/`,
     electronUpdaterManifest: `${publicBase}/${updateFile}`,
+    ...(releaseNotes ? { releaseNotes } : {}),
     installer: {
       name: installerName,
       url: `${publicBase}/${installerName}`

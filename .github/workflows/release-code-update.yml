@@ -97,7 +97,11 @@ jobs:
           } else {
             $pkg = Get-Content package.json -Raw | ConvertFrom-Json
             $parts = $pkg.version.Split('.')
-            $version = "$($parts[0]).$($parts[1]).$env:GITHUB_RUN_NUMBER"
+            $patch = (git rev-list --count HEAD).Trim()
+            if ($patch -notmatch '^\d+$') {
+              throw "Could not compute a monotonic patch version from git history."
+            }
+            $version = "$($parts[0]).$($parts[1]).$patch"
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Version must be x.y.z, got: $version"

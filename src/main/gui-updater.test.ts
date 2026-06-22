@@ -160,6 +160,34 @@ describe('checkGuiUpdate feed URL', () => {
     })
   })
 
+  it('adds installer release notes from the server latest.json to the app update notice', async () => {
+    const manifest = {
+      kind: 'installer',
+      version: '0.2.0',
+      releaseDate: '2026-06-06T00:00:00.000Z',
+      releaseNotes: 'Update content is shown directly in QWicks.'
+    }
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify(manifest), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(manifest), { status: 200 }))
+    updater.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' },
+      isUpdateAvailable: true
+    })
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      kind: 'installer',
+      latestVersion: '0.2.0',
+      hasUpdate: true,
+      releaseNotes: 'Update content is shown directly in QWicks.'
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('downloads code update packages from public HTTP feeds by default', async () => {
     delete process.env.QWICKS_ALLOW_INSECURE_UPDATES
     delete process.env.QWICKS_ALLOW_INSECURE_CODE_UPDATES
