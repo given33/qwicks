@@ -25,6 +25,24 @@ export function registerPetStateIpc(): void {
   registered = true
   const store = getPetStateStore()
 
+  // 广播成就解锁到所有 pet 窗口（Steam 式弹窗）
+  const broadcastAchievement = (id: string): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue
+      try {
+        win.webContents.send('pet:achievement-unlocked', id)
+      } catch {
+        // 窗口销毁中
+      }
+    }
+  }
+
+  // 记录动作 + 广播新成就的便捷封装
+  const recordAndBroadcast = (action: import('./pet-achievement-tracker').PetAction): void => {
+    const newly = store.recordAction(action)
+    for (const id of newly) broadcastAchievement(id)
+  }
+
   // 状态变化广播
   store.subscribe((state) => {
     // 广播到所有 pet 相关窗口（petWindow + consoleWindow）
@@ -53,7 +71,7 @@ export function registerPetStateIpc(): void {
   })
 
   // 类型化便捷接口：feed/bath/cure 都是"用库存里对应类型道具"
-  const useTypedItem = (itemId: string, expectedType: PetItem['type']) => {
+  const useTypedItem = (itemId: string, expectedType: PetItem['type'], action: 'feed' | 'bath' | 'cure') => {
     let result: { ok: boolean; message?: string } = { ok: false, message: 'not found' }
     store.update((state) => {
       const { state: next, item } = consumeItem(state, itemId)
@@ -61,11 +79,12 @@ export function registerPetStateIpc(): void {
       result = { ok: true }
       return applyItemEffect(next, item)
     })
+    if (result.ok) recordAndBroadcast(action)
     return result
   }
-  ipcMain.handle('pet:feed', (_e, itemId: string) => useTypedItem(itemId, 'food'))
-  ipcMain.handle('pet:bath', (_e, itemId: string) => useTypedItem(itemId, 'bath'))
-  ipcMain.handle('pet:cure', (_e, itemId: string) => useTypedItem(itemId, 'medicine'))
+  ipcMain.handle('pet:feed', (_e, itemId: string) => useTypedItem(itemId, 'food', 'feed'))
+  ipcMain.handle('pet:bath', (_e, itemId: string) => useTypedItem(itemId, 'bath', 'bath'))
+  ipcMain.handle('pet:cure', (_e, itemId: string) => useTypedItem(itemId, 'medicine', 'cure'))
 
   // 购买：扣元宝入库存
   ipcMain.handle('pet:buy', (_e, itemId: string) => {
@@ -91,6 +110,7 @@ export function registerPetStateIpc(): void {
         growth
       }
     })
+    recordAndBroadcast('pet')
     return { ok: true }
   })
 
@@ -104,6 +124,7 @@ export function registerPetStateIpc(): void {
         growth
       }
     })
+    recordAndBroadcast('play')
     return { ok: true }
   })
 
@@ -118,6 +139,7 @@ export function registerPetStateIpc(): void {
       const { growth } = r.state.growth ? addExp(r.state.growth, 20) : { growth: r.state.growth }
       return { ...r.state, growth }
     })
+    if (awarded) recordAndBroadcast('signIn')
     return { ok: true, awarded }
   })
 

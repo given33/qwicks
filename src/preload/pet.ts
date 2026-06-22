@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('pet', {
     ipcRenderer.on('pet:state-changed', listener)
     return () => ipcRenderer.removeListener('pet:state-changed', listener)
   },
+  onAchievementUnlocked: (cb: (id: string) => void): (() => void) => {
+    const listener = (_e: unknown, id: string): void => cb(id)
+    ipcRenderer.on('pet:achievement-unlocked', listener)
+    return () => ipcRenderer.removeListener('pet:achievement-unlocked', listener)
+  },
   feed: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:feed', itemId),
   bath: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:bath', itemId),
   cure: (itemId: string): Promise<unknown> => ipcRenderer.invoke('pet:cure', itemId),

@@ -9,6 +9,7 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { CareTab } from './tabs/CareTab'
 import { InventoryTab } from './tabs/InventoryTab'
 import { ShopTab } from './tabs/ShopTab'
+import { AchievementsTab } from './tabs/AchievementsTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { PlaceholderTab } from './tabs/PlaceholderTab'
 import type { PetState } from '@shared/pet-state'
@@ -24,7 +25,7 @@ const TABS: { id: TabId; label: string; active: boolean }[] = [
   { id: 'care', label: '照料', active: true },
   { id: 'inventory', label: '库存', active: true },
   { id: 'shop', label: '商店', active: true },
-  { id: 'achievements', label: '成就', active: false },
+  { id: 'achievements', label: '成就', active: true },
   { id: 'diary', label: '档案', active: false },
   { id: 'settings', label: '设置', active: true }
 ]
@@ -101,7 +102,7 @@ export function ConsoleApp(): ReactElement {
         {tab === 'care' && <CareTab state={state} />}
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
-        {tab === 'achievements' && <PlaceholderTab text="成就系统（M7 即将开放）" />}
+        {tab === 'achievements' && <AchievementsTab state={state} />}
         {tab === 'diary' && <PlaceholderTab text="宠物档案（M8 即将开放）" />}
         {tab === 'settings' && <SettingsTab />}
       </div>

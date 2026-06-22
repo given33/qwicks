@@ -17,6 +17,7 @@ import {
   type PetState
 } from '../shared/pet-state'
 import { advanceToAdult, canAdvanceToAdult, defaultGrowth, tickEgg } from '../shared/pet-growth'
+import { recordAction as recordPetAction, type PetAction } from './pet-achievement-tracker'
 
 const PET_STATE_DIR = join(homedir(), '.qwicks')
 const PET_STATE_FILE = join(PET_STATE_DIR, 'pet-state.json')
@@ -63,6 +64,15 @@ export class PetStateStore {
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener)
     }
+  }
+
+  /** M7: 记录一次动作，更新统计 + 检测成就，广播新解锁。返回新解锁 id。 */
+  recordAction(action: PetAction): string[] {
+    const { state, newlyUnlocked } = recordPetAction(this.state, action)
+    this.state = state as PetState
+    this.scheduleSave()
+    this.notify()
+    return newlyUnlocked
   }
 
   private notify(): void {

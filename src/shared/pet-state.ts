@@ -43,6 +43,9 @@ export type PetState = {
   lastTickAt: number       // ISO 时间戳（ms），离线补算用
   lastSignInDate?: string  // YYYY-MM-DD，签到去重
   growth?: PetGrowth // M5 成长（缺省时按蛋初始化）
+  /** M7 成就统计（累积行为计数）+ 已解锁成就。store 维护。 */
+  stats?: import('./pet-achievements').PetStats
+  achievements?: { unlocked: string[]; unlockedAt: Record<string, number> }
 }
 
 /** 每小时衰减量（按 100 基准）。非线性：低值时衰减减缓。 */
