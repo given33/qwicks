@@ -76,6 +76,7 @@ import { resolveConfiguredHooks, type HooksConfig } from '../hooks/hook-config.j
 import { FileMemoryStore } from '../memory/memory-store.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
+import { createMeshRuntimeSlot } from '../mesh/integration/mesh-runtime-slot.js'
 
 export type QWicksServeRuntimeOptions = {
   host: string
@@ -301,28 +302,30 @@ export async function createQWicksServeRuntime(
     readTracker: true,
     ...(resolvedHooks.length ? { hooks: resolvedHooks } : {})
   })
+  // Mesh slot: async-boot-safe; before install() it is a pure pass-through.
+  const meshSlot = createMeshRuntimeSlot(createChildAgentExecutor({
+    model: modelClient,
+    toolHost: childToolHost,
+    prefix,
+    defaultModel: options.model,
+    models: options.models,
+    contextCompaction: options.contextCompaction,
+    approvalPolicy: options.approvalPolicy,
+    sandboxMode: options.sandboxMode,
+    modelCapabilities,
+    skillRuntime,
+    tokenEconomy,
+    ...(options.runtime ? { runtime: options.runtime } : {}),
+    ...(memoryStore ? { memoryStore } : {}),
+    nowIso
+  }))
   const delegationRuntime = options.capabilities?.subagents.enabled
     ? new DelegationRuntime({
         config: mergeBuiltinSubagentProfiles(options.capabilities.subagents),
         store: new FileDelegationStore(join(options.dataDir, 'child-runs')),
         events,
         nowIso,
-        executor: createChildAgentExecutor({
-          model: modelClient,
-          toolHost: childToolHost,
-          prefix,
-          defaultModel: options.model,
-          models: options.models,
-          contextCompaction: options.contextCompaction,
-          approvalPolicy: options.approvalPolicy,
-          sandboxMode: options.sandboxMode,
-          modelCapabilities,
-          skillRuntime,
-          tokenEconomy,
-          ...(options.runtime ? { runtime: options.runtime } : {}),
-          ...(memoryStore ? { memoryStore } : {}),
-          nowIso
-        }),
+        executor: meshSlot.executor,
         recordExternalUsage: (threadId, usage) => {
           usageService.record(threadId, usage)
         }
