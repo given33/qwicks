@@ -36,8 +36,47 @@ function quoteJson(value) {
 
 function yamlScalar(source, key) {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = source.match(new RegExp(`^${escaped}:\\s*['"]?([^'"\\n]+)['"]?\\s*$`, 'm'))
-  return match?.[1]?.trim() || ''
+  const linePattern = new RegExp(`^${escaped}:\\s*['"]?([^'"\\n]+)['"]?\\s*$`)
+  for (const line of String(source || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
+    const match = line.match(linePattern)
+    if (match?.[1]) return match[1].trim()
+  }
+  return ''
+}
+
+function yamlBlockScalar(key, value) {
+  const text = String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!text) return ''
+  const body = text.split('\n').map((line) => `  ${line}`).join('\n')
+  return `${key}: |-\n${body}\n`
+}
+
+function removeTopLevelYamlKey(source, key) {
+  const lines = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const out = []
+  for (let i = 0; i < lines.length;) {
+    if (lines[i].startsWith(`${key}:`)) {
+      i += 1
+      while (
+        i < lines.length &&
+        (lines[i].startsWith(' ') || lines[i].startsWith('\t') || lines[i].trim() === '')
+      ) {
+        i += 1
+      }
+      continue
+    }
+    out.push(lines[i])
+    i += 1
+  }
+  return `${out.join('\n').replace(/\n*$/g, '')}\n`
+}
+
+function writeYamlReleaseNotes(path, source, releaseNotes) {
+  const block = yamlBlockScalar('releaseNotes', releaseNotes)
+  if (!block) return source
+  const updated = `${removeTopLevelYamlKey(source, 'releaseNotes')}${block}`
+  writeFileSync(path, updated, 'utf8')
+  return updated
 }
 
 function newestFile(files) {
@@ -56,7 +95,8 @@ function main() {
     readTextFileIfPresent(argValue('release-notes-file', ''))
   const updateFile = platform === 'mac' ? 'latest-mac.yml' : platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'
   const updatePath = join(distDir, updateFile)
-  const updateYaml = readFileSync(updatePath, 'utf8')
+  let updateYaml = readFileSync(updatePath, 'utf8')
+  updateYaml = writeYamlReleaseNotes(updatePath, updateYaml, releaseNotes)
   const version = yamlScalar(updateYaml, 'version')
   if (!version) throw new Error(`${updateFile} is missing version`)
 
