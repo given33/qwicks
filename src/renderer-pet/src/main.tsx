@@ -14,15 +14,18 @@ import { PetStage } from './PetStage'
 import { PetBubble } from './PetBubble'
 import { PetActivityRunner } from './PetActivityRunner'
 import { AchievementPopup } from './AchievementPopup'
+import { FloatFeedbackLayer, FeedbackWatcher } from './FloatFeedback'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('pet renderer root not found')
 
 createRoot(container).render(
   <StrictMode>
+    <FeedbackWatcher />
     <PetStage />
     <PetBubble />
     <PetActivityRunner />
     <AchievementPopup />
+    <FloatFeedbackLayer />
   </StrictMode>
 )

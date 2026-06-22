@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   matchCanClear,
+  PAOPAO_COLORS,
+  paopaoBatchCount,
   paopaoFindMatches,
+  paopaoRandomColor,
+  paopaoSettle,
   rpsJudge,
   rpsRandom,
   ropeJudge,
   scoreToCoins,
   tower100Advance,
+  tower100CloudInterval,
+  tower100FallSpeed,
+  tower100MovingCloudChance,
   whackJudge,
   whackSpawn
 } from './minigame-logic'
@@ -86,5 +93,42 @@ describe('scoreToCoins', () => {
     expect(scoreToCoins(5)).toBe(10)
     expect(scoreToCoins(0)).toBe(0)
     expect(scoreToCoins(-1)).toBe(0)
+  })
+})
+
+describe('paopao (QQ-style difficulty curve)', () => {
+  it('batch count scales with rank', () => {
+    const simple = paopaoBatchCount('simple', () => 1)
+    const difficult = paopaoBatchCount('difficult', () => 1)
+    expect(simple).toBeLessThan(difficult)
+  })
+  it('random color is valid', () => {
+    expect(PAOPAO_COLORS).toContain(paopaoRandomColor())
+  })
+  it('settle ends game at miss limit', () => {
+    expect(paopaoSettle(5, 3, 'simple').gameOver).toBe(true)
+    expect(paopaoSettle(5, 2, 'simple').gameOver).toBe(false)
+  })
+  it('settle awards mood/coins per 5 hits', () => {
+    const r = paopaoSettle(10, 0, 'simple')
+    expect(r.mood).toBe(20)  // floor(10/5)*10
+    expect(r.coins).toBe(6)  // floor(10/5)*3
+  })
+})
+
+describe('tower100 difficulty curve', () => {
+  it('cloud interval shrinks with height', () => {
+    expect(tower100CloudInterval(0)).toBeGreaterThan(tower100CloudInterval(30))
+  })
+  it('moving cloud chance rises with height', () => {
+    // floor=0: 概率0.3；random 0.2 < 0.3 → 移动云
+    expect(tower100MovingCloudChance(0, () => 0.2)).toBe(true)
+    // random 0.4 > 0.3 → 非移动云
+    expect(tower100MovingCloudChance(0, () => 0.4)).toBe(false)
+    // floor=500: 概率0.8；random 0.7 < 0.8 → 移动云
+    expect(tower100MovingCloudChance(500, () => 0.7)).toBe(true)
+  })
+  it('fall speed increases with height', () => {
+    expect(tower100FallSpeed(0)).toBeLessThan(tower100FallSpeed(30))
   })
 })

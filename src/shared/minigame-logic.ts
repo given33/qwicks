@@ -98,6 +98,63 @@ export function tower100Advance(currentFloor: number, success: boolean): number 
   return success ? currentFloor + 1 : Math.max(0, currentFloor - 1)
 }
 
+// ===== 泡泡龙（参考 QQ chuipaopao 的三段难度 + 失误封顶）=====
+
+export type PaopaoRank = 'simple' | 'center' | 'difficult'
+export const PAOPAO_COLORS = ['pink', 'orange', 'blue', 'green', 'yellow'] as const
+export type PaopaoColor = typeof PAOPAO_COLORS[number]
+
+/** 难度配置：同屏泡泡数、生成间隔帧、失误上限。参考 QQ 的 count=10/30 和 chance=3。 */
+export const PAOPAO_RANK_CONFIG: Record<PaopaoRank, { count: number; missLimit: number }> = {
+  simple: { count: 10, missLimit: 3 },
+  center: { count: 20, missLimit: 3 },
+  difficult: { count: 30, missLimit: 3 }
+}
+
+/** 按 rank 随机生成本批泡泡数量（参考 random*2+2 → random*3+4）。 */
+export function paopaoBatchCount(rank: PaopaoRank, random: () => number = Math.random): number {
+  const base = rank === 'simple' ? 2 : rank === 'center' ? 3 : 4
+  const mult = rank === 'simple' ? 2 : rank === 'center' ? 2.5 : 3
+  return Math.round(random() * mult + base)
+}
+
+/** 随机一个泡泡颜色。 */
+export function paopaoRandomColor(random: () => number = Math.random): PaopaoColor {
+  return PAOPAO_COLORS[Math.floor(random() * PAOPAO_COLORS.length)] ?? 'pink'
+}
+
+/** 泡泡龙单局结算：命中数、失误数 → 是否结束、应上报的心情/金钱。 */
+export function paopaoSettle(hits: number, misses: number, rank: PaopaoRank): {
+  gameOver: boolean
+  mood: number
+  coins: number
+} {
+  const cfg = PAOPAO_RANK_CONFIG[rank]
+  if (misses >= cfg.missLimit) {
+    return { gameOver: true, mood: hits * 2, coins: 0 }
+  }
+  // 每命中5个上报一次（参考 QQ 每5个 sendAction）
+  const mood = Math.floor(hits / 5) * 10
+  return { gameOver: false, mood, coins: Math.floor(hits / 5) * 3 }
+}
+
+// ===== 100层难度曲线（参考 QQ 100ceng）=====
+
+/** 100层云台生成间隔（帧）。随高度加速：110/(3+floor(sCount/3)*0.1)。 */
+export function tower100CloudInterval(floor: number): number {
+  return Math.max(8, Math.round(110 / (3 + Math.floor(floor / 3) * 0.1)))
+}
+
+/** 100层移动云概率：0.3 + floor/1000。 */
+export function tower100MovingCloudChance(floor: number, random: () => number = Math.random): boolean {
+  return random() < Math.min(0.8, 0.3 + floor / 1000)
+}
+
+/** 100层下落速度：5 + floor/3*0.1667。 */
+export function tower100FallSpeed(floor: number): number {
+  return 5 + (floor / 3) * 0.1667
+}
+
 /** 得分换元宝（统一结算）。 */
 export function scoreToCoins(score: number): number {
   return Math.max(0, Math.floor(score * 2))
