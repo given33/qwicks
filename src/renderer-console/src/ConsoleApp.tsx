@@ -16,6 +16,7 @@ import { PlaceholderTab } from './tabs/PlaceholderTab'
 import { FishingPanel } from './FishingPanel'
 import { FarmPanel } from './FarmPanel'
 import { MinigamePanel } from './MinigamePanel'
+import { MarriagePanel } from './MarriagePanel'
 import type { PetState } from '@shared/pet-state'
 import type { PetGrowth, PetStage } from '@shared/pet-growth'
 
@@ -47,7 +48,7 @@ function getBridge(): PetBridge | null {
 export function ConsoleApp(): ReactElement {
   const [state, setState] = useState<PetState | null>(null)
   const [tab, setTab] = useState<TabId>('care')
-  const [panel, setPanel] = useState<'none' | 'fishing' | 'farm' | 'minigame'>('none')
+  const [panel, setPanel] = useState<'none' | 'fishing' | 'farm' | 'minigame' | 'marriage'>('none')
 
   useEffect(() => {
     const bridge = getBridge()
@@ -105,7 +106,7 @@ export function ConsoleApp(): ReactElement {
 
       {/* tab 内容 */}
       <div style={contentStyle}>
-        {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} onFarm={() => setPanel('farm')} onMinigame={() => setPanel('minigame')} />}
+        {tab === 'care' && <CareTab state={state} onFish={() => setPanel('fishing')} onFarm={() => setPanel('farm')} onMinigame={() => setPanel('minigame')} onMarriage={() => setPanel('marriage')} />}
         {tab === 'inventory' && <InventoryTab state={state} />}
         {tab === 'shop' && <ShopTab />}
         {tab === 'achievements' && <AchievementsTab state={state} />}
@@ -116,6 +117,7 @@ export function ConsoleApp(): ReactElement {
     {panel === 'fishing' && <FishingPanel onClose={() => setPanel('none')} />}
     {panel === 'farm' && <FarmPanel onClose={() => setPanel('none')} />}
     {panel === 'minigame' && <MinigamePanel onClose={() => setPanel('none')} />}
+    {panel === 'marriage' && <MarriagePanel state={state} onClose={() => setPanel('none')} />}
     </>
   )
 }

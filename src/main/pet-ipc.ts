@@ -17,6 +17,7 @@ import {
   type PetItem
 } from '../shared/pet-state'
 import { addExp } from '../shared/pet-growth'
+import { canMarry, defaultMarriage, divorce, generateSuitor, layEgg, marry } from '../shared/pet-marriage'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -188,5 +189,39 @@ export function registerPetStateIpc(): void {
       return { ...state, coins: state.coins - Math.max(0, Math.floor(amount)) }
     })
     return { ok }
+  })
+
+  // M12 婚育：相亲（生成候选 + 结婚）
+  ipcMain.handle('pet:marry', () => {
+    let result: { ok: boolean; partnerName?: string } = { ok: false }
+    store.update((state) => {
+      const growth = state.growth
+      if (!growth || !canMarry(growth)) return state
+      const suitor = generateSuitor()
+      const marriage = marry(state.marriage ?? defaultMarriage(), suitor, Date.now())
+      result = { ok: true, partnerName: suitor.name }
+      void getDiaryStore().append('💍', `与 ${suitor.name} 喜结连理！`)
+      return { ...state, marriage }
+    })
+    return result
+  })
+
+  // M12 培育宠物蛋
+  ipcMain.handle('pet:lay-egg', () => {
+    let result: { ok: boolean; eggs?: number } = { ok: false }
+    store.update((state) => {
+      const { state: nextState, laid } = layEgg(state.marriage ?? defaultMarriage(), Date.now())
+      if (!laid) return state
+      result = { ok: true, eggs: nextState.eggs }
+      void getDiaryStore().append('🥚', '培育了一枚宠物蛋！')
+      return { ...state, marriage: nextState }
+    })
+    return result
+  })
+
+  // M12 离婚
+  ipcMain.handle('pet:divorce', () => {
+    store.update((state) => ({ ...state, marriage: divorce(state.marriage ?? defaultMarriage()) }))
+    return { ok: true }
   })
 }
