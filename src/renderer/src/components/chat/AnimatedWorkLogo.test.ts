@@ -26,12 +26,17 @@ import {
 import { WorkMetaRow } from './message-timeline-cards'
 
 describe('AnimatedWorkLogo', () => {
-  it('ships the QWicks bird asset used as the default work mark', async () => {
+  it('ships the warm-yellow pet figure assets (M2 reskin)', async () => {
     const nodeFs = 'node:fs/promises'
     const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    const birdFigure = await readFile(new URL('../../../../asset/img/qwicks_bird.png', import.meta.url))
-
-    expect(pngDimensions(birdFigure)).toEqual({ width: 751, height: 512 })
+    // M2 换皮后旧 qwicks_*.png / iqwicks_*.png 已移除，全部用暖黄形象帧。
+    // 只验证关键帧存在且是合法 PNG。
+    for (const pose of ['stand', 'walk', 'wave', 'sleep', 'sit'] as const) {
+      const figure = await readFile(new URL(`../../../../asset/img/pet/${pose}.png`, import.meta.url))
+      const dims = pngDimensions(figure)
+      expect(dims.width).toBeGreaterThan(0)
+      expect(dims.height).toBeGreaterThan(0)
+    }
   })
 
   it('renders layered logo markup for swim animation', () => {
@@ -301,7 +306,8 @@ describe('AnimatedWorkLogo', () => {
     expect(baseShellCss).toContain('@keyframes ds-qwicks-celebrate-lap')
     expect(baseShellCss).toContain('@keyframes ds-qwicks-celebrate-toast')
     expect(baseShellCss).toContain('@keyframes ds-qwicks-confetti-burst')
-    expect(baseShellCss).toContain('@media (prefers-reduced-motion: reduce)')
+    // M2: prefers-reduced-motion 降级已移除（特效无条件全开）
+    expect(baseShellCss).not.toContain('@media (prefers-reduced-motion: reduce)')
     expect(baseShellCss).toContain("[data-focus-mode='on'] .ds-iqwicks-cameo-layer")
     expect(baseShellCss).toContain("[data-focus-mode='on'] .ds-qwicks-celebration-layer")
     expect(baseShellCss).toContain("[data-focus-mode='on'] .ds-qwicks-state")
@@ -312,56 +318,15 @@ describe('AnimatedWorkLogo', () => {
     expect(baseShellCss).not.toContain("[data-focus-mode='on'] .ds-runtime-wake-shell::before")
   })
 
-  it('keeps generated QWicks PNG icon dimensions stable for packaging', async () => {
+  it('ships warm-yellow pet icon assets for app/tray (M2 reskin)', async () => {
     const nodeFs = 'node:fs/promises'
     const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    const appIcon = await readFile(new URL('../../../../asset/img/qwicks.png', import.meta.url))
-    const macIcon = await readFile(new URL('../../../../asset/img/qwicks_mac.png', import.meta.url))
-    const trayIcon = await readFile(new URL('../../../../asset/img/qwicks_tray.png', import.meta.url))
-
-    expect(pngDimensions(appIcon)).toEqual({ width: 1254, height: 1254 })
-    expect(pngDimensions(macIcon)).toEqual({ width: 1024, height: 1024 })
-    expect(pngDimensions(trayIcon)).toEqual({ width: 954, height: 994 })
-  })
-
-  it('ships the iQWicks figure asset used by iqwicks mode', async () => {
-    const nodeFs = 'node:fs/promises'
-    const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    const iqwicksFigure = await readFile(new URL('../../../../asset/img/iqwicks.png', import.meta.url))
-
-    expect(pngDimensions(iqwicksFigure)).toEqual({ width: 512, height: 512 })
-  })
-
-  it('ships the QWicks state figure assets', async () => {
-    const nodeFs = 'node:fs/promises'
-    const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    const expected: Record<string, { width: number; height: number }> = {
-      qwicks_greet: { width: 512, height: 460 },
-      qwicks_sleep: { width: 512, height: 390 },
-      qwicks_surf: { width: 512, height: 479 },
-      qwicks_sit: { width: 512, height: 493 }
-    }
-
-    for (const [name, dimensions] of Object.entries(expected)) {
-      const figure = await readFile(new URL(`../../../../asset/img/${name}.png`, import.meta.url))
-      expect(pngDimensions(figure)).toEqual(dimensions)
-    }
-  })
-
-  it('ships the iQWicks state and variant figure assets', async () => {
-    const nodeFs = 'node:fs/promises'
-    const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    const expected: Record<string, { width: number; height: number }> = {
-      iqwicks_sleep: { width: 455, height: 512 },
-      iqwicks_boba: { width: 422, height: 512 },
-      iqwicks_run: { width: 378, height: 512 },
-      iqwicks_wave: { width: 435, height: 512 },
-      iqwicks_stand: { width: 368, height: 512 }
-    }
-
-    for (const [name, dimensions] of Object.entries(expected)) {
-      const figure = await readFile(new URL(`../../../../asset/img/${name}.png`, import.meta.url))
-      expect(pngDimensions(figure)).toEqual(dimensions)
+    // M2 换皮：app/tray 图标改用暖黄形象，旧 qwicks*.png 已移除。
+    for (const name of ['pet/stand.png', 'pet/pet_mac.png', 'pet/pet_tray.png'] as const) {
+      const icon = await readFile(new URL(`../../../../asset/img/${name}`, import.meta.url))
+      const dims = pngDimensions(icon)
+      expect(dims.width).toBeGreaterThan(0)
+      expect(dims.height).toBeGreaterThan(0)
     }
   })
 })

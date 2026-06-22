@@ -2,16 +2,21 @@ import type { ReactElement } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { UiPluginFigureSlot } from '@shared/ui-plugin'
 import { useUiPluginFigure } from '../../store/ui-plugin-store'
-import qwicksLogo from '../../../../asset/img/qwicks_bird.png'
-import qwicksSurfFigure from '../../../../asset/img/qwicks_surf.png'
-import qwicksGreetFigure from '../../../../asset/img/qwicks_greet.png'
-import qwicksSleepFigure from '../../../../asset/img/qwicks_sleep.png'
-import qwicksSitFigure from '../../../../asset/img/qwicks_sit.png'
-import iqwicksFigure from '../../../../asset/img/iqwicks.png'
-import iqwicksRunFigure from '../../../../asset/img/iqwicks_run.png'
-import iqwicksBobaFigure from '../../../../asset/img/iqwicks_boba.png'
-import iqwicksWaveFigure from '../../../../asset/img/iqwicks_wave.png'
-import iqwicksSleepFigure from '../../../../asset/img/iqwicks_sleep.png'
+import { petFigure } from '../../lib/pet-figure'
+
+// M2 形象换皮：旧的 qwicks_*.png / iqwicks_*.png 两套美术已移除，
+// 全部指向暖黄形象的对应姿态帧。变量名保留以最小化下游逻辑改动——
+// 双图 CSS 过渡、彩蛋、庆祝等机制原样工作，只是底层图换成暖黄形象。
+const qwicksLogo = petFigure('walk')        // 原 qwicks_bird（工作 logo 主体）
+const qwicksSurfFigure = petFigure('walk')   // 原 qwicks_surf
+const qwicksGreetFigure = petFigure('wave')  // 原 qwicks_greet
+const qwicksSleepFigure = petFigure('sleep') // 原 qwicks_sleep
+const qwicksSitFigure = petFigure('sit')     // 原 qwicks_sit
+const iqwicksFigure = petFigure('walk')      // 原 iqwicks（运球）
+const iqwicksRunFigure = petFigure('walk')   // 原 iqwicks_run
+const iqwicksBobaFigure = petFigure('sit')   // 原 iqwicks_boba（喝奶茶→坐着）
+const iqwicksWaveFigure = petFigure('wave')  // 原 iqwicks_wave
+const iqwicksSleepFigure = petFigure('sleep') // 原 iqwicks_sleep
 
 /* UI 插件按槽位覆盖默认 QWicks 形象时的回退链 */
 export const UI_PLUGIN_STATE_SLOTS: Record<QWicksStateFigureKind, readonly UiPluginFigureSlot[]> = {
@@ -193,7 +198,6 @@ export function IqwicksCameoLayer(): ReactElement {
   const [cameo, setCameo] = useState<IqwicksCameoSpec | null>(null)
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     let timer = 0
     const schedule = (delay: number): void => {
       timer = window.setTimeout(() => {
@@ -322,7 +326,6 @@ export function QWicksCelebrationLayer({
     turnStartRef.current = null
     if (suppressed) return
     if (elapsed < QWICKS_CELEBRATION_MIN_TURN_MS) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const next = pickQWicksCelebration()
     setCelebration(next)

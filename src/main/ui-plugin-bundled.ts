@@ -2,12 +2,12 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import iqwicksFigureRef from '../asset/img/iqwicks.png?url'
-import iqwicksRunFigureRef from '../asset/img/iqwicks_run.png?url'
-import iqwicksBobaFigureRef from '../asset/img/iqwicks_boba.png?url'
-import iqwicksWaveFigureRef from '../asset/img/iqwicks_wave.png?url'
-import iqwicksSleepFigureRef from '../asset/img/iqwicks_sleep.png?url'
-import iqwicksStandFigureRef from '../asset/img/iqwicks_stand.png?url'
+// M2 形象换皮：旧的 iqwicks_*.png 已移除，预装插件改用暖黄形象姿态帧。
+import petWalkRef from '../asset/img/pet/walk.png?url'
+import petWaveRef from '../asset/img/pet/wave.png?url'
+import petSleepRef from '../asset/img/pet/sleep.png?url'
+import petSitRef from '../asset/img/pet/sit.png?url'
+import petStandRef from '../asset/img/pet/stand.png?url'
 import { UI_PLUGIN_BUNDLED_IQWICKS_ID } from '../shared/ui-plugin'
 import { seedUiPlugin, uiPluginsRootDir } from './services/ui-plugin-service'
 
@@ -15,13 +15,15 @@ import { seedUiPlugin, uiPluginsRootDir } from './services/ui-plugin-service'
  * 预装 UI 插件:iQWicks 模式就是形象工坊的官方示例插件,
  * 首次启动时自动安装进 ~/.qwicks/ui-plugins/iqwicks/。
  * 安装只做一次(种子标记),用户删掉后不会被强行复活。
+ *
+ * M2 后角色形象统一为暖黄形象(旧的坤鸡美术已移除)。
  */
 
-const BUNDLED_SEED_MARKER = '.bundled-seed-v1'
+const BUNDLED_SEED_MARKER = '.bundled-seed-v2'
 
 /**
  * iQWicks 的 manifest。注意:激活 id 为 'iqwicks' 的插件时,渲染层会额外点亮
- * data-iqwicks-mode 的手工 CSS 机制(运球/快攻/喝奶茶变体、橙色氛围),
+ * data-iqwicks-mode 的手工 CSS 机制(暖黄氛围、动画变体),
  * 所以这里的 figures 主要服务于工坊预览与通用槽位兜底。
  */
 const BUNDLED_IQWICKS_MANIFEST = {
@@ -29,13 +31,13 @@ const BUNDLED_IQWICKS_MANIFEST = {
   name: 'iQWicks 模式',
   version: '1.0.0',
   author: 'QWicks Team',
-  description: '预装示例插件:坤鸡全家福,附手工运球/快攻/喝奶茶动画与出没彩蛋。',
+  description: '预装示例形象:暖黄宠物全家福,附手工动画与出没彩蛋。',
   figures: {
-    swim: 'img/dribble.png',
-    run: 'img/run.png',
+    swim: 'img/walk.png',
+    run: 'img/walk.png',
     greet: 'img/wave.png',
     sleep: 'img/sleep.png',
-    sit: 'img/boba.png',
+    sit: 'img/sit.png',
     toggleIcon: 'img/stand.png'
   },
   features: {
@@ -44,12 +46,12 @@ const BUNDLED_IQWICKS_MANIFEST = {
 }
 
 const BUNDLED_IQWICKS_FIGURE_REFS: Record<string, string> = {
-  swim: iqwicksFigureRef,
-  run: iqwicksRunFigureRef,
-  greet: iqwicksWaveFigureRef,
-  sleep: iqwicksSleepFigureRef,
-  sit: iqwicksBobaFigureRef,
-  toggleIcon: iqwicksStandFigureRef
+  swim: petWalkRef,
+  run: petWalkRef,
+  greet: petWaveRef,
+  sleep: petSleepRef,
+  sit: petSitRef,
+  toggleIcon: petStandRef
 }
 
 /** bundle 所在目录,用于把 ?url 的 /chunks/xxx.png 还原为真实文件路径 */

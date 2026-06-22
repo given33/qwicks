@@ -139,6 +139,13 @@ export function resolveHotCodeRendererIndexPath(): string | null {
   return fileExists(indexPath) ? indexPath : null
 }
 
+export function resolveHotCodeMainPath(): string | null {
+  const active = getActiveCodePackageSync()
+  if (!active) return null
+  const mainPath = join(active.root, 'main', 'app-main.js')
+  return fileExists(mainPath) ? mainPath : null
+}
+
 export function resolveHotCodeQWicksRoot(defaultRoot: string): string {
   const active = getActiveCodePackageSync()
   if (!active) return defaultRoot
@@ -166,6 +173,7 @@ export async function deactivateActiveCodePackage(reason: string): Promise<void>
 function validateInstalledCodeRoot(root: string): boolean {
   return (
     directoryExists(root) &&
+    fileExists(join(root, 'main', 'app-main.js')) &&
     fileExists(join(root, 'renderer', 'index.html')) &&
     (fileExists(join(root, 'preload', 'index.cjs')) || fileExists(join(root, 'preload', 'index.mjs')))
   )

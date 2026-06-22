@@ -2423,99 +2423,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-shiny-text,
-  .ds-work-logo,
-  .ds-work-logo::after,
-  .ds-work-logo-body::after,
-  .ds-work-logo-current,
-  .ds-work-logo-gust,
-  .ds-work-logo-swell,
-  .ds-work-logo-wave,
-  .ds-work-logo-breaker,
-  .ds-work-logo-ripple,
-  .ds-work-logo-wake,
-  .ds-work-logo-foam,
-  .ds-work-logo-crest,
-  .ds-work-logo-splash,
-  .ds-work-logo-spray,
-  .ds-work-logo-bubbles,
-  .ds-work-logo-echo,
-  .ds-work-logo-track,
-  .ds-work-logo-body,
-  .ds-work-logo-image,
-  .ds-iqwicks-logo,
-  .ds-iqwicks-logo-shadow,
-  .ds-iqwicks-figure,
-  .sdd-draft-shell,
-  .sdd-draft-topbar,
-  .sdd-editor-card,
-  .sdd-editor-progress::after,
-  .sdd-status-pill,
-  .sdd-error-toast,
-  .sdd-assistant-panel,
-  .sdd-assistant-sparkle,
-  .sdd-assistant-timeline,
-  .sdd-assistant-empty-card,
-  .sdd-assistant-action {
-    animation: none;
-  }
 
-  .ds-work-logo-current,
-  .ds-work-logo-body::after,
-  .ds-work-logo-gust,
-  .ds-work-logo-swell,
-  .ds-work-logo-wave,
-  .ds-work-logo-breaker,
-  .ds-work-logo-ripple,
-  .ds-work-logo-wake,
-  .ds-work-logo-foam,
-  .ds-work-logo-crest,
-  .ds-work-logo-splash,
-  .ds-work-logo-spray,
-  .ds-work-logo-bubbles,
-  .ds-work-logo-echo {
-    opacity: 0;
-    transform: none;
-  }
-
-  .ds-work-logo::after {
-    opacity: 0.24;
-    transform: translateY(3px) scaleX(0.72);
-  }
-
-  .ds-work-logo-track,
-  .ds-work-logo-body,
-  .ds-work-logo-image,
-  .ds-iqwicks-logo,
-  .ds-iqwicks-logo-shadow,
-  .ds-iqwicks-figure,
-  .sdd-draft-topbar,
-  .sdd-editor-card,
-  .sdd-status-pill,
-  .sdd-assistant-panel,
-  .sdd-assistant-sparkle,
-  .sdd-assistant-empty-card,
-  .sdd-assistant-action {
-    transform: none;
-  }
-
-  .ds-work-logo-swell,
-  .ds-work-logo-gust,
-  .ds-work-logo-wave,
-  .ds-work-logo-breaker,
-  .ds-work-logo-crest,
-  .ds-work-logo-splash,
-  .ds-work-logo-spray,
-  .ds-work-logo-foam,
-  .ds-work-logo-bubbles {
-    scale: none;
-  }
-
-  .ds-work-logo.is-active .ds-work-logo-image {
-    clip-path: none;
-  }
-}
 
 /* Work-process entry detail cards inside the lighter OpenBridge-style sections. */
 .ds-work-timeline-detail {
@@ -2581,19 +2489,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-media-printer-reveal {
-    animation: none;
-    clip-path: none;
-    filter: none;
-    opacity: 1;
-  }
 
-  .ds-media-printer-reveal::after {
-    animation: none;
-    display: none;
-  }
-}
 
 .ds-work-stack {
   margin-top: 0.2rem;
@@ -3954,17 +3850,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-qwicks-state .ds-qwicks-state-figure,
-  .ds-qwicks-state .ds-iqwicks-state-figure {
-    animation: none;
-  }
 
-  .ds-work-logo,
-  .ds-qwicks-state {
-    transition: none;
-  }
-}
 
 .ds-runtime-wake-qwicks {
   z-index: 2;
@@ -3991,11 +3877,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-sidebar-mascot {
-    animation: none;
-  }
-}
+
 
 /* ---------- iQWicks 出没:主会话两侧不定时冒出的坤鸡彩蛋(指针穿透) ---------- */
 
@@ -4230,13 +4112,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-iqwicks-cameo,
-  .ds-iqwicks-cameo .ds-iqwicks-cameo-figure {
-    animation: none;
-    opacity: 0;
-  }
-}
+
 
 /* ---------- 任务完成庆祝:回合结束随机来一段(双形象,iQWicks 模式自动换坤鸡) ---------- */
 
@@ -4437,14 +4313,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-qwicks-celebration,
-  .ds-qwicks-celebration .ds-qwicks-celebration-figure,
-  .ds-qwicks-confetti i {
-    animation: none;
-    opacity: 0;
-  }
-}
+
 
 /* iQWicks 模式开关上的坤鸡立绘:关闭时蹲灰度,打开点亮 */
 .ds-iqwicks-toggle-figure {
@@ -4760,23 +4629,7 @@ pre {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ds-runtime-wake-shell::before,
-  .ds-runtime-wake-nav .is-active,
-  .ds-runtime-wake-thread,
-  .ds-runtime-wake-flow::after,
-  .ds-runtime-wake-core,
-  .ds-runtime-wake-core::before,
-  .ds-runtime-wake-ring,
-  .ds-runtime-wake-qwicks-bob,
-  .ds-runtime-wake-zzz i,
-  .ds-runtime-wake-sonar,
-  .ds-runtime-wake-bubbles i,
-  .ds-runtime-wake-caret,
-  .is-waking .ds-runtime-wake-composer span:first-child {
-    animation: none;
-  }
-}
+
 
 /* Focus mode removes decorative QWicks / iQWicks mascots without hiding essential loading indicators. */
 [data-focus-mode='on'] .ds-iqwicks-cameo-layer,

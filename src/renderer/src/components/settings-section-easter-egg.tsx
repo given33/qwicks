@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { FolderPlus, Trash2 } from 'lucide-react'
 import { UI_MODE_DEFAULT } from '../lib/ui-mode'
 import { useUiPluginStore } from '../store/ui-plugin-store'
-import qwicksBirdFigure from '../../../asset/img/qwicks_bird.png'
+import { petFigure } from '../lib/pet-figure'
 import { SettingsCard, SettingRow } from './settings-controls'
 
 type ModeCard = {
@@ -109,7 +109,7 @@ export function EasterEggSettingsSection({ ctx }: { ctx: Record<string, any> }):
       mode: UI_MODE_DEFAULT,
       title: t('uiModeDefaultTitle'),
       subtitle: t('uiModeDefaultSubtitle'),
-      preview: qwicksBirdFigure,
+      preview: petFigure('stand'),
       removable: false
     }
   ]
