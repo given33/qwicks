@@ -90,33 +90,55 @@ export type RuntimeRequestInit = {
   headers?: Record<string, string>
 }
 
+const TRANSIENT_RUNTIME_STARTUP_RETRY_MS = 350
+
+function isTransientRuntimeStartupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /^QWicks exited during startup with signal SIG(?:TERM|INT)(?:\n|$)/.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export async function runtimeRequestViaHost(
   settings: AppSettingsV1,
   pathAndQuery: string,
   init: RuntimeRequestInit,
   ensureRuntime: (settings: AppSettingsV1) => Promise<AppSettingsV1 | void>
 ): Promise<{ ok: boolean; status: number; body: string }> {
-  const ensuredSettings = await ensureRuntime(settings)
-  const requestSettings = ensuredSettings ?? settings
-  const base = getRuntimeBaseUrlForSettings(requestSettings)
-  const pathNorm = pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`
-  const url = `${base}${pathNorm}`
-  const hdrs = runtimeAuthHeaders(requestSettings)
-  for (const [key, value] of Object.entries(init.headers ?? {})) {
-    hdrs.set(key, value)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const ensuredSettings = await ensureRuntime(settings)
+      const requestSettings = ensuredSettings ?? settings
+      const base = getRuntimeBaseUrlForSettings(requestSettings)
+      const pathNorm = pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`
+      const url = `${base}${pathNorm}`
+      const hdrs = runtimeAuthHeaders(requestSettings)
+      for (const [key, value] of Object.entries(init.headers ?? {})) {
+        hdrs.set(key, value)
+      }
+      hdrs.set('Accept', 'application/json')
+      if (init.body && !hdrs.has('Content-Type')) {
+        hdrs.set('Content-Type', 'application/json')
+      }
+      const res = await fetch(url, {
+        method: init.method ?? 'GET',
+        headers: hdrs,
+        body: init.body,
+        signal: AbortSignal.timeout(init.method === 'POST' ? 60_000 : 15_000)
+      })
+      const text = await res.text()
+      return { ok: res.ok, status: res.status, body: text }
+    } catch (error) {
+      if (attempt === 0 && isTransientRuntimeStartupError(error)) {
+        await delay(TRANSIENT_RUNTIME_STARTUP_RETRY_MS)
+        continue
+      }
+      throw error
+    }
   }
-  hdrs.set('Accept', 'application/json')
-  if (init.body && !hdrs.has('Content-Type')) {
-    hdrs.set('Content-Type', 'application/json')
-  }
-  const res = await fetch(url, {
-    method: init.method ?? 'GET',
-    headers: hdrs,
-    body: init.body,
-    signal: AbortSignal.timeout(init.method === 'POST' ? 60_000 : 15_000)
-  })
-  const text = await res.text()
-  return { ok: res.ok, status: res.status, body: text }
+  throw new Error('QWicks runtime request failed after retry')
 }
 
 export { buildQWicksServeArgs, resolveQWicksExecutable }

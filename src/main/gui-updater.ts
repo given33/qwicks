@@ -1,4 +1,4 @@
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, dialog, shell } from 'electron'
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, dialog } from 'electron'
 import type { MessageBoxOptions } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -57,8 +57,6 @@ let backgroundCheckPromise: Promise<void> | null = null
 
 const GUI_UPDATE_SCHEDULE_FILE = 'gui-update-schedule.json'
 const GUI_VERSION_STATE_FILE = 'gui-version-state.json'
-const DEFAULT_CHANGELOG_URL = `https://github.com/${DEFAULT_GITHUB_OWNER}/${DEFAULT_GITHUB_REPO}/releases`
-
 type GuiVersionState = {
   lastSeenVersion?: string
   pendingUpdate?: {
@@ -93,10 +91,6 @@ async function writeGuiVersionState(state: GuiVersionState): Promise<void> {
 
 function currentGuiVersion(): string {
   return currentCodeOrShellVersion()
-}
-
-function changelogUrl(): string {
-  return envWithLegacyFallback('QWICKS_CHANGELOG_URL', 'DEEPSEEK_GUI_CHANGELOG_URL') || DEFAULT_CHANGELOG_URL
 }
 
 function normalizeReleaseNotes(value: unknown): string | undefined {
@@ -228,9 +222,9 @@ function macAutoUpdateAllowed(): boolean {
 
 function unsupportedMessage(): string {
   if (process.platform === 'darwin') {
-    return 'Automatic updates require a signed and notarized macOS build. Use the download page for this build.'
+    return 'Automatic updates require a signed and notarized macOS build. Review the update notes in the app, then install a full release build when available.'
   }
-  return 'Automatic updates are not supported for this build. Use the download page instead.'
+  return 'Automatic updates are not supported for this build. Review the update notes in the app, then install a full release build when available.'
 }
 
 function extractHttpStatus(raw: string): number | null {
@@ -243,23 +237,23 @@ function extractHttpStatus(raw: string): number | null {
 function sanitizeUpdaterError(raw: string, channel: GuiUpdateChannel): string {
   const message = raw.trim()
   if (!message) {
-    return `Could not read GUI update metadata for the ${channel} channel. Open the download page instead.`
+    return `Could not read GUI update metadata for the ${channel} channel. Please try again later.`
   }
 
   if (/Invalid release object path\./i.test(message)) {
-    return `The ${channel} update feed is not published correctly yet. Open the download page instead.`
+    return `The ${channel} update feed is not published correctly yet. Please try again later.`
   }
 
   if (/Object not found\./i.test(message)) {
-    return `The ${channel} update feed is missing release metadata right now. Open the download page instead.`
+    return `The ${channel} update feed is missing release metadata right now. Please try again later.`
   }
 
   const status = extractHttpStatus(message)
   if (status === 400 || status === 404) {
-    return `The ${channel} update feed is not available right now. Open the download page instead.`
+    return `The ${channel} update feed is not available right now. Please try again later.`
   }
   if (status === 403) {
-    return `The ${channel} update feed denied this request. Open the download page instead.`
+    return `The ${channel} update feed denied this request. Please try again later.`
   }
   if (status === 429) {
     return `The ${channel} update feed is rate limited right now. Please try again later.`
@@ -718,20 +712,18 @@ export async function showPostUpdateReleaseNotes(): Promise<void> {
     detail:
       pendingUpdate?.releaseNotes ??
       (isZh
-        ? '此版本的完整更新内容可在 QWicks 更新日志中查看。'
-        : 'See the QWicks changelog for the complete release notes.'),
-    buttons: isZh ? ['查看更新日志', '稍后'] : ['View changelog', 'Later'],
+        ? '本次更新未提供详细说明。'
+        : 'This update did not include detailed release notes.'),
+    buttons: isZh ? ['知道了'] : ['OK'],
     defaultId: 0,
-    cancelId: 1,
+    cancelId: 0,
     noLink: true
   }
   const window = getMainWindow?.()
-  const result =
-    window && !window.isDestroyed()
-      ? await dialog.showMessageBox(window, options)
-      : await dialog.showMessageBox(options)
-  if (result.response === 0) {
-    await shell.openExternal(changelogUrl())
+  if (window && !window.isDestroyed()) {
+    await dialog.showMessageBox(window, options)
+  } else {
+    await dialog.showMessageBox(options)
   }
 }
 

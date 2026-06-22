@@ -132,4 +132,29 @@ describe('runtimeRequestViaHost', () => {
     expect(response.status).toBe(200)
     expect(seenUrl).toBe('/v1/threads?limit=1')
   })
+
+  it('retries once when a managed runtime restart interrupts startup', async () => {
+    let ensureCalls = 0
+    const port = await listen((_req, res) => {
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ ok: true }))
+    })
+
+    const response = await runtimeRequestViaHost(
+      settingsForPort(1),
+      '/health',
+      { method: 'GET' },
+      async () => {
+        ensureCalls += 1
+        if (ensureCalls === 1) {
+          throw new Error('QWicks exited during startup with signal SIGTERM')
+        }
+        return settingsForPort(port)
+      }
+    )
+
+    expect(ensureCalls).toBe(2)
+    expect(response.ok).toBe(true)
+    expect(response.status).toBe(200)
+  })
 })

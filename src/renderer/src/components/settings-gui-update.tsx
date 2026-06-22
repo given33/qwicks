@@ -85,8 +85,6 @@ export function GuiUpdateControl({
     tone = 'good'
   }
 
-  const releaseUrl: string | null =
-    info?.ok && info.hasUpdate ? info.releaseUrl : !info?.ok && info?.releaseUrl ? info.releaseUrl : null
   const canDownload = Boolean(info?.ok && info.hasUpdate && !info.manualOnly && !downloaded)
   const canInstall = Boolean(info?.ok && downloaded)
 
@@ -156,15 +154,6 @@ export function GuiUpdateControl({
               <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} />
             )}
             {t('guiUpdateInstall')}
-          </button>
-        ) : null}
-        {releaseUrl ? (
-          <button
-            type="button"
-            onClick={() => void window.qwicksGui.openExternal(releaseUrl).catch(() => undefined)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-ds-userbubble px-3 py-2 text-[13px] font-medium text-ds-userbubbleFg shadow-sm transition hover:opacity-90"
-          >
-            {t('guiUpdateOpenRelease')}
           </button>
         ) : null}
       </div>

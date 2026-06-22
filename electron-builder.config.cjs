@@ -117,6 +117,12 @@ module.exports = {
     // the WeChat bridge imports @tencent-weixin/openclaw-weixin/dist at
     // runtime to send media, and that chain resolves openclaw/plugin-sdk/*.
   ],
+  extraFiles: [
+    {
+      from: 'build/icon.ico',
+      to: 'QWicks.ico'
+    }
+  ],
   artifactName: `QWicks-${artifactVersion}-\${os}-\${arch}.\${ext}`,
   publish: [
     {
@@ -168,6 +174,9 @@ module.exports = {
     perMachine: false,
     allowElevation: true,
     selectPerMachineByDefault: false,
+    installerIcon: './build/icon.ico',
+    uninstallerIcon: './build/icon.ico',
+    installerHeaderIcon: './build/icon.ico',
     // 明确创建快捷方式；always 在覆盖安装时也会重建（即使用户曾删掉桌面图标）
     createDesktopShortcut: 'always',
     createStartMenuShortcut: true,

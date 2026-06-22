@@ -9,7 +9,6 @@ import {
   Code2,
   ClipboardList,
   Download,
-  ExternalLink,
   FileEdit,
   Files,
   FolderOpen,
@@ -175,6 +174,7 @@ export function WorkbenchTopBar({
     const notes = guiUpdateAction.releaseNotes?.trim()
     return notes ? `${base}\n\n${notes}` : base
   }, [guiUpdateAction, t])
+  const guiUpdateNotes = guiUpdateAction?.releaseNotes?.trim() ?? ''
 
   const chooseEditor = (editor: EditorInfo): void => {
     setSelectedEditorId(editor.id)
@@ -213,9 +213,6 @@ export function WorkbenchTopBar({
   const runGuiUpdateAction = async (): Promise<void> => {
     if (!guiUpdateAction || guiUpdateBusy) return
     if (guiUpdateAction.manualOnly) {
-      if (typeof window.qwicksGui?.openExternal === 'function') {
-        await window.qwicksGui.openExternal(guiUpdateAction.releaseUrl)
-      }
       return
     }
     if (
@@ -258,7 +255,7 @@ export function WorkbenchTopBar({
       return <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.85} />
     }
     if (guiUpdateAction?.manualOnly) {
-      return <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.85} />
+      return <Download className="h-3.5 w-3.5" strokeWidth={1.85} />
     }
     if (guiUpdateAction) {
       return <ArrowUpCircle className="h-3.5 w-3.5" strokeWidth={1.85} />
@@ -269,17 +266,29 @@ export function WorkbenchTopBar({
   return (
     <div className="chat-workbench-topbar ds-no-drag flex min-w-0 shrink-0 flex-nowrap items-center justify-end gap-1">
       {guiUpdateAction ? (
-        <button
-          type="button"
-          onClick={() => void runGuiUpdateAction()}
-          disabled={guiUpdateBusy}
-          className="chat-gui-update-button inline-flex items-center gap-1.5 rounded-full border border-amber-300/75 bg-amber-50/92 px-3 py-1.5 text-[12.5px] font-semibold text-amber-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700/70 dark:bg-amber-950/35 dark:text-amber-100 dark:hover:bg-amber-900/45"
-          aria-label={guiUpdateTitle}
-          title={guiUpdateTitle}
-        >
-          {renderGuiUpdateIcon()}
-          <span className="chat-gui-update-label max-w-[11rem] truncate">{guiUpdateLabel}</span>
-        </button>
+        <div className="group relative">
+          <button
+            type="button"
+            onClick={() => void runGuiUpdateAction()}
+            disabled={guiUpdateBusy}
+            className="chat-gui-update-button inline-flex items-center gap-1.5 rounded-full border border-amber-300/75 bg-amber-50/92 px-3 py-1.5 text-[12.5px] font-semibold text-amber-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700/70 dark:bg-amber-950/35 dark:text-amber-100 dark:hover:bg-amber-900/45"
+            aria-label={guiUpdateTitle}
+            aria-describedby="qwicks-gui-update-tooltip"
+          >
+            {renderGuiUpdateIcon()}
+            <span className="chat-gui-update-label max-w-[11rem] truncate">{guiUpdateLabel}</span>
+          </button>
+          <div
+            id="qwicks-gui-update-tooltip"
+            role="tooltip"
+            className="pointer-events-none absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-2.5 text-left text-amber-950 opacity-0 shadow-lg transition group-focus-within:opacity-100 group-hover:opacity-100 dark:border-amber-700/80 dark:bg-[#2b210f] dark:text-amber-100"
+          >
+            <div className="text-[12px] font-semibold leading-4">{guiUpdateLabel}</div>
+            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-5 opacity-80">
+              {guiUpdateNotes || guiUpdateTitle}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <div ref={editorMenuRef} className="relative">

@@ -159,6 +159,13 @@ describe('electron-builder QWicks packaging', () => {
     // instead of downscaling a single 1024px PNG (#222). The .ico still carries
     // the rounded QWicks artwork — it is derived from qwicks_mac.png.
     expect(builderConfig.win.icon).toBe('./build/icon.ico')
+    expect(builderConfig.extraFiles).toContainEqual({
+      from: 'build/icon.ico',
+      to: 'QWicks.ico'
+    })
+    expect(builderConfig.nsis.installerIcon).toBe('./build/icon.ico')
+    expect(builderConfig.nsis.uninstallerIcon).toBe('./build/icon.ico')
+    expect(builderConfig.nsis.installerHeaderIcon).toBe('./build/icon.ico')
   })
 
   it('keeps sandboxed preload free of Node builtin imports', () => {

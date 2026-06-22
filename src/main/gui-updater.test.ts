@@ -296,10 +296,10 @@ describe('showPostUpdateReleaseNotes', () => {
         title: 'QWicks 已更新',
         message: '已更新到 QWicks 0.2.0',
         detail: '修复更新流程并改进启动体验。',
-        buttons: ['查看更新日志', '稍后']
+        buttons: ['知道了']
       })
     )
-    expect(openExternal).toHaveBeenCalledWith('https://github.com/given33/qwicks/releases')
+    expect(openExternal).not.toHaveBeenCalled()
     expect(JSON.parse(mockedFiles.get(versionStatePath) ?? '{}')).toEqual({
       lastSeenVersion: '0.2.0'
     })
