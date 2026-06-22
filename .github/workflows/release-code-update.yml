@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/renderer/**'
+      - 'src/preload/**'
+      - 'src/asset/**'
+      - 'qwicks/src/**'
+      - 'qwicks/tests/**'
   workflow_dispatch:
     inputs:
       channel:
