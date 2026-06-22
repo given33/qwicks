@@ -20,6 +20,9 @@ import type { ChildRunExecutor } from '../../delegation/delegation-runtime.js'
 export interface InstalledMesh {
   remoteExecutor: ChildRunExecutor
   decide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => { executor: 'local' | 'remote'; workerDeviceId?: string; reason?: string }
+  /** Optional: record the chosen worker before dispatch so the outbound
+   *  transport knows which peer to ship the task to. */
+  onDispatchRemote?: (childId: string, workerDeviceId: string) => void
 }
 
 export interface MeshRuntimeSlot {
@@ -52,7 +55,14 @@ export function createMeshRuntimeSlot(localExecutor: ChildRunExecutor): {
       ...(input.label ? { label: input.label } : {}),
       ...(input.workspace ? { workspace: input.workspace } : {})
     })
-    return decision.executor === 'remote' ? mesh.remoteExecutor(input) : localExecutor(input)
+    if (decision.executor !== 'remote') return localExecutor(input)
+
+    // Record the chosen worker so the dispatch bridge can route the task to
+    // the right peer (the wire payload doesn't carry the target deviceId).
+    if (decision.workerDeviceId && mesh.onDispatchRemote) {
+      mesh.onDispatchRemote(input.childId, decision.workerDeviceId)
+    }
+    return mesh.remoteExecutor(input)
   }
 
   return { slot, executor }

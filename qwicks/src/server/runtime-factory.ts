@@ -77,6 +77,15 @@ import { FileMemoryStore } from '../memory/memory-store.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
 import { createMeshRuntimeSlot } from '../mesh/integration/mesh-runtime-slot.js'
+import { bootMesh, type MeshHandle } from '../mesh/index.js'
+import { MeshConfig, type MeshConfig as MeshConfigType } from '../mesh/config.js'
+import { loadOrCreateDeviceIdentity } from '../mesh/identity/device-identity.js'
+import { MeshDispatchBridge } from '../mesh/integration/mesh-dispatch-bridge.js'
+import { createMemoryStoreQueryAdapter } from '../mesh/integration/memory-store-adapter.js'
+import { createMeshRuntimeHandle, type MeshRuntimeHandle } from '../mesh/integration/mesh-runtime-handle.js'
+import { PairingInitiator } from '../mesh/pairing/pairing.js'
+import { AuditLog } from '../mesh/audit/audit-log.js'
+import type { ToolInput, ModelInput } from '../mesh/manifest/manifest-builder.js'
 
 export type QWicksServeRuntimeOptions = {
   host: string
@@ -112,6 +121,10 @@ export type QWicksServeRuntimeOptions = {
   hooks?: HooksConfig
   /** Design-quality linter config; drives the builtin PostToolUse hook. */
   quality?: QualityConfig
+  /** LAN-distributed agent collaboration (RFC 000). When `mesh.enabled=true`
+   *  the runtime boots the mesh subsystem and routes eligible child runs to
+   *  discovered peers. Disabled by default; byte-identical to pre-mesh when off. */
+  mesh?: MeshConfigType
   startedAt?: string
 }
 
@@ -319,6 +332,94 @@ export async function createQWicksServeRuntime(
     ...(memoryStore ? { memoryStore } : {}),
     nowIso
   }))
+
+  /* ---- Mesh boot (RFC 000 §4) ----
+   * Only boot when (a) the user opted in via `mesh.enabled` and (b) subagents
+   * are also enabled — the remote executor routes through DelegationRuntime,
+   * so without subagents there's nowhere for mesh-dispatched tasks to land.
+   * When either is off, `meshHandle` stays null, the slot is never installed,
+   * and `meshSlot.executor` remains a pure local pass-through — byte-identical
+   * to the pre-mesh path. */
+  let meshHandle: MeshHandle | null = null
+  let meshBridge: MeshDispatchBridge | null = null
+  let meshRuntimeHandle: MeshRuntimeHandle | undefined
+  if (options.mesh?.enabled && options.capabilities?.subagents.enabled) {
+    try {
+      const meshDataDir = join(options.dataDir, 'mesh')
+      await mkdir(meshDataDir, { recursive: true })
+      const identity = await loadOrCreateDeviceIdentity(meshDataDir)
+      meshBridge = new MeshDispatchBridge()
+
+      // Build the manifest inputs from the runtime's model + tool registry.
+      const meshModels: ModelInput[] = options.models?.profiles
+        ? Object.entries(options.models.profiles).map(([id, _profile]) => ({
+            id,
+            provider: 'local',
+            contextWindow: 32768,
+            maxOutput: 8192,
+            supportsTools: true,
+            supportsVision: false,
+            available: true,
+            version: '1'
+          }))
+        : [{ id: options.model, provider: 'local', contextWindow: 32768, maxOutput: 8192, supportsTools: true, supportsVision: false, available: true, version: '1' }]
+      const meshTools: ToolInput[] = []
+
+      meshHandle = await bootMesh(MeshConfig.parse(options.mesh), {
+        identity,
+        dataDir: meshDataDir,
+        localExecutor: meshSlot.executor,
+        runRemote: meshBridge.runRemote,
+        isPeerAuthorized: () => true, // trust store check happens inside bootMesh via envelope verify
+        onPeerDiscovered: (peer) => {
+          void meshBridge!.onPeerDiscovered(peer)
+        },
+        ...(memoryStore
+          ? {
+              queryLocalMemory: createMemoryStoreQueryAdapter(memoryStore, identity.deviceId),
+              maxTopK: options.mesh?.memory?.maxTopK ?? 10
+            }
+          : {}),
+        ...(options.mesh?.deviceName ? { deviceName: options.mesh.deviceName } : {}),
+        manifest: {
+          models: meshModels,
+          tools: meshTools,
+          computeProfile: { canRunLocalModels: true }
+        }
+      })
+
+      if (meshHandle) {
+        meshSlot.slot.install({
+          remoteExecutor: meshHandle.remoteExecutor,
+          decide: meshHandle.meshDecide,
+          onDispatchRemote: (childId, workerDeviceId) => {
+            meshBridge!.setDispatchTarget(childId, workerDeviceId)
+          }
+        })
+        // Build the read-only facade the HTTP route layer consumes.
+        meshRuntimeHandle = createMeshRuntimeHandle(meshHandle, meshBridge, {
+          identity: { deviceId: identity.deviceId },
+          deviceName: options.mesh?.deviceName ?? 'qwicks-mesh',
+          trustStore: meshHandle.trustStore,
+          responder: meshHandle.responder,
+          createInitiator: () =>
+            new PairingInitiator({
+              identity,
+              trustStore: meshHandle!.trustStore,
+              audit: new AuditLog(join(meshDataDir, 'pair-initiator-audit.db')),
+              deviceName: options.mesh?.deviceName ?? 'qwicks-mesh'
+            })
+        })
+        console.warn(`[qwicks mesh] enabled (device=${identity.deviceId.slice(0, 8)}…, port=${meshHandle.transportPort})`)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[qwicks mesh] failed to boot: ${message}`)
+      meshHandle = null
+      meshBridge = null
+    }
+  }
+
   const delegationRuntime = options.capabilities?.subagents.enabled
     ? new DelegationRuntime({
         config: mergeBuiltinSubagentProfiles(options.capabilities.subagents),
@@ -524,11 +625,18 @@ export async function createQWicksServeRuntime(
       videoGen: videoGenProviders.diagnostics
     }),
     skills: () => skillRuntime.diagnostics(),
+    ...(meshRuntimeHandle ? { mesh: meshRuntimeHandle } : {}),
     shutdown: async () => {
       try {
         loop.shutdownGoalResume()
         await mcpProviders.close()
       } finally {
+        // Tear down mesh last so in-flight remote tasks get a chance to drain.
+        if (meshHandle) {
+          meshSlot.slot.clear()
+          await meshBridge?.close().catch(() => {})
+          await meshHandle.shutdown().catch(() => {})
+        }
         await stores.shutdown?.()
       }
     }

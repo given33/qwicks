@@ -1,4 +1,4 @@
-import { readFile, writeFile, chmod } from 'node:fs/promises'
+import { readFile, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import * as ed from '@noble/ed25519'
@@ -42,6 +42,9 @@ export async function loadOrCreateDeviceIdentity(rootDir: string): Promise<Devic
     stored = JSON.parse(raw) as StoredIdentity
   } catch {
     stored = await generateIdentity()
+    // Ensure the parent directory exists before writing (the caller may pass a
+    // nested path like `<dataDir>/mesh` that doesn't exist yet).
+    await mkdir(rootDir, { recursive: true }).catch(() => {})
     await writeFile(path, JSON.stringify(stored, null, 2), 'utf8')
     // 0o600: readable/writable by owner only. Best-effort on Windows.
     await chmod(path, 0o600).catch(() => {})

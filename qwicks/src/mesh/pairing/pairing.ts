@@ -170,6 +170,24 @@ export class PairingResponder {
     if (!challenge || Date.now() > challenge.expiresAt) return null
     return challenge.code
   }
+
+  /** List pending pairing challenges (for UI display). Expired entries are
+   *  filtered out. Each entry includes the 6-digit code so a user on this
+   *  device can read it to the initiator's operator. */
+  listPending(): Array<{ initiatorDeviceId: string; initiatorDeviceName: string; code: string; expiresAt: string }> {
+    const now = Date.now()
+    const result: Array<{ initiatorDeviceId: string; initiatorDeviceName: string; code: string; expiresAt: string }> = []
+    for (const [initiatorDeviceId, challenge] of this.pending) {
+      if (now > challenge.expiresAt) continue
+      result.push({
+        initiatorDeviceId,
+        initiatorDeviceName: challenge.params.initiatorDeviceName,
+        code: challenge.code,
+        expiresAt: new Date(challenge.expiresAt).toISOString()
+      })
+    }
+    return result
+  }
 }
 
 export class PairingInitiator {

@@ -119,5 +119,25 @@
       "maxActionsPerTurn": 40
     }
   },
-  "hooks": []
+  "hooks": [],
+  "mesh": {
+    "enabled": false,
+    "deviceName": "my-qwicks",
+    "listenPort": 0,
+    "discovery": { "enabled": true },
+    "autoAcceptKnownPeers": false,
+    "task": {
+      "defaultLeaseTimeout": 300,
+      "defaultHeartbeatInterval": 75,
+      "maxRetries": 2,
+      "provenanceMaxDepth": 5,
+      "idempotencyTtlMultiplier": 4
+    },
+    "memory": {
+      "maxTopK": 10,
+      "cacheTtlSeconds": 600,
+      "queryDeadlineSeconds": 15,
+      "allowPrivateGrants": true
+    }
+  }
 }

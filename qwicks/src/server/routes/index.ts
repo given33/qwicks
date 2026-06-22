@@ -45,6 +45,15 @@ import {
   memoryDiagnostics,
   updateMemory
 } from './memory.js'
+import {
+  meshModelsResponse,
+  meshPairInitiate,
+  meshPairVerify,
+  meshPeersResponse,
+  meshPendingPairingsResponse,
+  meshStatusResponse,
+  requireMesh
+} from './mesh.js'
 import { isAuthorized, bearerToken } from '../auth.js'
 import { ERRORS } from './runtime-error.js'
 import type { ServerRuntime } from './server-runtime.js'
@@ -270,6 +279,38 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('GET', '/v1/debug/llm-rounds', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return llmDebugRoundsResponse(runtime)
+  })
+
+  /* ---- Mesh (RFC 000 §10) — all routes 503 when mesh is disabled ---- */
+  router.add('GET', '/v1/mesh/status', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshStatusResponse(r.mesh)
+  })
+  router.add('GET', '/v1/mesh/peers', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshPeersResponse(r.mesh)
+  })
+  router.add('GET', '/v1/mesh/models', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshModelsResponse(r.mesh)
+  })
+  router.add('GET', '/v1/mesh/pair/pending', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshPendingPairingsResponse(r.mesh)
+  })
+  router.add('POST', '/v1/mesh/pair/initiate', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshPairInitiate(r.mesh, request)
+  })
+  router.add('POST', '/v1/mesh/pair/verify', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    const r = requireMesh(runtime)
+    return r.kind === 'error' ? r.response : meshPairVerify(r.mesh, request)
   })
   return router
 }

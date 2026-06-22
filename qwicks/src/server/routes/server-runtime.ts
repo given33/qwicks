@@ -26,6 +26,7 @@ import type { AttachmentStore } from '../../attachments/attachment-store.js'
 import type { MemoryDiagnostics } from '../../contracts/memory.js'
 import type { MemoryStore } from '../../memory/memory-store.js'
 import type { ReviewTarget } from '../../contracts/review.js'
+import type { MeshRuntimeHandle } from '../../mesh/integration/mesh-runtime-handle.js'
 
 export type RuntimeToolDiagnostics = {
   providers: ToolProviderPolicy[]
@@ -83,5 +84,9 @@ export type ServerRuntime = {
   info(): RuntimeInfoResponse
   toolDiagnostics?(): RuntimeToolDiagnostics | Promise<RuntimeToolDiagnostics>
   skills?(): SkillRuntimeDiagnostics | Promise<SkillRuntimeDiagnostics>
+  /** Mesh subsystem handle; present only when `mesh.enabled=true` and boot
+   *  succeeded. Routes under `/v1/mesh/*` use this for status, peers, models,
+   *  and pairing. Absent → those routes return 503. */
+  mesh?: MeshRuntimeHandle
   shutdown?(): Promise<void>
 }

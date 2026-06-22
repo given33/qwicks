@@ -21,6 +21,10 @@ import {
   normalizeModelEndpointFormat
 } from '../contracts/model-endpoint-format.js'
 import { HooksConfigSchema } from '../hooks/hook-config.js'
+// `MeshConfig` is exported as both a zod schema (value) and an inferred type.
+// Import the schema value under an alias so we can use it in `.optional()`
+// below; the type is re-exported via `z.infer` at the bottom of this file.
+import { MeshConfig as MeshConfigSchema } from '../mesh/config.js'
 
 export const QWICKS_CONFIG_FILENAME = 'config.json'
 export const DEFAULT_QWICKS_MODEL = 'deepseek-v4-pro'
@@ -256,7 +260,11 @@ export const QWicksConfigSchema = z
     runtime: RuntimeTuningConfigSchema.optional(),
     capabilities: QWicksCapabilitiesConfig.default(DEFAULT_QWICKS_CAPABILITIES_CONFIG),
     hooks: HooksConfigSchema.optional(),
-    quality: QualityConfigSchema.optional()
+    quality: QualityConfigSchema.optional(),
+    /** LAN-distributed agent collaboration (RFC 000). Disabled by default; when
+     *  enabled the runtime boots the mesh subsystem (transport, mDNS, pairing,
+     *  task dispatch). See `src/mesh/config.ts` for the full nested schema. */
+    mesh: MeshConfigSchema.optional()
   })
   .strict()
 
@@ -269,6 +277,7 @@ export type ContextCompactionConfig = z.infer<typeof ContextCompactionConfigSche
 export type RuntimeTuningConfig = z.infer<typeof RuntimeTuningConfigSchema>
 export type TokenEconomyConfig = z.infer<typeof TokenEconomyConfigSchema>
 export type StorageConfig = z.infer<typeof StorageConfigSchema>
+export type MeshConfig = z.infer<typeof MeshConfigSchema>
 
 export type LoadedQWicksConfig = {
   path: string

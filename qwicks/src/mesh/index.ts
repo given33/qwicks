@@ -104,6 +104,10 @@ export interface MeshHandle {
   manifestStore: ManifestStore
   taskServer: TaskServer
   responder: PairingResponder
+  /** Persistent trust store (paired peers). Exposed for status/UI routes. */
+  trustStore: PeerTrustStore
+  /** The device identity this mesh is running as. */
+  identity: DeviceIdentity
   /** Peer model registry for UI model selection across the mesh. */
   peerModelRegistry: PeerModelRegistry
   /** The dispatch-aware decide callback for MeshRuntimeSlot / mesh-aware executor. */
@@ -596,6 +600,8 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     manifestStore,
     taskServer,
     responder,
+    trustStore,
+    identity: deps.identity,
     peerModelRegistry,
     meshDecide,
     fanOutDecide,

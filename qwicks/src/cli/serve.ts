@@ -145,7 +145,8 @@ export function parseServeOptions(
     runtime: loadedConfig?.config.runtime,
     capabilities: loadedConfig?.config.capabilities ?? DEFAULT_SERVE_OPTIONS.capabilities,
     hooks: loadedConfig?.config.hooks,
-    quality: loadedConfig?.config.quality
+    quality: loadedConfig?.config.quality,
+    mesh: loadedConfig?.config.mesh
   }
   return ServeOptionsSchema.parse(merged)
 }

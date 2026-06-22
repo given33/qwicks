@@ -26,6 +26,7 @@ import {
   normalizeModelEndpointFormat
 } from '../contracts/model-endpoint-format.js'
 import { HooksConfigSchema } from '../hooks/hook-config.js'
+import { MeshConfig as MeshConfigSchema } from '../mesh/config.js'
 
 export const DEFAULT_SERVE_PORT = 8899
 export const DEFAULT_SERVE_MODEL = DEFAULT_QWICKS_MODEL
@@ -61,7 +62,8 @@ export const ServeOptionsSchema = z.object({
   runtime: RuntimeTuningConfigSchema.optional(),
   capabilities: QWicksCapabilitiesConfig.default(DEFAULT_QWICKS_CAPABILITIES_CONFIG),
   hooks: HooksConfigSchema.optional(),
-  quality: QualityConfigSchema.optional()
+  quality: QualityConfigSchema.optional(),
+  mesh: MeshConfigSchema.optional()
 })
 export type ServeOptions = z.infer<typeof ServeOptionsSchema>
 
