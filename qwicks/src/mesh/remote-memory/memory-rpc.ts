@@ -67,10 +67,25 @@ export class MemoryRpcServer {
       // The issuer must match the owner being queried
       if (token.issuer !== req.ownerDeviceId) throw ERR_INVALID_GRANT
 
+      // RFC 004 §8: if the token is bound to a taskId, the request's taskId must match
+      if (token.taskId && req.taskId && token.taskId !== req.taskId) throw ERR_INVALID_GRANT
+
       // Verify the signature via injected callback (which looks up issuer's public key)
       if (!this.deps.verifyGrantToken) throw ERR_INVALID_GRANT
       const valid = await this.deps.verifyGrantToken(token)
       if (!valid) throw ERR_INVALID_GRANT
+
+      // RFC 004 §10: audit private grant usage separately, linked to tokenId
+      await this.deps.audit.record({
+        kind: 'memory_private_grant_used',
+        from: callerDeviceId,
+        to: req.ownerDeviceId,
+        outcome: 'success',
+        traceId: req.queryId,
+        taskId: req.taskId,
+        timestamp: new Date().toISOString(),
+        detail: { grantId: token.tokenId, scopes: req.scopes }
+      })
     }
 
     const clamped: MemoryQueryRequest = { ...req, topK: Math.min(req.topK, this.deps.maxTopK) }
@@ -120,9 +135,38 @@ export class MemoryRpcClient {
     return result
   }
 
-  invalidate(deviceId: string): void {
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(deviceId + '|')) this.cache.delete(key)
+  /**
+   * Invalidate cached results. Mirrors `memory/invalidated` (RFC 004 §7.2):
+   *   - Always: drop every cache entry for the named ownerDeviceId (whole-device
+   *     fallback when no chunkIds/scopes are supplied).
+   *   - With chunkIds: also drop entries whose cached chunks intersect the list.
+   *   - With scopes: also drop entries whose request scopes intersect the list.
+   */
+  invalidate(deviceId: string, opts?: { chunkIds?: string[]; scopes?: string[] }): void {
+    const chunkSet = opts?.chunkIds ? new Set(opts.chunkIds) : undefined
+    const scopeSet = opts?.scopes ? new Set(opts.scopes) : undefined
+
+    for (const [key, entry] of this.cache) {
+      // Whole-device fallback (preserves the original contract).
+      if (key.startsWith(deviceId + '|')) {
+        // If no finer filter, drop the whole device.
+        if (!chunkSet && !scopeSet) {
+          this.cache.delete(key)
+          continue
+        }
+
+        let match = false
+        if (scopeSet) {
+          // key shape: `${owner}|${hash}|${scopesCsv}` — last segment is the CSV.
+          const parts = key.split('|')
+          const reqScopes = parts[parts.length - 1].split(',')
+          if (reqScopes.some((s) => scopeSet.has(s))) match = true
+        }
+        if (chunkSet && !match) {
+          if (entry.result.chunks.some((c) => chunkSet.has(c.chunkId))) match = true
+        }
+        if (match) this.cache.delete(key)
+      }
     }
   }
 

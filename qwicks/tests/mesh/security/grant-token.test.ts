@@ -96,4 +96,34 @@ describe('GrantToken (RFC 004 §6.4)', () => {
     const expires = new Date(token.expiresAt).getTime()
     expect(expires - issued).toBe(300_000)
   })
+
+  it('binds to a taskId when opts.taskId is supplied', async () => {
+    const token = await issueGrantToken(issuerId, subjectId.deviceId, ['private'], 300_000, { taskId: 'task-42' })
+    expect(token.taskId).toBe('task-42')
+    // Still verifies correctly against the issuer's key
+    const valid = await verifyGrantToken(token, issuerId.publicKey)
+    expect(valid).toBe(true)
+  })
+
+  it('rejects a tampered taskId in a bound token', async () => {
+    const token = await issueGrantToken(issuerId, subjectId.deviceId, ['private'], 300_000, { taskId: 'task-42' })
+    const tampered: GrantToken = { ...token, taskId: 'task-evil' }
+    const valid = await verifyGrantToken(tampered, issuerId.publicKey)
+    expect(valid).toBe(false)
+  })
+
+  it('omits taskId from the canonical hash when unset (no undefined serialization drift)', async () => {
+    const token = await issueGrantToken(issuerId, subjectId.deviceId, ['private'])
+    expect(token.taskId).toBeUndefined()
+    // The token still verifies — confirms hash excludes absent taskId
+    const valid = await verifyGrantToken(token, issuerId.publicKey)
+    expect(valid).toBe(true)
+  })
+
+  it('parses a token with taskId via parseGrantToken', async () => {
+    const token = await issueGrantToken(issuerId, subjectId.deviceId, ['private'], 300_000, { taskId: 'task-99' })
+    const parsed = parseGrantToken(JSON.stringify(token))
+    expect(parsed).not.toBeNull()
+    expect(parsed!.taskId).toBe('task-99')
+  })
 })

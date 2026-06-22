@@ -38,6 +38,7 @@ export function buildMeshAwareDecide(deps: RouterDecideDeps): (input: {
     if (manifests.length === 0) return { executor: 'local', reason: 'no_peers' }
 
     const candidates: WorkerCandidate[] = manifests
+      .filter((m) => m.deviceId !== deps.selfDeviceId)
       .filter((m) => canDispatchTo({ provenance, targetDeviceId: m.deviceId, maxDepth }))
       .map((m) => ({
         deviceId: m.deviceId,
@@ -65,7 +66,8 @@ export function buildMeshAwareDecide(deps: RouterDecideDeps): (input: {
 /**
  * Fan-out bridge: builds routing input and calls `selectFanOut` to pick all
  * eligible workers for parallel dispatch. Candidates that would create cycles
- * or exceed the provenance depth are excluded.
+ * or exceed the provenance depth are excluded. Self is always excluded — the
+ * orchestrator's own execution is the local path, fan-out targets peers.
  */
 export function buildMeshAwareFanOut(deps: RouterDecideDeps): (input: {
   childId: string
@@ -82,6 +84,7 @@ export function buildMeshAwareFanOut(deps: RouterDecideDeps): (input: {
     if (manifests.length === 0) return { executor: 'local', workers: [], reason: 'no_peers' }
 
     const candidates: WorkerCandidate[] = manifests
+      .filter((m) => m.deviceId !== deps.selfDeviceId)
       .filter((m) => canDispatchTo({ provenance, targetDeviceId: m.deviceId, maxDepth }))
       .map((m) => ({
         deviceId: m.deviceId,

@@ -8,6 +8,7 @@ import type { HelloParams, VerifyParams } from './pairing/pairing.js'
 import { AuditLog } from './audit/audit-log.js'
 import { ManifestStore, buildManifest, type ToolInput, type ModelInput } from './manifest/manifest-builder.js'
 import { createRemoteChildExecutor, type RemoteExecutorDeps } from './dispatch/remote-executor.js'
+import { createFanOutDispatcher, type FanOutDispatcherDeps, type FanOutParams, type FanOutResult } from './dispatch/fan-out.js'
 import { TaskServer } from './dispatch/task-server.js'
 import { TaskLease } from './lease/lease.js'
 import { decideRecovery } from './lease/recovery.js'
@@ -83,8 +84,9 @@ export interface BootDeps {
       /** Called when a remote tool execution emits progress (RFC 003 §7.1). */
       onToolProgress?: (event: { callId: string; taskId?: string; progress: number; message?: string }) => void
       /** Called when a remote peer broadcasts memory/invalidated so the local
-       *  MemoryRpcClient cache can be purged. */
-      onMemoryInvalidated?: (deviceId: string) => void
+       *  MemoryRpcClient cache can be purged. Receives the owner deviceId and
+       *  optional finer-grained chunkId/scope filters (RFC 004 §7.2). */
+      onMemoryInvalidated?: (deviceId: string, opts?: { chunkIds?: string[]; scopes?: string[] }) => void
 
       /* Phase 4 — Routing */
   /** Periodic manifest refresh interval in ms (default 30_000). */
@@ -108,6 +110,8 @@ export interface MeshHandle {
   meshDecide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => { executor: 'local' | 'remote'; workerDeviceId?: string; reason?: string }
   /** Fan-out decide: returns all eligible workers for parallel dispatch. */
   fanOutDecide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => FanOutDecision
+  /** Fan-out dispatcher: ships the same task to multiple workers in parallel. */
+  fanOutDispatch: (params: FanOutParams) => Promise<FanOutResult>
   /** Broadcast a JSON-RPC notification to all connected peers. */
   broadcast: (method: string, params?: unknown) => void
   /** The port the transport server is listening on (0 if discovery disabled). */
@@ -303,6 +307,16 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
         selfDeviceId: deps.identity.deviceId
       })
 
+      /* ---- Fan-out dispatcher (Phase 4 / RFC 008 §4.2) ---- */
+      const fanOutDispatcherDeps: FanOutDispatcherDeps = {
+        selfDeviceId: deps.identity.deviceId,
+        runRemote: deps.runRemote,
+        ...(deps.cancelRemote ? { cancelRemote: deps.cancelRemote } : {}),
+        lease: { leaseTimeout: config.task.defaultLeaseTimeout, heartbeatInterval: config.task.defaultHeartbeatInterval },
+        maxRetries: config.task.maxRetries
+      }
+      const fanOutDispatch = createFanOutDispatcher(fanOutDispatcherDeps)
+
   /* ---- Envelope verification (Phase 3) ---- */
   const ENVELOPE_SKEW_MS = 60_000
 
@@ -464,8 +478,13 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
         return memoryRpcServer.handleMemoryQuery(p, caller)
       }
         case 'memory/invalidated': {
-          const { deviceId } = params as Record<string, string>
-          if (deviceId && deps.onMemoryInvalidated) deps.onMemoryInvalidated(deviceId)
+          const { deviceId, chunkIds, scopes } = params as Record<string, unknown>
+          if (typeof deviceId === 'string' && deps.onMemoryInvalidated) {
+            const opts: { chunkIds?: string[]; scopes?: string[] } = {}
+            if (Array.isArray(chunkIds)) opts.chunkIds = chunkIds.map(String)
+            if (Array.isArray(scopes)) opts.scopes = scopes.map(String)
+            deps.onMemoryInvalidated(deviceId, Object.keys(opts).length > 0 ? opts : undefined)
+          }
           return { acknowledged: true }
         }
 
@@ -580,6 +599,7 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     peerModelRegistry,
     meshDecide,
     fanOutDecide,
+    fanOutDispatch,
     broadcast: (method: string, params?: unknown) => transport.broadcast(method, params),
     transportPort,
     shutdown: async () => {

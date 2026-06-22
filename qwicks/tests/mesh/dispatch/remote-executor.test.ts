@@ -113,4 +113,38 @@ describe('createRemoteChildExecutor (RFC 002 §3, §4)', () => {
       executor({ childId: 'c', parentThreadId: 't', parentTurnId: 'n', prompt: 'p', toolPolicy: 'inherit', signal: new AbortController().signal })
     ).rejects.toThrow('boom')
   })
+
+  it('inherits the provenance chain when acting as a relay (RFC 007 §7)', async () => {
+    let captured: TaskRunParams | undefined
+    const deps: RemoteExecutorDeps = {
+      selfDeviceId: 'd-relay',
+      inheritedProvenance: ['d-orchestrator', 'd-relay'],
+      runRemote: async (params) => {
+        captured = params
+        return makeResult()
+      }
+    }
+    const executor = createRemoteChildExecutor(deps)
+    await executor({
+      childId: 'c', parentThreadId: 't', parentTurnId: 'n', prompt: 'p', toolPolicy: 'inherit', signal: new AbortController().signal
+    })
+    // Relay appends its own id to the inherited chain, preserving who has already touched the task
+    expect(captured!.provenance).toEqual(['d-orchestrator', 'd-relay', 'd-relay'])
+  })
+
+  it('starts a fresh provenance chain when no inheritedProvenance is supplied', async () => {
+    let captured: TaskRunParams | undefined
+    const deps: RemoteExecutorDeps = {
+      selfDeviceId: 'd-aaa',
+      runRemote: async (params) => {
+        captured = params
+        return makeResult()
+      }
+    }
+    const executor = createRemoteChildExecutor(deps)
+    await executor({
+      childId: 'c', parentThreadId: 't', parentTurnId: 'n', prompt: 'p', toolPolicy: 'inherit', signal: new AbortController().signal
+    })
+    expect(captured!.provenance).toEqual(['d-aaa'])
+  })
 })

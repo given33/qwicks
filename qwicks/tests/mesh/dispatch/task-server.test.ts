@@ -112,4 +112,51 @@ describe('TaskServer (RFC 002 §11, §5)', () => {
     ).rejects.toMatchObject({ code: -32008 })
     expect(exec).not.toHaveBeenCalled()
   })
+
+  it('rejects a task whose provenance exceeds the configured depth (RFC 007 §7.1)', async () => {
+    const exec = fakeExecutor()
+    const server = new TaskServer({
+      isPeerAuthorized: () => true,
+      localExecutor: exec,
+      audit: openAudit(),
+      selfDeviceId: 'd-bbb',
+      maxDepth: 3
+    })
+    // 3-deep chain: d-a → d-b → d-c, then trying to dispatch to d-bbb would be the 4th hop
+    await expect(
+      server.handleTaskRun({ ...baseParams, provenance: ['d-a', 'd-b', 'd-c'] }, 'd-aaa')
+    ).rejects.toMatchObject({ code: -32008, message: 'provenance_depth_exceeded' })
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('accepts a task whose provenance is exactly at the depth limit', async () => {
+    const exec = fakeExecutor()
+    const server = new TaskServer({
+      isPeerAuthorized: () => true,
+      localExecutor: exec,
+      audit: openAudit(),
+      selfDeviceId: 'd-bbb',
+      maxDepth: 3
+    })
+    // 2-deep chain: dispatching to d-bbb makes it the 3rd hop — still allowed
+    const result = await server.handleTaskRun({ ...baseParams, provenance: ['d-a', 'd-b'] }, 'd-aaa')
+    expect(result.status).toBe('completed')
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not enforce depth when maxDepth is not configured', async () => {
+    const exec = fakeExecutor()
+    const server = new TaskServer({
+      isPeerAuthorized: () => true,
+      localExecutor: exec,
+      audit: openAudit(),
+      selfDeviceId: 'd-bbb'
+    })
+    // 10-deep chain — should pass because maxDepth is undefined
+    const result = await server.handleTaskRun({
+      ...baseParams,
+      provenance: ['d-1', 'd-2', 'd-3', 'd-4', 'd-5', 'd-6', 'd-7', 'd-8', 'd-9', 'd-10']
+    }, 'd-aaa')
+    expect(result.status).toBe('completed')
+  })
 })

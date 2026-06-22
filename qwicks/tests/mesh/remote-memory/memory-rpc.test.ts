@@ -157,6 +157,53 @@ describe('MemoryRpcServer (RFC 004 §6)', () => {
     expect(result.chunks).toHaveLength(1)
     expect(result.cacheable).toBe(false)
   })
+
+  it('rejects a grant token bound to a different taskId (RFC 004 §8)', async () => {
+    const d = deps()
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    // Token bound to task-A, request claims task-B
+    const token = fakeGrantToken({ taskId: 'task-A' })
+    await expect(
+      server.handleMemoryQuery(req({ scopes: ['private'], grantToken: token, taskId: 'task-B' }), 'd-aaa')
+    ).rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('accepts a grant token bound to the matching taskId', async () => {
+    const d = deps({ queryLocal: vi.fn(async () => [priv('secret')]) })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    const token = fakeGrantToken({ taskId: 'task-42' })
+    const result = await server.handleMemoryQuery(
+      req({ scopes: ['private'], grantToken: token, taskId: 'task-42' }),
+      'd-aaa'
+    )
+    expect(result.chunks).toHaveLength(1)
+  })
+
+  it('accepts an unbound grant token even when the request has a taskId', async () => {
+    const d = deps({ queryLocal: vi.fn(async () => [priv('secret')]) })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    // Token has no taskId field — it is not task-bound, so any taskId is allowed
+    const result = await server.handleMemoryQuery(
+      req({ scopes: ['private'], grantToken: fakeGrantToken(), taskId: 'task-anything' }),
+      'd-aaa'
+    )
+    expect(result.chunks).toHaveLength(1)
+  })
+
+  it('records a memory_private_grant_used audit event when a private grant is consumed', async () => {
+    const d = deps({ queryLocal: vi.fn(async () => [priv('secret')]) })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    await server.handleMemoryQuery(req({ scopes: ['private'], grantToken: fakeGrantToken(), taskId: 'task-99' }), 'd-aaa')
+    const records = await d.audit.list({})
+    const grantEvents = records.filter((r) => r.kind === 'memory_private_grant_used')
+    expect(grantEvents).toHaveLength(1)
+    expect(grantEvents[0]?.from).toBe('d-aaa')
+    expect(grantEvents[0]?.detail?.grantId).toBe('t-001')
+  })
 })
 
 describe('MemoryRpcClient + cache (RFC 004 §7)', () => {
@@ -190,5 +237,68 @@ describe('MemoryRpcClient + cache (RFC 004 §7)', () => {
     client.invalidate('d-bbb')
     await client.query(req())
     expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates only cache entries matching specific scopes (RFC 004 §7.2)', async () => {
+    let n = 0
+    const send = vi.fn(async () => {
+      n++
+      return {
+        queryId: `q${n}`,
+        chunks: [pub(`note-${n}`)],
+        truncated: false,
+        cacheable: true
+      }
+    })
+    const client = new MemoryRpcClient(send as never, { ttlMs: 60_000 })
+    // Two queries against the same device but different scope sets
+    await client.query(req({ scopes: ['public'], queryId: 'pub-q' }))
+    await client.query(req({ scopes: ['collaboration'], queryId: 'col-q' }))
+    expect(send).toHaveBeenCalledTimes(2)
+
+    // Invalidate only the collaboration-scope cache
+    client.invalidate('d-bbb', { scopes: ['collaboration'] })
+
+    // Public-scope query should still hit cache (no new send)
+    await client.query(req({ scopes: ['public'], queryId: 'pub-q' }))
+    expect(send).toHaveBeenCalledTimes(2)
+
+    // Collaboration-scope query must re-fetch
+    await client.query(req({ scopes: ['collaboration'], queryId: 'col-q' }))
+    expect(send).toHaveBeenCalledTimes(3)
+  })
+
+  it('invalidates only cache entries whose chunks match chunkIds (RFC 004 §7.2)', async () => {
+    let n = 0
+    const send = vi.fn(async () => {
+      n++
+      return {
+        queryId: `q${n}`,
+        chunks: [pub(`chunk-${n === 1 ? 'A' : 'B'}`)],
+        truncated: false,
+        cacheable: true
+      }
+    })
+    const client = new MemoryRpcClient(send as never, { ttlMs: 60_000 })
+    // Two queries with different query texts so they get distinct cache keys
+    await client.query(req({ query: 'find A', queryId: 'q1' }))
+    await client.query(req({ query: 'find B', queryId: 'q2' }))
+    expect(send).toHaveBeenCalledTimes(2)
+
+    // Invalidate only entries that returned chunk-A
+    client.invalidate('d-bbb', { chunkIds: ['chunk-A'] })
+
+    // q1 (chunk-A) re-fetches; q2 (chunk-B) stays cached
+    await client.query(req({ query: 'find A', queryId: 'q1' }))
+    expect(send).toHaveBeenCalledTimes(3)
+    await client.query(req({ query: 'find B', queryId: 'q2' }))
+    expect(send).toHaveBeenCalledTimes(3)
+  })
+
+  it('whole-device invalidate is a no-op when there is no cache for that device', async () => {
+    const send = vi.fn(async () => ({ queryId: 'q1', chunks: [pub('note')], truncated: false, cacheable: true }))
+    const client = new MemoryRpcClient(send as never, { ttlMs: 60_000 })
+    // No query yet — cache empty; invalidate must not throw
+    expect(() => client.invalidate('d-other')).not.toThrow()
   })
 })

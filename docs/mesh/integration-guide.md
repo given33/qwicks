@@ -177,7 +177,7 @@ Per-peer, per-method fixed-window counters. Configured via:
 ## Test Suite
 
 ```bash
-# Full mesh suite (27 files, 135 tests)
+# Full mesh suite (33 files, 211 tests)
 node node_modules/vitest/vitest.mjs run tests/mesh
 
 # Type check
@@ -186,12 +186,55 @@ node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
 
 All mesh tests use Node ≥20.12. The vendored Node 22.13.1 at `.codex-tools/node-v22.13.1-win-x64/node.exe` satisfies this.
 
-## Remaining Protocol Features (Phase 2-4 completion)
+## Phase 3-4 Completion Status
 
-- [ ] `tools/progress` — streaming progress events from remote tool execution
-- [ ] GrantToken generation and signing for private memory scope access
-- [ ] Revocation propagation — broadcast revoke to all connected peers
-- [ ] Multi-device fan-out — concurrent dispatch of same task to multiple peers
-- [ ] Full lease recovery with retry/reassign/take-over at dispatch site
-- [ ] Envelope verification in transport handler (currently caller from params convention)
-- [ ] Auto-model-router injection — peer models as candidates in the main model selection
+All Phase 2-4 protocol features are now implemented and wired into `bootMesh`:
+
+- [x] **`tools/progress`** — streaming progress events from remote tool execution
+- [x] **GrantToken** — Ed25519-signed capability tokens for private memory scope,
+      with `taskId` binding (RFC 004 §8) and `memory_private_grant_used` audit
+- [x] **Revocation propagation** — broadcast `identity/rotated` to all connected peers
+- [x] **Multi-device fan-out** — `fanOutDecide` + `fanOutDispatch` (race/all modes)
+- [x] **Full lease recovery** — retry/reassign/take-over wired at dispatch site
+- [x] **Envelope verification** — Ed25519 + HMAC dual-auth in transport handler
+- [x] **Provenance depth enforcement** — `exceedsDepth` check at task-server +
+      orchestrator-side `canDispatchTo` filter, relay chain inheritance
+- [x] **Auto-model-router injection** — `peerModelRegistry.listModels()` for UI
+- [x] **Partial memory invalidation** — `chunkIds`/`scopes` filters (RFC 004 §7.2)
+
+### Phase 4 MeshHandle API
+
+```typescript
+interface MeshHandle {
+  remoteExecutor: ChildRunExecutor
+  manifestStore: ManifestStore
+  taskServer: TaskServer
+  responder: PairingResponder
+  /** Queryable peer model list for UI model selection. */
+  peerModelRegistry: PeerModelRegistry
+  /** Single-target router: picks local vs one remote worker. */
+  meshDecide: (input) => { executor: 'local' | 'remote'; workerDeviceId?: string; reason?: string }
+  /** Fan-out router: returns every eligible peer for parallel dispatch. */
+  fanOutDecide: (input) => FanOutDecision
+  /** Fan-out dispatcher: ships the same task to N workers (race/all). */
+  fanOutDispatch: (params: FanOutParams) => Promise<FanOutResult>
+  /** Broadcast a JSON-RPC notification to all connected peers. */
+  broadcast: (method: string, params?: unknown) => void
+  transportPort: number
+  shutdown: () => Promise<void>
+}
+```
+
+### Session-layer wiring for memory cache
+
+The orchestrator-side `MemoryRpcClient` is created by the session layer and
+connected to the mesh's invalidation notifications:
+
+```typescript
+const memoryClient = new MemoryRpcClient(send, { ttlMs: 60_000 })
+const bootDeps: BootDeps = {
+  // ...
+  onMemoryInvalidated: (deviceId, opts) => memoryClient.invalidate(deviceId, opts)
+}
+```
+

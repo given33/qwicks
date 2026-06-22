@@ -29,6 +29,9 @@ export interface GrantTokenPayload {
   issuedAt: string     // ISO-8601
   expiresAt: string    // ISO-8601
   nonce: string
+  /** Optional task binding (RFC 004 §8): the token is only valid for this taskId.
+   *  Absent → token is valid for any task from this subject. */
+  taskId?: string
 }
 
 export interface GrantToken extends GrantTokenPayload {
@@ -40,13 +43,15 @@ const GRANT_TOKEN_TTL_MS = 300_000 // 5 minutes
 /**
  * Issue a grant token signed by the memory owner's device identity.
  * The owner calls this after the user approves a private memory request
- * via the approval gate.
+ * via the approval gate. Optionally binds the token to a specific taskId
+ * so it cannot be replayed for a different task.
  */
 export async function issueGrantToken(
   identity: DeviceIdentity,
   subject: string,
   scopes: string[],
-  ttlMs: number = GRANT_TOKEN_TTL_MS
+  ttlMs: number = GRANT_TOKEN_TTL_MS,
+  opts?: { taskId?: string }
 ): Promise<GrantToken> {
   const now = Date.now()
   const payload: GrantTokenPayload = {
@@ -57,7 +62,8 @@ export async function issueGrantToken(
     scopes,
     issuedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + ttlMs).toISOString(),
-    nonce: randomUUID().replace(/-/g, '')
+    nonce: randomUUID().replace(/-/g, ''),
+    ...(opts?.taskId ? { taskId: opts.taskId } : {})
   }
 
   const hash = canonicalGrantHash(payload)
@@ -112,6 +118,7 @@ export function parseGrantToken(raw: string): GrantToken | null {
         issuedAt: obj.issuedAt,
         expiresAt: obj.expiresAt,
         nonce: obj.nonce,
+        ...(typeof obj.taskId === 'string' ? { taskId: obj.taskId } : {}),
         sig: obj.sig
       }
     }
@@ -134,7 +141,8 @@ function canonicalGrantHash(payload: GrantTokenPayload): Uint8Array {
     scopes: payload.scopes.slice().sort(),
     issuedAt: payload.issuedAt,
     expiresAt: payload.expiresAt,
-    nonce: payload.nonce
+    nonce: payload.nonce,
+    ...(payload.taskId ? { taskId: payload.taskId } : {})
   })
   return sha256(new TextEncoder().encode(canonical))
 }
