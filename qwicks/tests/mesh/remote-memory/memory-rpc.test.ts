@@ -18,12 +18,30 @@ const req = (over: Partial<MemoryQueryRequest> = {}): MemoryQueryRequest => ({
   ...over
 })
 
+/** Minimal parseable grant token JSON string (expiry far in the future). */
+function fakeGrantToken(over: Partial<Record<string, unknown>> = {}): string {
+  return JSON.stringify({
+    version: '1',
+    tokenId: 't-001',
+    issuer: 'd-bbb',
+    subject: 'd-aaa',
+    scopes: ['private'],
+    issuedAt: '2025-01-01T00:00:00.000Z',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    nonce: 'abc123',
+    sig: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    ...over
+  })
+}
+
 function deps(over: Partial<MemoryRpcServerDeps> = {}): MemoryRpcServerDeps {
   return {
     isPeerAuthorized: () => true,
     queryLocal: vi.fn(async () => [pub('public note')]),
     maxTopK: 10,
     audit: new AuditLog(join(mkdtempSync(join(tmpdir(), 'mem-')), 'audit.db')),
+    allowPrivateGrants: true,
+    verifyGrantToken: async () => true,
     ...over
   }
 }
@@ -52,7 +70,7 @@ describe('MemoryRpcServer (RFC 004 §6)', () => {
     const d = deps({ queryLocal: vi.fn(async () => [pub('p'), priv('secret')]) })
     audits.push(d.audit)
     const server = new MemoryRpcServer(d)
-    const result = await server.handleMemoryQuery(req({ scopes: ['public', 'private'], grantToken: 'g' }), 'd-aaa')
+    const result = await server.handleMemoryQuery(req({ scopes: ['public', 'private'], grantToken: fakeGrantToken() }), 'd-aaa')
     expect(result.cacheable).toBe(false)
   })
 
@@ -78,6 +96,67 @@ describe('MemoryRpcServer (RFC 004 §6)', () => {
     await server.handleMemoryQuery(req({ topK: 999 }), 'd-aaa')
     expect((d.queryLocal as ReturnType<typeof vi.fn>).mock.calls[0][0].topK).toBe(10)
   })
+
+  /* ---- Grant token verification (Phase 3 / RFC 004 §6.4) ---- */
+
+  it('rejects a private-scope query with an unparseable grant token', async () => {
+    const d = deps()
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: 'not-json' }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('rejects a grant token whose subject does not match the caller', async () => {
+    const d = deps()
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    const token = fakeGrantToken({ subject: 'd-evil' })
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: token }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('rejects a grant token whose issuer does not match the owner', async () => {
+    const d = deps()
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    const token = fakeGrantToken({ issuer: 'd-other' })
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: token }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('rejects a private query when allowPrivateGrants is false', async () => {
+    const d = deps({ allowPrivateGrants: false })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: fakeGrantToken() }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'private_scope_not_allowed' })
+  })
+
+  it('rejects when verifyGrantToken returns false', async () => {
+    const d = deps({ verifyGrantToken: async () => false })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: fakeGrantToken() }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('rejects when verifyGrantToken is not provided (absent callback)', async () => {
+    const d = deps({ verifyGrantToken: undefined })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    await expect(server.handleMemoryQuery(req({ scopes: ['private'], grantToken: fakeGrantToken() }), 'd-aaa'))
+      .rejects.toMatchObject({ code: -32002, message: 'invalid_grant_token' })
+  })
+
+  it('accepts a private-scope query with a valid grant token', async () => {
+    const d = deps({ queryLocal: vi.fn(async () => [priv('secret')]) })
+    audits.push(d.audit)
+    const server = new MemoryRpcServer(d)
+    const result = await server.handleMemoryQuery(req({ scopes: ['private'], grantToken: fakeGrantToken() }), 'd-aaa')
+    expect(result.chunks).toHaveLength(1)
+    expect(result.cacheable).toBe(false)
+  })
 })
 
 describe('MemoryRpcClient + cache (RFC 004 §7)', () => {
@@ -98,8 +177,18 @@ describe('MemoryRpcClient + cache (RFC 004 §7)', () => {
   it('does not cache non-cacheable results', async () => {
     const send = vi.fn(async () => ({ queryId: 'q1', chunks: [priv('secret')], truncated: false, cacheable: false }))
     const client = new MemoryRpcClient(send as never, { ttlMs: 60_000 })
-    await client.query(req({ scopes: ['private'], grantToken: 'g' }))
-    await client.query(req({ scopes: ['private'], grantToken: 'g' }))
+    await client.query(req({ scopes: ['private'], grantToken: fakeGrantToken() }))
+    await client.query(req({ scopes: ['private'], grantToken: fakeGrantToken() }))
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates cached results for a device', async () => {
+    const send = vi.fn(async () => ({ queryId: 'q1', chunks: [pub('note')], truncated: false, cacheable: true }))
+    const client = new MemoryRpcClient(send as never, { ttlMs: 60_000 })
+    await client.query(req())
+    expect(send).toHaveBeenCalledTimes(1)
+    client.invalidate('d-bbb')
+    await client.query(req())
     expect(send).toHaveBeenCalledTimes(2)
   })
 })

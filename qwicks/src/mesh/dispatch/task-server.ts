@@ -1,13 +1,14 @@
 import type { ChildRunExecutor } from '../../delegation/delegation-runtime.js'
 import type { TaskRunParams, ChildRunResult } from '../contracts.js'
 import type { AuditLog } from '../audit/audit-log.js'
+import { exceedsDepth } from '../roles/provenance.js'
 
 /**
  * Worker-side task handler (RFC 002 §11, §5; RFC 006 §3.2; RFC 007 §5, §7.1).
  *
  * Receives a `task/run` wire payload, authorizes the caller against the trust
- * store, checks provenance for cycles, deduplicates by `idempotencyKey`, then
- * runs the task through the injected local executor (in production:
+ * store, checks provenance for cycles and depth, deduplicates by `idempotencyKey`,
+ * then runs the task through the injected local executor (in production:
  * `createChildAgentExecutor`). The result is cached so a retried request with
  * the same key returns the prior outcome instead of re-executing.
  */
@@ -19,6 +20,8 @@ export interface TaskServerDeps {
   selfDeviceId?: string
   /** Idempotency cache TTL in ms (default 4 × lease). */
   idempotencyTtlMs?: number
+  /** Maximum provenance chain depth before rejecting (RFC 007 §7.1). */
+  maxDepth?: number
 }
 
 interface CachedResult {
@@ -34,6 +37,7 @@ export interface MeshRpcError {
 
 const ERR_UNAUTHORIZED = { code: -32002, message: 'unauthorized' }
 const ERR_CYCLE = { code: -32008, message: 'cycle_detected' }
+const ERR_DEPTH = { code: -32008, message: 'provenance_depth_exceeded' }
 
 export class TaskServer {
   private readonly deps: TaskServerDeps
@@ -46,6 +50,7 @@ export class TaskServer {
   async handleTaskRun(params: TaskRunParams, callerDeviceId: string): Promise<ChildRunResult> {
     if (!this.deps.isPeerAuthorized(callerDeviceId)) throw ERR_UNAUTHORIZED
     if (this.deps.selfDeviceId && params.provenance.includes(this.deps.selfDeviceId)) throw ERR_CYCLE
+    if (this.deps.maxDepth && exceedsDepth(params.provenance, this.deps.maxDepth)) throw ERR_DEPTH
 
     const cached = this.cache.get(params.idempotencyKey)
     if (cached?.result) {

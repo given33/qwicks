@@ -39,6 +39,12 @@ export interface RoutingDecision {
   reason: string
 }
 
+export interface FanOutDecision {
+  executor: 'local' | 'remote'
+  workers: { deviceId: string; model?: string }[]
+  reason: string
+}
+
 const COMPUTE_TAGS = new Set(['planning', 'reflection'])
 
 export function selectExecutor(input: RoutingInput): RoutingDecision {
@@ -86,4 +92,45 @@ function computeScore(manifest: Manifest): number {
   if (profile.maxModelParamsB) score += profile.maxModelParamsB
   if (profile.gpu) score += 32
   return score
+}
+
+/**
+ * Fan-out selector (RFC 008 §4.2): returns all eligible candidates for parallel
+ * dispatch. Useful for broadcast-style queries, speculative execution, or
+ * aggregating results from multiple workers. Follows the same filtering rules
+ * as `selectExecutor` (model, tools, capacity) but returns every qualifying
+ * worker sorted by load instead of just the best one.
+ */
+export function selectFanOut(input: RoutingInput): FanOutDecision {
+  let eligible = input.candidates.slice()
+
+  if (input.model) {
+    eligible = eligible.filter((c) => c.manifest.models.some((m) => m.id === input.model && m.available))
+    if (eligible.length === 0) return { executor: 'local', workers: [], reason: 'local_fallback:no_model' }
+  }
+
+  if (input.requiredTools && input.requiredTools.length > 0) {
+    eligible = eligible.filter((c) => {
+      const names = new Set(c.manifest.tools.filter((t) => t.discoverable).map((t) => t.name))
+      return input.requiredTools!.every((rt) => names.has(rt))
+    })
+    if (eligible.length === 0) return { executor: 'local', workers: [], reason: 'local_fallback:no_tool' }
+  }
+
+  // Capacity: must have at least one spare slot.
+  eligible = eligible.filter((c) => c.inflightTasks < c.maxConcurrent)
+  if (eligible.length === 0) return { executor: 'local', workers: [], reason: 'local_fallback:no_capacity' }
+
+  // Sort by load (fewest inflight first), stable deviceId tiebreak
+  const sorted = eligible.slice().sort((a, b) => {
+    const byLoad = a.inflightTasks - b.inflightTasks
+    if (byLoad !== 0) return byLoad
+    return a.deviceId < b.deviceId ? -1 : 1
+  })
+
+  return {
+    executor: 'remote',
+    workers: sorted.map((w) => ({ deviceId: w.deviceId, model: input.model })),
+    reason: `fan_out:${sorted.length}_workers`
+  }
 }

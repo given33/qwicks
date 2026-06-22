@@ -28,6 +28,10 @@ export interface RemoteExecutorDeps {
   lease?: { leaseTimeout: number; heartbeatInterval: number }
   maxRetries?: number
   provenanceMaxDepth?: number
+  /** Inherited provenance chain from a parent task. When this device is acting
+   *  as a relay (forwarding a task it received from another peer), the incoming
+   *  provenance is prepended to this device's own ID. Absent → start fresh. */
+  inheritedProvenance?: string[]
 }
 
 const DEFAULT_LEASE = { leaseTimeout: 300, heartbeatInterval: 75 }
@@ -51,7 +55,7 @@ export function createRemoteChildExecutor(deps: RemoteExecutorDeps): ChildRunExe
       retryCount: 0,
       maxRetries,
       cancelToken: randomUUID(),
-      provenance: [deps.selfDeviceId],
+      provenance: [...(deps.inheritedProvenance ?? []), deps.selfDeviceId],
       disableUserInput: true
     }
 

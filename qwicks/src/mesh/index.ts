@@ -16,11 +16,14 @@ import { MeshDiscovery, type BonjourLike } from './discovery/mdns.js'
 import { ToolRpcServer } from './remote-tool/tool-rpc.js'
 import { MemoryRpcServer } from './remote-memory/memory-rpc.js'
 import { RateLimiter } from './security/rate-limiter.js'
-import { buildMeshAwareDecide } from './integration/router-decide.js'
+import { buildMeshAwareDecide, buildMeshAwareFanOut } from './integration/router-decide.js'
 import { SessionKeyStore } from './identity/session-key-store.js'
 import { verifyEnvelope, ReplayWindow } from './envelope/envelope.js'
 import { fromHex } from './identity/device-identity.js'
+import { verifyGrantToken, parseGrantToken } from './security/grant-token.js'
+import { createPeerModelRegistry, type PeerModelRegistry } from './roles/peer-model-registry.js'
 import { Envelope as EnvelopeSchema, type Envelope as EnvelopeType } from './contracts.js'
+import type { FanOutDecision } from './roles/mesh-router.js'
 import type {
   ChildRunResult, TaskRunParams,
   ToolCallRequest, ToolResult,
@@ -77,10 +80,13 @@ export interface BootDeps {
   queryLocalMemory?: (req: MemoryQueryRequest) => Promise<MemoryChunk[]>
   /** Maximum topK for memory queries (default 20). */
   maxTopK?: number
-  /** Called when a remote tool execution emits progress (RFC 003 §7.1). */
-  onToolProgress?: (event: { callId: string; taskId?: string; progress: number; message?: string }) => void
+      /** Called when a remote tool execution emits progress (RFC 003 §7.1). */
+      onToolProgress?: (event: { callId: string; taskId?: string; progress: number; message?: string }) => void
+      /** Called when a remote peer broadcasts memory/invalidated so the local
+       *  MemoryRpcClient cache can be purged. */
+      onMemoryInvalidated?: (deviceId: string) => void
 
-  /* Phase 4 — Routing */
+      /* Phase 4 — Routing */
   /** Periodic manifest refresh interval in ms (default 30_000). */
   manifestRefreshMs?: number
 
@@ -96,8 +102,12 @@ export interface MeshHandle {
   manifestStore: ManifestStore
   taskServer: TaskServer
   responder: PairingResponder
+  /** Peer model registry for UI model selection across the mesh. */
+  peerModelRegistry: PeerModelRegistry
   /** The dispatch-aware decide callback for MeshRuntimeSlot / mesh-aware executor. */
   meshDecide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => { executor: 'local' | 'remote'; workerDeviceId?: string; reason?: string }
+  /** Fan-out decide: returns all eligible workers for parallel dispatch. */
+  fanOutDecide: (input: { childId: string; prompt: string; model?: string; label?: string; workspace?: string }) => FanOutDecision
   /** Broadcast a JSON-RPC notification to all connected peers. */
   broadcast: (method: string, params?: unknown) => void
   /** The port the transport server is listening on (0 if discovery disabled). */
@@ -140,13 +150,14 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     deviceName
   })
 
-  /* ---- Task server ---- */
-  const taskServer = new TaskServer({
-    isPeerAuthorized: deps.isPeerAuthorized,
-    localExecutor: deps.localExecutor,
-    audit,
-    selfDeviceId: deps.identity.deviceId
-  })
+      /* ---- Task server ---- */
+      const taskServer = new TaskServer({
+        isPeerAuthorized: deps.isPeerAuthorized,
+        localExecutor: deps.localExecutor,
+        audit,
+        selfDeviceId: deps.identity.deviceId,
+        maxDepth: config.task.provenanceMaxDepth
+      })
 
   /* ---- Tool RPC server (Phase 2) ---- */
   let toolRpcServer: ToolRpcServer | undefined
@@ -160,25 +171,33 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     })
   }
 
-  /* ---- Memory RPC server (Phase 3) ---- */
-  let memoryRpcServer: MemoryRpcServer | undefined
-  if (deps.queryLocalMemory) {
-    memoryRpcServer = new MemoryRpcServer({
-      isPeerAuthorized: deps.isPeerAuthorized,
-      queryLocal: deps.queryLocalMemory,
-      maxTopK: deps.maxTopK ?? 20,
-      audit
-    })
-  }
+      /* ---- Memory RPC server (Phase 3) ---- */
+      let memoryRpcServer: MemoryRpcServer | undefined
+      if (deps.queryLocalMemory) {
+        memoryRpcServer = new MemoryRpcServer({
+          isPeerAuthorized: deps.isPeerAuthorized,
+          queryLocal: deps.queryLocalMemory,
+          maxTopK: deps.maxTopK ?? 20,
+          audit,
+          allowPrivateGrants: config.memory?.allowPrivateGrants ?? false,
+          verifyGrantToken: async (token) => {
+            const peerRecord = await trustStore.get(token.issuer)
+            if (!peerRecord || peerRecord.revokedAt) return false
+            const publicKey = fromHex(peerRecord.peerPublicKey)
+            return verifyGrantToken(token, publicKey)
+          }
+        })
+      }
 
-  /* ---- Remote executor ---- */
-  const executorDeps: RemoteExecutorDeps = {
-    selfDeviceId: deps.identity.deviceId,
-    runRemote: deps.runRemote,
-    ...(deps.cancelRemote ? { cancelRemote: deps.cancelRemote } : {}),
-    lease: { leaseTimeout: config.task.defaultLeaseTimeout, heartbeatInterval: config.task.defaultHeartbeatInterval },
-    maxRetries: config.task.maxRetries
-  }
+      /* ---- Remote executor ---- */
+      const executorDeps: RemoteExecutorDeps = {
+        selfDeviceId: deps.identity.deviceId,
+        runRemote: deps.runRemote,
+        ...(deps.cancelRemote ? { cancelRemote: deps.cancelRemote } : {}),
+        lease: { leaseTimeout: config.task.defaultLeaseTimeout, heartbeatInterval: config.task.defaultHeartbeatInterval },
+        maxRetries: config.task.maxRetries,
+        provenanceMaxDepth: config.task.provenanceMaxDepth
+      }
   const remoteExecutor = createRemoteChildExecutor(executorDeps)
 
   /* ---- Task retry tracking (Phase 4 recovery) ---- */
@@ -244,18 +263,45 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   /* ---- In-flight task tracking (Phase 4 fan-out) ---- */
   const inflightTasks = new Map<string, { workerDeviceId: string; startedAt: number }>()
 
-  /* ---- Mesh router decide (Phase 4) ---- */
-  const meshDecide = buildMeshAwareDecide({
-    manifestStore,
-    getLoad: (deviceId) => {
-      let count = 0
-      for (const t of inflightTasks.values()) {
-        if (t.workerDeviceId === deviceId) count++
-      }
-      return count
-    },
-    selfDeviceId: deps.identity.deviceId
-  })
+      /* ---- Mesh router decide (Phase 4) ---- */
+      const meshDecide = buildMeshAwareDecide({
+        manifestStore,
+        getLoad: (deviceId) => {
+          let count = 0
+          for (const t of inflightTasks.values()) {
+            if (t.workerDeviceId === deviceId) count++
+          }
+          return count
+        },
+        selfDeviceId: deps.identity.deviceId,
+        maxDepth: config.task.provenanceMaxDepth
+      })
+
+      const fanOutDecide = buildMeshAwareFanOut({
+        manifestStore,
+        getLoad: (deviceId) => {
+          let count = 0
+          for (const t of inflightTasks.values()) {
+            if (t.workerDeviceId === deviceId) count++
+          }
+          return count
+        },
+        selfDeviceId: deps.identity.deviceId,
+        maxDepth: config.task.provenanceMaxDepth
+      })
+
+      /* ---- Peer model registry (Phase 4) ---- */
+      const peerModelRegistry = createPeerModelRegistry({
+        manifestStore,
+        getLoad: (deviceId) => {
+          let count = 0
+          for (const t of inflightTasks.values()) {
+            if (t.workerDeviceId === deviceId) count++
+          }
+          return count
+        },
+        selfDeviceId: deps.identity.deviceId
+      })
 
   /* ---- Envelope verification (Phase 3) ---- */
   const ENVELOPE_SKEW_MS = 60_000
@@ -417,9 +463,11 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
         }
         return memoryRpcServer.handleMemoryQuery(p, caller)
       }
-      case 'memory/invalidated': {
-        return { acknowledged: true }
-      }
+        case 'memory/invalidated': {
+          const { deviceId } = params as Record<string, string>
+          if (deviceId && deps.onMemoryInvalidated) deps.onMemoryInvalidated(deviceId)
+          return { acknowledged: true }
+        }
 
       /* ---- manifest ---- */
       case 'manifest/get': {
@@ -529,7 +577,9 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     manifestStore,
     taskServer,
     responder,
+    peerModelRegistry,
     meshDecide,
+    fanOutDecide,
     broadcast: (method: string, params?: unknown) => transport.broadcast(method, params),
     transportPort,
     shutdown: async () => {
