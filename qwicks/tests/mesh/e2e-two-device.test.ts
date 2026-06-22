@@ -235,6 +235,6 @@ describe('mesh two-device e2e (RFC 000 §10)', () => {
         },
         new AbortController().signal
       )
-    ).rejects.toThrow(/no transport client for peer/)
+    ).rejects.toThrow(/not connected|no transport client for peer/)
   }, 10_000)
 })

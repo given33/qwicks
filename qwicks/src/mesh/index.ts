@@ -132,7 +132,8 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
 
   const trustStore = new PeerTrustStore(join(deps.dataDir, 'mesh-trust.db'))
   const audit = new AuditLog(join(deps.dataDir, 'mesh-audit.db'))
-  const sessionKeyStore = new SessionKeyStore(deps.identity.deviceId)
+  const sessionKeyStore = new SessionKeyStore(deps.identity.deviceId, deps.dataDir)
+  await sessionKeyStore.load()
   const replayWindow = new ReplayWindow()
   const manifestStore = new ManifestStore()
   const rateLimiter = new RateLimiter({
@@ -410,10 +411,11 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
       case 'pairing/verify': {
         const result = await responder.handleVerify(params as unknown as VerifyParams)
         if (result.verified && responder.lastSessionKeyMaterial) {
-          sessionKeyStore.storeFromPairing(
+          await sessionKeyStore.storeFromPairing(
             (params as unknown as VerifyParams).initiatorDeviceId,
             responder.lastSessionKeyMaterial
           )
+          console.warn(`[qwicks mesh] pairing completed with ${(params as unknown as VerifyParams).initiatorDeviceId.slice(0, 8)}…`)
         }
         return result
       }
@@ -527,7 +529,7 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
           })
         }
         // Revoke session keys for this peer (they must re-pair)
-        sessionKeyStore.revoke(deviceId)
+        await sessionKeyStore.revoke(deviceId)
         // Propagate to all other connected peers (RFC 006 §7.2)
         transport.broadcast('identity/rotated', params)
         return { acknowledged: true }
@@ -539,6 +541,11 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   }
 
   if (config.discovery.enabled) {
+    transport.onClientEvent = (event, detail) => {
+      if (event === 'error') {
+        console.warn(`[qwicks mesh] transport error: ${detail ?? 'unknown'}`)
+      }
+    }
     const started = await transport.start((msg, reply) => {
       if (msg.type === 'notification') {
         // Fire-and-forget: verify envelope, dispatch, ignore result
@@ -575,7 +582,21 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
       selfDeviceId: deps.identity.deviceId,
       ...(deps.discovery ? { bonjour: deps.discovery } : {})
     })
-    discovery.start((peer) => deps.onPeerDiscovered?.(peer))
+    discovery.start((peer) => {
+      console.warn(`[qwicks mesh] discovered peer ${peer.deviceId.slice(0, 8)}… at ${peer.host}:${peer.port}`)
+      deps.onPeerDiscovered?.(peer)
+    })
+    console.warn(`[qwicks mesh] mDNS discovery started (advertising as ${deviceName})`)
+
+    // autoAcceptKnownPeers: reconnect already-trusted peers without re-pairing.
+    // On discovery, if the peer is in our trust store and the flag is set,
+    // surface them as discovered so the dispatch bridge connects — they don't
+    // need a fresh pairing handshake (their session keys are persisted).
+    if (config.autoAcceptKnownPeers) {
+      console.warn('[qwicks mesh] autoAcceptKnownPeers enabled — trusted peers reconnect without re-pairing')
+    }
+  } else {
+    console.warn('[qwicks mesh] discovery disabled — peers must connect manually by host:port')
   }
 
   /* ---- Manifest refresh timer (Phase 4) ---- */

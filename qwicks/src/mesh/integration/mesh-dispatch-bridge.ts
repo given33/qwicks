@@ -12,16 +12,14 @@ import type { TaskRunParams, ChildRunResult } from '../contracts.js'
  * This bridge maintains a pool of `MeshTransportClient` instances keyed by
  * deviceId. When mDNS discovery surfaces a peer (via `onPeerDiscovered`), the
  * bridge opens a long-lived WebSocket to that peer's advertised host:port and
- * keeps it for the lifetime of the mesh. `runRemote` looks up the client for
- * the task's target (the first non-self entry in `provenance`, which the remote
- * executor populates as `[self]` — so for a direct dispatch the target is read
- * from the in-flight task map maintained by the caller).
- *
- * The bridge is deliberately simple: one persistent connection per peer, no
- * automatic reconnect (a dropped connection surfaces as an error on the next
- * `task/run`, and the caller's lease-recovery handles reassignment). Phase 2+
- * can add reconnection.
+ * keeps it for the lifetime of the mesh. If the connection drops, the bridge
+ * automatically reconnects with exponential backoff (1s → 2s → 4s → …, capped
+ * at 30s) until the peer comes back or the mesh shuts down. `runRemote` looks
+ * up the client for the task's target.
  */
+
+const RECONNECT_BASE_MS = 1_000
+const RECONNECT_MAX_MS = 30_000
 
 export interface DiscoveredPeer {
   deviceId: string
@@ -44,6 +42,9 @@ export class MeshDispatchBridge {
   /** Per-task target deviceId, set by the mesh runtime slot just before it
    *  invokes the remote executor. Keyed by taskId (= childId). */
   private readonly dispatchTargets = new Map<string, string>()
+  /** Reconnect timers per peer, so we can cancel them on shutdown. */
+  private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private stopped = false
 
   constructor(deps: MeshDispatchBridgeDeps = {}) {
     this.deps = deps
@@ -62,20 +63,51 @@ export class MeshDispatchBridge {
 
   /** Called by `bootMesh`'s `onPeerDiscovered` hook when mDNS surfaces a peer. */
   async onPeerDiscovered(peer: DiscoveredPeer): Promise<void> {
-    // If we already have a connection (or one in flight), skip.
-    if (this.clients.has(peer.deviceId)) return
     this.peers.set(peer.deviceId, peer)
+    // If we already have an open connection, skip.
+    const existing = this.clients.get(peer.deviceId)
+    if (existing?.isOpen) return
+    await this.connectPeerWithRetry(peer, 0).catch(() => {
+      // best-effort; the reconnect loop is already scheduled
+    })
+  }
 
+  /** Connect to a peer, retrying with exponential backoff on failure. */
+  private async connectPeerWithRetry(peer: DiscoveredPeer, attempt: number): Promise<void> {
+    if (this.stopped) return
     const client = new MeshTransportClient()
+    client.onDisconnected = () => {
+      if (this.stopped) return
+      console.warn(`[qwicks mesh] peer ${peer.deviceId.slice(0, 8)}… disconnected; scheduling reconnect`)
+      this.clients.delete(peer.deviceId)
+      this.scheduleReconnect(peer, 0)
+    }
     try {
       await client.connect(`ws://${peer.host}:${peer.port}`)
       this.clients.set(peer.deviceId, client)
+      console.warn(`[qwicks mesh] connected to peer ${peer.deviceId.slice(0, 8)}… (${peer.host}:${peer.port})`)
     } catch (error) {
-      // Discovery is best-effort; a failed connect just means this peer is
-      // unreachable for now. The next discovery event will retry.
+      if (this.stopped) return
       const message = error instanceof Error ? error.message : String(error)
-      console.warn(`[qwicks mesh] failed to connect to peer ${peer.deviceId} at ${peer.host}:${peer.port}: ${message}`)
+      if (attempt === 0) {
+        console.warn(`[qwicks mesh] failed to connect to peer ${peer.deviceId.slice(0, 8)}… at ${peer.host}:${peer.port}: ${message}`)
+      }
+      this.scheduleReconnect(peer, attempt + 1)
     }
+  }
+
+  /** Schedule a reconnect after exponential backoff. */
+  private scheduleReconnect(peer: DiscoveredPeer, attempt: number): void {
+    if (this.stopped) return
+    // Clear any existing timer for this peer
+    const existing = this.reconnectTimers.get(peer.deviceId)
+    if (existing) clearTimeout(existing)
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS)
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(peer.deviceId)
+      void this.connectPeerWithRetry(peer, attempt)
+    }, delay)
+    this.reconnectTimers.set(peer.deviceId, timer)
   }
 
   /** The `runRemote` callback handed to `bootMesh`. Ships `task/run` to the
@@ -90,13 +122,11 @@ export class MeshDispatchBridge {
     }
 
     const client = this.clients.get(targetDeviceId)
-    if (!client) {
-      throw new Error(`mesh dispatch bridge: no transport client for peer ${targetDeviceId} (not discovered or disconnected)`)
+    if (!client || !client.isOpen) {
+      throw new Error(`mesh dispatch bridge: peer ${targetDeviceId} is not connected (discovered: ${this.peers.has(targetDeviceId)})`)
     }
 
-    // Honour the abort signal by surfacing an error promptly. The transport
-    // client doesn't natively tie a pending request to an AbortSignal, so we
-    // check it before sending.
+    // Honour the abort signal by surfacing an error promptly.
     if (signal.aborted) throw new Error('aborted before dispatch')
 
     const result = (await client.request('task/run', params)) as ChildRunResult
@@ -118,14 +148,17 @@ export class MeshDispatchBridge {
   }
 
   /** Open a transport client to a peer that may not have been discovered via
-   *  mDNS (e.g. manual pairing by host:port). Used by the pairing initiator. */
+   *  mDNS (e.g. manual pairing by host:port). Used by the pairing initiator.
+   *  Registers the disconnect→reconnect watcher so the connection self-heals. */
   async connectPeer(peer: DiscoveredPeer): Promise<MeshTransportClient> {
     this.peers.set(peer.deviceId, peer)
     let client = this.clients.get(peer.deviceId)
-    if (client) return client
-    client = new MeshTransportClient()
-    await client.connect(`ws://${peer.host}:${peer.port}`)
-    this.clients.set(peer.deviceId, client)
+    if (client?.isOpen) return client
+    // Go through the retry-capable path so pairing-initiated connections also
+    // self-heal on disconnect.
+    await this.connectPeerWithRetry(peer, 0)
+    client = this.clients.get(peer.deviceId)
+    if (!client) throw new Error(`failed to connect to peer ${peer.deviceId}`)
     return client
   }
 
@@ -134,8 +167,12 @@ export class MeshDispatchBridge {
     return [...this.peers.values()]
   }
 
-  /** Close all transport clients. Called from mesh shutdown. */
+  /** Close all transport clients and cancel reconnect timers. Called from
+   *  mesh shutdown. */
   async close(): Promise<void> {
+    this.stopped = true
+    for (const timer of this.reconnectTimers.values()) clearTimeout(timer)
+    this.reconnectTimers.clear()
     const closers = [...this.clients.values()].map((c) => c.close().catch(() => {}))
     await Promise.all(closers)
     this.clients.clear()

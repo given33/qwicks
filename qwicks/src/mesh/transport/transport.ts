@@ -27,6 +27,9 @@ export class MeshTransportServer {
   private wss?: WebSocketServer
   private port = 0
   private readonly clients = new Set<WebSocket>()
+  /** Optional observer for transport-layer events (connect/disconnect/error).
+   *  Wired by `bootMesh` to surface diagnostics. Defaults to no-op. */
+  onClientEvent: ((event: 'connect' | 'disconnect' | 'error', detail?: string) => void) | undefined
 
   async start(handler: (msg: JsonRpcMessage, reply: (r: Reply) => void) => void): Promise<{ port: number }> {
     return new Promise((resolve) => {
@@ -38,6 +41,7 @@ export class MeshTransportServer {
       })
       this.wss.on('connection', (ws) => {
         this.clients.add(ws)
+        this.onClientEvent?.('connect')
         ws.on('message', (data) => {
           const msg = parseJsonRpcMessage(String(data))
           if (!msg) return
@@ -50,10 +54,15 @@ export class MeshTransportServer {
         })
         ws.on('close', () => {
           this.clients.delete(ws)
+          this.onClientEvent?.('disconnect')
         })
-        ws.on('error', () => {
+        ws.on('error', (err) => {
           this.clients.delete(ws)
+          this.onClientEvent?.('error', err instanceof Error ? err.message : String(err))
         })
+      })
+      this.wss.on('error', (err) => {
+        this.onClientEvent?.('error', `server: ${err instanceof Error ? err.message : String(err)}`)
       })
     })
   }
@@ -76,6 +85,16 @@ export class MeshTransportServer {
   async stop(): Promise<void> {
     return new Promise((resolve) => {
       if (!this.wss) return resolve()
+      // Close every connected client socket first so peers detect the drop
+      // promptly (otherwise they only learn via TCP keepalive timeout).
+      for (const ws of this.clients) {
+        try {
+          ws.close()
+        } catch {
+          // best-effort
+        }
+      }
+      this.clients.clear()
       this.wss.close(() => resolve())
     })
   }
@@ -85,14 +104,20 @@ export class MeshTransportClient {
   private ws?: WebSocket
   private seq = 0
   private readonly pending = new Map<JsonRpcIdLike, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>()
+  /** Fired when the underlying socket drops (close or error). The dispatch
+   *  bridge uses this to trigger reconnection. */
+  onDisconnected: (() => void) | undefined
+  private disconnectedFired = false
 
   async connect(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      this.disconnectedFired = false
       this.ws = new WebSocket(url)
       this.ws.on('open', () => resolve())
       this.ws.on('error', (err) => {
         // Reject any in-flight requests, then surface connect errors.
         for (const id of this.pending.keys()) this.failPending(id, err)
+        this.fireDisconnected()
         reject(err)
       })
       this.ws.on('message', (data) => {
@@ -107,8 +132,19 @@ export class MeshTransportClient {
       })
       this.ws.on('close', () => {
         for (const id of this.pending.keys()) this.failPending(id, new Error('connection closed'))
+        this.fireDisconnected()
       })
     })
+  }
+
+  private fireDisconnected(): void {
+    if (this.disconnectedFired) return
+    this.disconnectedFired = true
+    try {
+      this.onDisconnected?.()
+    } catch {
+      // observer errors must never propagate into the transport
+    }
   }
 
   request(method: string, params?: unknown): Promise<unknown> {
@@ -135,6 +171,11 @@ export class MeshTransportClient {
       this.ws.on('close', () => resolve())
       this.ws.close()
     })
+  }
+
+  /** Whether the underlying socket is currently open and usable. */
+  get isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
   }
 
   private nextId(): JsonRpcIdLike {
