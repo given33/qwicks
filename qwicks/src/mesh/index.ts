@@ -16,6 +16,10 @@ import { ToolRpcServer } from './remote-tool/tool-rpc.js'
 import { MemoryRpcServer } from './remote-memory/memory-rpc.js'
 import { RateLimiter } from './security/rate-limiter.js'
 import { buildMeshAwareDecide } from './integration/router-decide.js'
+import { SessionKeyStore } from './identity/session-key-store.js'
+import { verifyEnvelope, ReplayWindow } from './envelope/envelope.js'
+import { fromHex } from './identity/device-identity.js'
+import { Envelope as EnvelopeSchema, type Envelope as EnvelopeType } from './contracts.js'
 import type {
   ChildRunResult, TaskRunParams,
   ToolCallRequest, ToolResult,
@@ -103,6 +107,8 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
 
   const trustStore = new PeerTrustStore(join(deps.dataDir, 'mesh-trust.db'))
   const audit = new AuditLog(join(deps.dataDir, 'mesh-audit.db'))
+  const sessionKeyStore = new SessionKeyStore(deps.identity.deviceId)
+  const replayWindow = new ReplayWindow()
   const manifestStore = new ManifestStore()
   const rateLimiter = new RateLimiter({
     maxCalls: deps.rateLimitMax ?? 30,
@@ -205,7 +211,58 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
     selfDeviceId: deps.identity.deviceId
   })
 
-  /* ---- Transport + dispatch ---- */
+  /* ---- Envelope verification (Phase 3) ---- */
+  const ENVELOPE_SKEW_MS = 60_000
+
+  async function verifyAndUnwrap(
+    method: string,
+    rawParams: unknown
+  ): Promise<{ method: string; params: Record<string, unknown> }> {
+    const parsed = EnvelopeSchema.safeParse(rawParams)
+    if (!parsed.success) {
+      // Not an envelope — legacy or internal dispatch
+      return { method, params: (rawParams ?? {}) as Record<string, unknown> }
+    }
+    const env = parsed.data
+
+    // Look up peer's public key from trust store
+    const peerRecord = await trustStore.get(env.from)
+    if (!peerRecord || peerRecord.revokedAt) {
+      throw { code: -32002, message: `unauthorized: peer ${env.from} not trusted` }
+    }
+
+    // Look up session key
+    const sessionKey = sessionKeyStore.getVerifyKey(env.from)
+    if (!sessionKey) {
+      throw { code: -32002, message: `no session key for ${env.from}` }
+    }
+
+    // Replay check
+    if (!replayWindow.checkAndAdd(env.from, env.nonce)) {
+      throw { code: -32000, message: 'replay detected' }
+    }
+
+    // Timestamp skew check (±60s, RFC 006 §4.3)
+    const ts = new Date(env.timestamp).getTime()
+    if (Math.abs(Date.now() - ts) > ENVELOPE_SKEW_MS) {
+      throw { code: -32000, message: 'timestamp skew too large' }
+    }
+
+    // Verify dual-auth envelope (HMAC + Ed25519)
+    const peerPublicKey = fromHex(peerRecord.peerPublicKey)
+    const ok = await verifyEnvelope(env, peerPublicKey, sessionKey)
+    if (!ok) {
+      throw { code: -32002, message: 'envelope verification failed' }
+    }
+
+    // Extract method from envelope kind, inject _caller for backward compat
+    return {
+      method: env.kind,
+      params: { ...env.payload, _caller: env.from }
+    }
+  }
+
+  /* ---- Transport start ---- */
   const transport = new MeshTransportServer()
   let transportPort = 0
   const selfDeviceId = deps.identity.deviceId
@@ -213,13 +270,12 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   /**
    * Extract caller identity from an incoming JSON-RPC request.
    *
-   * In production the envelope layer provides a verified `from` field.  Until
-   * envelope verification is wired (Phase 3 hardening), we use a simple
-   * convention:
+   * For enveloped messages, `_caller` is injected by `verifyAndUnwrap` above.
+   * This function handles non-enveloped (legacy / internal) dispatch paths:
    *   - task/run          → params.provenance[0]
    *   - pairing/hello     → params.initiatorDeviceId
    *   - pairing/verify    → params.initiatorDeviceId
-   *   - tools/*, memory/* → params._caller (set by the caller-side envelope)
+   *   - tools/*, memory/* → params._caller (set by caller-side envelope)
    * Falls back to 'unknown' so auth checks still reject unauthorised callers.
    */
   function extractCaller(method: string, params: Record<string, unknown>): string {
@@ -241,8 +297,16 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
       /* ---- pairing ---- */
       case 'pairing/hello':
         return responder.handleHello(params as unknown as HelloParams)
-      case 'pairing/verify':
-        return responder.handleVerify(params as unknown as VerifyParams)
+      case 'pairing/verify': {
+        const result = await responder.handleVerify(params as unknown as VerifyParams)
+        if (result.verified && responder.lastSessionKeyMaterial) {
+          sessionKeyStore.storeFromPairing(
+            (params as unknown as VerifyParams).initiatorDeviceId,
+            responder.lastSessionKeyMaterial
+          )
+        }
+        return result
+      }
 
       /* ---- task ---- */
       case 'task/run': {
@@ -346,7 +410,8 @@ export async function bootMesh(config: MeshConfig, deps: BootDeps): Promise<Mesh
   if (config.discovery.enabled) {
     const started = await transport.start((msg, reply) => {
       if (msg.type !== 'request') return
-      dispatch(msg.method, (msg.params ?? {}) as Record<string, unknown>)
+      verifyAndUnwrap(msg.method, msg.params)
+        .then(({ method, params }) => dispatch(method, params))
         .then((result) => reply({ result }))
         .catch((err) => {
           const code = typeof err === 'object' && err !== null && 'code' in err ? (err as { code: number }).code : -32603
