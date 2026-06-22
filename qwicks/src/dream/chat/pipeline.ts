@@ -41,6 +41,15 @@ import { ExtractionRouter } from '../extraction/router.js'
 import { sanitizeForMemory } from '../security/sanitizer.js'
 import { RetrievalPipeline } from '../retrieval/pipeline.js'
 import { compare, decide } from '../conflict/engine.js'
+import {
+  FreshnessBoostGate,
+  JudiciousDemoteGate,
+  ObservableGate,
+  UserCorrectionGate,
+  type GateReport,
+  type UserCorrection
+} from '../retrieval/observable-gate.js'
+import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/natural-builder.js'
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
 import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
@@ -51,8 +60,12 @@ export interface ChatResult {
   contextBlock: string
   newMemories: MemoryItem[]
   hits: Array<{ item: MemoryItem; score: number }>
+  /** 经过 ObservableGate 重排序/剔除后的最终注入集合(suppress 的不在此)。 */
+  routedHits: Array<{ item: MemoryItem; score: number }>
   twin: ReturnType<TwinBuilder['build']> | null
   extractorBackend: string
+  /** Phase 2:ObservableGate 决策汇总(评测/panel 用)。 */
+  gateReport: GateReport | null
 }
 
 export interface DreamMemorySystemOptions {
@@ -87,6 +100,8 @@ export class DreamMemorySystem {
   readonly synthesizer: HeuristicSynthesizer | LlmSynthesizer
   readonly twinBuilder: TwinBuilder
   readonly scheduler: DreamingScheduler
+  readonly observableGate: ObservableGate
+  readonly promptBuilder = new NaturalPromptBuilder()
   readonly controls = new DreamControls()
   private readonly userId: string
 
@@ -141,6 +156,17 @@ export class DreamMemorySystem {
     const decay = new MemoryDecay({ repository: this.repository })
     const reinforcement = new MemoryReinforcement({ repository: this.repository })
     this.scheduler = new DreamingScheduler({ decay, reinforcement })
+
+    // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)
+    this.observableGate = new ObservableGate()
+      .add(new JudiciousDemoteGate(-0.1))
+      .add(new FreshnessBoostGate(-0.2, 0.1))
+      .add(new UserCorrectionGate(-0.3))
+  }
+
+  /** 记录用户纠错(panel "这条记忆不该出现" / console.correct),后续 gate 主动 demote。 */
+  recordCorrection(correction: UserCorrection): void {
+    this.observableGate.recordCorrection(correction)
   }
 
   async chat(
@@ -159,8 +185,10 @@ export class DreamMemorySystem {
         contextBlock: '',
         newMemories: [],
         hits: [],
+        routedHits: [],
         twin: null,
-        extractorBackend: 'temporary_skip'
+        extractorBackend: 'temporary_skip',
+        gateReport: null
       }
     }
 
@@ -178,8 +206,10 @@ export class DreamMemorySystem {
         contextBlock: '',
         newMemories: [],
         hits: [],
+        routedHits: [],
         twin: null,
-        extractorBackend: 'opt_out'
+        extractorBackend: 'opt_out',
+        gateReport: null
       }
     }
 
@@ -204,17 +234,33 @@ export class DreamMemorySystem {
       topK: this.config.retrieval.topK
     })
 
-    // 6) build twin (early, for synthesis)
+    // 5.5) Phase 2: ObservableGate —— 跑 judicious/freshness/user_correction 三 gate,
+    // score_after 写回, suppress(score_after ≤ 0.05)的剔除出注入集。
     const allItems = this.repository.list(userId, {})
+    const gateReport = this.observableGate.run({
+      userId,
+      query: message,
+      candidates: hits.map((h) => ({ item: h.item, score: h.score })),
+      allUserItems: allItems
+    })
+    const routedHits = gateReport.decisions
+      .filter((d) => d.finalDecision !== 'suppress')
+      .map((d) => {
+        const h = hits.find((x) => x.item.id === d.memoryId)!
+        return { ...h, score: Math.max(0, d.scoreAfter) }
+      })
+      .sort((a, b) => b.score - a.score)
+
+    // 6) build twin (early, for synthesis) — 用 routedHits(已 gate 过)
     let twin = this.twinBuilder.build({
       userId,
       memories: allItems,
-      hits: hits.map((h) => ({ item: h.item, score: h.score }))
+      hits: routedHits.map((h) => ({ item: h.item, score: h.score }))
     })
 
     // 7) synthesize (update twin)
     const synthInput = {
-      hits,
+      hits: routedHits,
       user: message,
       assistant: opts.assistant ?? null,
       twin,
@@ -226,10 +272,17 @@ export class DreamMemorySystem {
     twin = synthResult.twin
     this.repository.saveTwin(userId, JSON.stringify({ ...twin, user_id: twin.userId }), twin.generatedAt)
 
-    // 8) prompt build + source receipts
-    const contextBlock = this.buildContextBlock(twin, hits)
-    for (let pos = 0; pos < hits.length; pos++) {
-      const h = hits[pos]!
+    // 8) prompt build (NaturalPromptBuilder) + source receipts(用 routedHits)
+    const built = this.promptBuilder.build({
+      userId,
+      query: message,
+      twin,
+      hits: routedHits,
+      maxChars: this.config.prompt.maxSectionChars * 8
+    })
+    const contextBlock = built.contextBlock
+    for (let pos = 0; pos < routedHits.length; pos++) {
+      const h = routedHits[pos]!
       this.repository.logEvent('used_in_prompt', {
         recordId: h.item.id,
         userId,
@@ -238,19 +291,21 @@ export class DreamMemorySystem {
     }
 
     // 9) reply (natural fallback; LLM reply wired in Phase 2/3 controls)
-    const reply = this.naturalReply(twin, hits, message)
+    const reply = naturalFallbackReply({ twin, hasHits: routedHits.length > 0, hits: routedHits, query: message })
 
     // 10) dreaming: mark dirty (non-blocking; scheduler ticks in background)
     if (newMemories.length > 0) this.scheduler.markDirty(userId)
 
     return {
       reply,
-      systemBlock: this.config.prompt.twinHeader,
+      systemBlock: built.system,
       contextBlock,
       newMemories,
       hits,
+      routedHits,
       twin,
-      extractorBackend: this.extraction.lastBackend()
+      extractorBackend: this.extraction.lastBackend(),
+      gateReport
     }
   }
 
@@ -313,35 +368,6 @@ export class DreamMemorySystem {
       out.push(item)
     }
     return out
-  }
-
-  private buildContextBlock(
-    twin: ReturnType<TwinBuilder['build']>,
-    hits: Array<{ item: MemoryItem; score: number }>
-  ): string {
-    const lines: string[] = [this.config.prompt.twinHeader]
-    if (twin.profile) lines.push(`[孪生摘要] ${twin.profile}`)
-    if (hits.length > 0) {
-      lines.push('[相关记忆]')
-      for (const h of hits.slice(0, this.config.prompt.maxBuckets)) {
-        lines.push(`- (${h.item.type}) ${h.item.content}`)
-      }
-    }
-    return lines.join('\n')
-  }
-
-  private naturalReply(
-    twin: ReturnType<TwinBuilder['build']>,
-    hits: Array<{ item: MemoryItem; score: number }>,
-    _query: string
-  ): string {
-    const parts: string[] = []
-    if (twin.profile) parts.push(`我记得:${twin.profile.slice(0, 120)}`)
-    if (hits.length > 0) {
-      parts.push(`这一轮用到 ${hits.length} 条相关记忆,其中:"${hits[0]!.item.content.slice(0, 60)}"`)
-    }
-    if (parts.length === 0) parts.push('我记下了,暂时没有更多上下文,你可以继续说下去。')
-    return parts.join('。')
   }
 
   close(): void {
