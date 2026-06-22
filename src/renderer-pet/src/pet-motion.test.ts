@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  computeFallStep,
   hasReachedTarget,
   isMotionTimedOut,
   makeIdle,
@@ -102,5 +103,77 @@ describe('helpers', () => {
   it('isMotionTimedOut compares now vs until', () => {
     expect(isMotionTimedOut({ kind: 'idle', until: 5000 }, 5000)).toBe(true)
     expect(isMotionTimedOut({ kind: 'idle', until: 5000 }, 4999)).toBe(false)
+  })
+})
+
+describe('M3 state machine extensions', () => {
+  const ctx = (now: number) => ({ now, walkArea, position: { x: 100, y: 100 } })
+
+  it('grab from idle/wander → dragging', () => {
+    const idle = makeIdle(0)
+    expect(transitionPetMotion(idle, { type: 'grab' }, ctx(1000))).toEqual({ kind: 'dragging' })
+  })
+
+  it('dragging + release → falling with vy 0', () => {
+    const dragging = { kind: 'dragging' as const }
+    const next = transitionPetMotion(dragging, { type: 'release' }, ctx(1000))
+    expect(next).toEqual({ kind: 'falling', vy: 0 })
+  })
+
+  it('falling + land → landed', () => {
+    const falling = { kind: 'falling' as const, vy: 0.5 }
+    const next = transitionPetMotion(falling, { type: 'land' }, ctx(1000))
+    expect(next.kind).toBe('landed')
+  })
+
+  it('landed + timeout → idle', () => {
+    const landed = { kind: 'landed' as const, until: 1000 }
+    const next = transitionPetMotion(landed, { type: 'timeout' }, ctx(2000))
+    expect(next.kind).toBe('idle')
+  })
+
+  it('wander + hitWall → bonk', () => {
+    const wander = { kind: 'wander' as const, target: { x: 200, y: 200 }, until: 99999 }
+    const next = transitionPetMotion(wander, { type: 'hitWall', fromLeft: true }, ctx(1000))
+    expect(next.kind).toBe('bonk')
+    expect(next).toHaveProperty('fromLeft', true)
+  })
+
+  it('bonk + timeout → idle or wander', () => {
+    const bonk = { kind: 'bonk' as const, until: 1000, fromLeft: true }
+    const next = transitionPetMotion(bonk, { type: 'timeout' }, { ...ctx(2000), random: () => 0.9 })
+    expect(['idle', 'wander']).toContain(next.kind)
+  })
+
+  it('grab ignored when already falling', () => {
+    const falling = { kind: 'falling' as const, vy: 0.5 }
+    expect(transitionPetMotion(falling, { type: 'grab' }, ctx(1000))).toBe(falling)
+  })
+})
+
+describe('computeFallStep', () => {
+  it('accelerates downward with gravity', () => {
+    const r = computeFallStep(100, 0, 100, 1000)
+    expect(r.vy).toBeGreaterThan(0)
+    expect(r.y).toBeGreaterThan(100)
+    expect(r.landed).toBe(false)
+  })
+
+  it('caps at terminal velocity', () => {
+    let vy = 0
+    let y = 0
+    for (let i = 0; i < 1000; i += 1) {
+      const r = computeFallStep(y, vy, 100, 100000)
+      vy = r.vy
+      y = r.y
+    }
+    expect(vy).toBeLessThanOrEqual(1.5)
+  })
+
+  it('lands and clamps to groundY', () => {
+    const r = computeFallStep(990, 1.5, 100, 1000)
+    expect(r.landed).toBe(true)
+    expect(r.y).toBe(1000)
+    expect(r.vy).toBe(0)
   })
 })

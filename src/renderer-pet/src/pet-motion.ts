@@ -11,14 +11,26 @@
 
 export type Vec2 = { x: number; y: number }
 
+/**
+ * 运动状态机（M1 idle/wander + M3 dragging/falling/landed/bonk）。
+ * 互斥状态，任何时刻宠物只处于其一，避免"边拖边漫步"等非法组合。
+ */
 export type PetMotionState =
-  | { kind: 'idle'; until: number } // 站立待机，until=下次状态切换的墙钟 ms
-  | { kind: 'wander'; target: Vec2; until: number } // 走向 target，until=放弃时刻
+  | { kind: 'idle'; until: number } // 站立待机
+  | { kind: 'wander'; target: Vec2; until: number } // 走向目标
+  | { kind: 'dragging' } // 被鼠标按住悬空（位置由鼠标驱动，不自主移动）
+  | { kind: 'falling'; vy: number } // 松手后下坠，vy=垂直速度（px/ms）
+  | { kind: 'landed'; until: number } // 屁股着地，短暂不动后回 idle
+  | { kind: 'bonk'; until: number; fromLeft: boolean } // 撞墙回弹，until=回弹结束
 
 export type PetMotionEvent =
-  | { type: 'timeout' } // idle/wander 计时到
+  | { type: 'timeout' } // idle/wander/landed/bonk 计时到
   | { type: 'reached' } // wander 到达目标
-  | { type: 'abort' } // 外部打断（如拖拽开始，M3）
+  | { type: 'grab' } // 鼠标按下精灵 → dragging（M3）
+  | { type: 'release' } // 拖拽松手 → falling（M3）
+  | { type: 'land' } // falling 触底 → landed（M3）
+  | { type: 'hitWall'; fromLeft: boolean } // wander 撞屏边 → bonk（M3）
+  | { type: 'abort' } // 外部打断
 
 export type MotionContext = {
   now: number
@@ -37,6 +49,10 @@ const IDLE_MAX_MS = 8000
 const WANDER_TIMEOUT_MS = 12000
 /** wander 触发概率（idle 超时时） */
 const WANDER_PROBABILITY = 0.6
+/** landed（屁股着地）持续时间 ms，之后回 idle */
+const LANDED_DURATION_MS = 1200
+/** bonk（撞墙回弹）持续时间 ms */
+const BONK_DURATION_MS = 800
 
 /** 精灵半尺寸，用于把目标点限制在"精灵中心不越出 work area" */
 const SPRITE_HALF = { w: 48, h: 60 }
@@ -71,8 +87,8 @@ export function makeIdle(now: number, random: () => number = defaultRandom): Pet
 }
 
 /**
- * 状态转移纯函数。返回下一状态（不变则返回原 state 引用语义相同的新对象）。
- * 这是漫步引擎的可单测核心：注入可控 now/random/walkArea/position 即可覆盖所有分支。
+ * 状态转移纯函数。返回下一状态。
+ * 覆盖 M1 idle/wander + M3 dragging/falling/landed/bonk 全部转移。
  */
 export function transitionPetMotion(
   state: PetMotionState,
@@ -81,33 +97,57 @@ export function transitionPetMotion(
 ): PetMotionState {
   const rng = ctx.random ?? defaultRandom
 
-  if (state.kind === 'idle') {
-    if (event.type === 'timeout') {
-      // 待机结束：概率转 wander，否则继续 idle
-      if (rng() < WANDER_PROBABILITY) {
-        const target = pickWanderTarget(ctx)
-        return { kind: 'wander', target, until: ctx.now + WANDER_TIMEOUT_MS }
-      }
-      return makeIdle(ctx.now, rng)
-    }
-    return state
+  // 任何非 falling/dragging 状态收到 grab → dragging（M3 拖拽开始）
+  if (event.type === 'grab' && state.kind !== 'dragging' && state.kind !== 'falling') {
+    return { kind: 'dragging' }
   }
 
-  // wander
-  if (event.type === 'reached') {
-    // 到达目标 → 进入 idle
-    return makeIdle(ctx.now, rng)
-  }
-  if (event.type === 'timeout') {
-    // 超时还没到 → 放弃，重新选目标或 idle
-    if (rng() < 0.5) {
-      const target = pickWanderTarget(ctx)
-      return { kind: 'wander', target, until: ctx.now + WANDER_TIMEOUT_MS }
+  switch (state.kind) {
+    case 'idle': {
+      if (event.type === 'timeout') {
+        if (rng() < WANDER_PROBABILITY) {
+          return { kind: 'wander', target: pickWanderTarget(ctx), until: ctx.now + WANDER_TIMEOUT_MS }
+        }
+        return makeIdle(ctx.now, rng)
+      }
+      return state
     }
-    return makeIdle(ctx.now, rng)
+    case 'wander': {
+      if (event.type === 'reached') return makeIdle(ctx.now, rng)
+      if (event.type === 'hitWall') return { kind: 'bonk', until: ctx.now + BONK_DURATION_MS, fromLeft: event.fromLeft }
+      if (event.type === 'timeout') {
+        if (rng() < 0.5) {
+          return { kind: 'wander', target: pickWanderTarget(ctx), until: ctx.now + WANDER_TIMEOUT_MS }
+        }
+        return makeIdle(ctx.now, rng)
+      }
+      return state
+    }
+    case 'dragging': {
+      // 松手 → falling，初速 0
+      if (event.type === 'release') return { kind: 'falling', vy: 0 }
+      return state
+    }
+    case 'falling': {
+      // 触底 → landed
+      if (event.type === 'land') return { kind: 'landed', until: ctx.now + LANDED_DURATION_MS }
+      return state
+    }
+    case 'landed': {
+      if (event.type === 'timeout') return makeIdle(ctx.now, rng)
+      return state
+    }
+    case 'bonk': {
+      if (event.type === 'timeout') {
+        // 回弹后概率回 idle 或反向 wander
+        if (rng() < 0.5) {
+          return { kind: 'wander', target: pickWanderTarget(ctx), until: ctx.now + WANDER_TIMEOUT_MS }
+        }
+        return makeIdle(ctx.now, rng)
+      }
+      return state
+    }
   }
-  // abort：交由 M3 处理（拖拽），M1 不触发
-  return state
 }
 
 /** 判定 wander 是否到达目标（足够近） */
@@ -115,7 +155,30 @@ export function hasReachedTarget(position: Vec2, target: Vec2, threshold = 6): b
   return Math.hypot(position.x - target.x, position.y - target.y) <= threshold
 }
 
-/** 判定当前是否该触发 timeout 事件 */
+/** 判定当前是否该触发 timeout 事件（landed/bonk/idle/wander 有 until） */
 export function isMotionTimedOut(state: PetMotionState, now: number): boolean {
-  return now >= state.until
+  return 'until' in state ? now >= state.until : false
+}
+
+/**
+ * 重力步进纯函数（M3-T4）。给定当前垂直速度、帧间隔、地面 Y，返回新位置与速度。
+ * 带空气阻力（终端速度上限），下落姿态随速度变化由渲染层处理。
+ *
+ * 返回 { position: 新Y, vy: 新速度, landed: 是否触底 }。
+ * 触底时把位置钳到 groundY，vy 归零，调用方据此发 land 事件。
+ */
+export function computeFallStep(
+  currentY: number,
+  vy: number,
+  dtMs: number,
+  groundY: number,
+  gravity = 0.0018, // px/ms²
+  terminalVelocity = 1.5 // px/ms 上限，防下落过快
+): { y: number; vy: number; landed: boolean } {
+  const newVy = Math.min(vy + gravity * dtMs, terminalVelocity)
+  const newY = currentY + newVy * dtMs
+  if (newY >= groundY) {
+    return { y: groundY, vy: 0, landed: true }
+  }
+  return { y: newY, vy: newVy, landed: false }
 }
