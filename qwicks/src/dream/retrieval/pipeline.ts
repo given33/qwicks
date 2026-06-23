@@ -169,12 +169,20 @@ export class RetrievalPipeline {
       const exact = exactScore(queryTokens, docTokens)
       const importance = Math.max(0, Math.min(1, item.importance)) * item.confidence
 
+      // v3(P2-5 报告 §11):top-of-mind / user-corrected 加权提升。
+      // top-of-mind 记忆是 dreaming 判定的高优先级,应在检索中优先注入。
+      // user-corrected 记忆是用户人工纠正过的,可信度更高。
+      const topOfMindBoost = item.isTopOfMind ? 0.12 : 0
+      const correctedBoost = item.userCorrected ? 0.06 : 0
+
       const score =
         this.weights.vector * vectorScore +
         this.weights.bm25 * bm25 +
         this.weights.exact * exact +
         this.weights.recency * recency +
-        this.weights.importance * importance
+        this.weights.importance * importance +
+        topOfMindBoost +
+        correctedBoost
 
       const source: RetrievalHit['source'] =
         vectorScore > 0 && (bm25 > 0 || exact > 0)

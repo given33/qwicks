@@ -145,6 +145,9 @@ export interface DreamMemorySystemOptions {
   /** OpenAI 兼容 chat(注入;复用 qwicks compat-model-client 的形态)。不给则纯启发式。 */
   chat?: (msgs: { system: string; user: string }) => Promise<{ text: string }>
   config?: Partial<DreamConfig>
+  /** v3(P2-6 报告 §4.9):注入 Pulse research 函数(真实 web search / LLM research)。
+   * 不给则 Pulse 返回明确的 disabled 状态。 */
+  pulseResearch?: PulseResearchFn
 }
 
 /** 用户控制(opt-out / suppress)的最小实现,对齐 Python controls。 */
@@ -181,6 +184,8 @@ export class DreamMemorySystem {
   /** Phase 3:用户控制(list/edit/delete/suppress/opt-out/export/purge/versions)。 */
   readonly controls2: MemoryControls
   private readonly userId: string
+  /** v3(P2-6):可注入的 Pulse research 函数(真实 web search)。 */
+  private readonly pulseResearch: PulseResearchFn | undefined
 
   constructor(opts: DreamMemorySystemOptions) {
     this.config = new DreamConfig({
@@ -188,6 +193,7 @@ export class DreamMemorySystem {
       ...(opts.config ?? {})
     })
     this.userId = opts.userId ?? this.config.userId
+    this.pulseResearch = opts.pulseResearch
 
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
@@ -867,7 +873,9 @@ export class DreamMemorySystem {
     return { affected }
   }
 
-  /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入(默认 no-op 占位)。 */
+  /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入。
+   * v3(P2-6 报告 §4.9):默认明确返回 disabled 状态(而非假摘要),
+   * runtime 通过 DreamMemorySystemOptions.pulseResearch 注入真实 web search。 */
   async runPulse(userId: string, opts: { research?: PulseResearchFn; maxTopics?: number } = {}): Promise<PulseDigest> {
     const memories = this.repository.list(userId, {})
     // 文档 §7:Pulse 同时参考 saved memories + chat history(两个 source 都开)。
@@ -877,7 +885,13 @@ export class DreamMemorySystem {
       maxTopics: opts.maxTopics,
       recentChats: recentChats.map((c) => ({ role: c.role, content: c.content }))
     })
-    const research: PulseResearchFn = opts.research ?? (async (query) => ({ query, summary: '(未配置 research 函数)', sources: [], followUps: [] }))
+    // 优先用显式注入的 research,其次用构造时注入的 pulseResearch,最后 disabled
+    const research: PulseResearchFn = opts.research ?? this.pulseResearch ?? (async (query) => ({
+      query,
+      summary: '(Pulse research disabled — configure DreamMemorySystemOptions.pulseResearch to enable)',
+      sources: [],
+      followUps: []
+    }))
     return buildPulseDigest({ userId, topics, research })
   }
 
