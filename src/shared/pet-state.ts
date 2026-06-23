@@ -184,8 +184,8 @@ export function applySignIn(state: PetState, today: string): { state: PetState; 
   if (state.lastSignInDate === today) {
     return { state, awarded: false, reward: 0 }
   }
-  // R3: 连续签到递增奖励（30/35/40...最高 100，断签归零回 30）
-  const yesterday = new Date(new Date(today).getTime() - 86400000).toISOString().slice(0, 10)
+  // R3: 连续签到递增奖励。BUG-14 修复：yesterday 用本地时区
+  const yesterday = todayString(new Date(today).getTime() - 86400000)
   const isContinuous = state.lastSignInDate === yesterday
   const newStreak = isContinuous ? (state.signInStreakDays ?? 0) + 1 : 1
   const reward = Math.min(30 + (newStreak - 1) * 5, 100)
@@ -224,7 +224,11 @@ function clamp(v: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, v))
 }
 
-/** 取今天日期字符串 YYYY-MM-DD */
+/** 取今天日期字符串 YYYY-MM-DD（BUG-14 修复：用本地时区而非 UTC） */
 export function todayString(now: number = Date.now()): string {
-  return new Date(now).toISOString().slice(0, 10)
+  const d = new Date(now)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }

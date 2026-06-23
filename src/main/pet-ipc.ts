@@ -337,4 +337,22 @@ export function registerPetStateIpc(): void {
     recordAndBroadcast('activity') // 记录行为次数（activities-20 成就用）
     return { ok: true }
   })
+
+  // R4 接入：部位互动矩阵（摸不同部位反应不同，学习 QQ interact 系统）
+  ipcMain.handle('pet:touch-body', (_e, part: string) => {
+    const { bodyReact, deriveInteractionMood, BODY_PARTS } = require('../shared/pet-body-interaction') as typeof import('../shared/pet-body-interaction')
+    if (!BODY_PARTS.some((p) => p.id === part)) return { ok: false }
+    let reaction = bodyReact(part as 'head', 'neutral')
+    store.update((state) => {
+      const mood = deriveInteractionMood(state.vitals)
+      reaction = bodyReact(part as 'head', mood)
+      return {
+        ...state,
+        vitals: { ...state.vitals, mood: Math.max(0, Math.min(100, state.vitals.mood + reaction.moodDelta)) }
+      }
+    })
+    recordAndBroadcast('pet')
+    void getDiaryStore().append('✋', reaction.text)
+    return { ok: true, reaction }
+  })
 }

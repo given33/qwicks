@@ -44,7 +44,9 @@ export class PetDiaryStore {
   /** 追加一条日志。自动清理超过保留期的旧天。 */
   async append(icon: string, text: string, now: number = Date.now()): Promise<void> {
     await this.load()
-    const date = new Date(now).toISOString().slice(0, 10)
+    // BUG-14 修复：用本地时区日期而非 UTC
+    const d = new Date(now)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     const entries = this.diary[date] ?? []
     entries.push({ ts: now, icon, text })
     this.diary[date] = entries
