@@ -10,6 +10,8 @@ import { checkAchievements, defaultStats, type PetStats } from '../shared/pet-ac
 type PetStateLike = {
   stats?: PetStats
   achievements?: { unlocked: string[]; unlockedAt: Record<string, number> }
+  coins?: number
+  signInStreakDays?: number
 }
 
 export type PetAction =
@@ -44,12 +46,13 @@ export function recordAction(
   now: number = Date.now()
 ): { state: PetStateLike; newlyUnlocked: string[] } {
   const stats = bumpStat(state.stats, action)
-  // itemsOwned 反映当前库存
-  if (action === 'buy') {
-    // 调用方应在 buy 后用 inventory.length；这里简化不处理
+  // BUG-10 修复：signIn 时同步 signInStreak = signInStreakDays（真连续天数）
+  if (action === 'signIn' && state.signInStreakDays !== undefined) {
+    stats.signInStreak = state.signInStreakDays
   }
   const unlocked = state.achievements?.unlocked ?? []
-  const { newlyUnlocked } = checkAchievements(stats, unlocked)
+  // BUG-11 修复：传 coins 让 rich-500 可判定
+  const { newlyUnlocked } = checkAchievements(stats, unlocked, state.coins)
   const allUnlocked = [...unlocked, ...newlyUnlocked]
   const unlockedAt = { ...(state.achievements?.unlockedAt ?? {}) }
   for (const id of newlyUnlocked) unlockedAt[id] = now

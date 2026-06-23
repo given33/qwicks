@@ -72,7 +72,7 @@ export type AchievementCheckResult = {
  * 检测当前 stats 下应解锁的成就，返回尚未解锁（alreadyUnlocked 之外）的合格成就。
  * 调用方据此记录新解锁 + 触发弹窗。
  */
-export function checkAchievements(stats: PetStats, alreadyUnlocked: string[]): AchievementCheckResult {
+export function checkAchievements(stats: PetStats, alreadyUnlocked: string[], coins?: number): AchievementCheckResult {
   const unlocked = new Set(alreadyUnlocked)
   const newlyUnlocked: string[] = []
 
@@ -94,7 +94,7 @@ export function checkAchievements(stats: PetStats, alreadyUnlocked: string[]): A
     'activities-20': stats.activitiesExperienced >= 20,
     'activities-all': stats.activitiesExperienced >= 43,
     'items-10': stats.itemsOwned >= 10,
-    'rich-500': false // 需要 coins，由调用方补充判定
+    'rich-500': (coins ?? 0) >= 500 // BUG-11 修复：接 coins 判定
   }
 
   for (const ach of PET_ACHIEVEMENTS) {
