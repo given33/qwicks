@@ -44,9 +44,7 @@ export class PetDiaryStore {
   /** 追加一条日志。自动清理超过保留期的旧天。 */
   async append(icon: string, text: string, now: number = Date.now()): Promise<void> {
     await this.load()
-    // BUG-14 修复：用本地时区日期而非 UTC
-    const d = new Date(now)
-    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const date = new Date(now).toISOString().slice(0, 10)
     const entries = this.diary[date] ?? []
     entries.push({ ts: now, icon, text })
     this.diary[date] = entries
@@ -63,28 +61,10 @@ export class PetDiaryStore {
     }
   }
 
-  // BUG-30 修复：并发锁防多 handler 同时 flush
-  private flushing: Promise<void> | null = null
-
   async flush(): Promise<void> {
-    // 互斥：正在 flush 时排队等待
-    if (this.flushing) return this.flushing
-    this.flushing = this.doFlush()
-    try {
-      await this.flushing
-    } finally {
-      this.flushing = null
-    }
-  }
-
-  private async doFlush(): Promise<void> {
     try {
       await mkdir(DIARY_DIR, { recursive: true })
-      // BUG-30 修复：原子写（tmp + rename），防崩溃时半截 JSON
-      const tmpFile = DIARY_FILE + '.tmp'
-      await writeFile(tmpFile, JSON.stringify(this.diary, null, 2), 'utf8')
-      const { rename } = await import('node:fs/promises')
-      await rename(tmpFile, DIARY_FILE)
+      await writeFile(DIARY_FILE, JSON.stringify(this.diary, null, 2), 'utf8')
     } catch (error) {
       console.warn('[pet-diary] flush failed:', error)
     }
