@@ -281,7 +281,8 @@ export function registerPetStateIpc(): void {
     return result
   })
 
-  // P3 打工：得元宝，扣心情（疲劳）
+  // P3 打工：得元宝，扣心情（疲劳）。R3: 每日上限 5 次防经济崩塌（B1 修复）
+  const WORK_DAILY_LIMIT = 5
   ipcMain.handle('pet:work', (_e, jobId: string) => {
     let result: { ok: boolean; reason?: string; coins?: number } = { ok: false, reason: 'invalid' }
     store.update((state) => {
@@ -291,13 +292,23 @@ export function registerPetStateIpc(): void {
         result = { ok: false, reason: check.reason }
         return state
       }
+      // B1 修复：每日打工次数上限
+      const today = new Date().toISOString().slice(0, 10)
+      const workDate = state.workDate ?? today
+      const count = workDate === today ? (state.workCountToday ?? 0) : 0
+      if (count >= WORK_DAILY_LIMIT) {
+        result = { ok: false, reason: `今日打工已达上限（${WORK_DAILY_LIMIT}次）` }
+        return state
+      }
       const reward = workReward(jobId as JobId)
       result = { ok: true, coins: reward.coins }
       void getDiaryStore().append('💼', `打工赚了 ${reward.coins} 元宝`)
       return {
         ...state,
         coins: state.coins + reward.coins,
-        vitals: { ...state.vitals, mood: Math.max(0, state.vitals.mood + reward.moodDelta) }
+        vitals: { ...state.vitals, mood: Math.max(0, state.vitals.mood + reward.moodDelta) },
+        workDate: today,
+        workCountToday: count + 1
       }
     })
     return result

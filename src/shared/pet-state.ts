@@ -52,6 +52,11 @@ export type PetState = {
   career?: import('./pet-career').CareerState
   /** P4 个性（影响衰减/互动倍率）。孵化时随机分配。 */
   personality?: import('./pet-festivals').Personality
+  /** R3 打工冷却：今日打工次数 + 日期（每日重置，上限防经济崩塌） */
+  workCountToday?: number
+  workDate?: string
+  /** R3 连续签到天数（断签归零，不同于累计 signInStreak） */
+  signInStreakDays?: number
 }
 
 /** 每小时衰减量（按 100 基准）。非线性：低值时衰减减缓。 */
@@ -174,14 +179,25 @@ export function applyItemEffect(state: PetState, item: PetItem): PetState {
   }
 }
 
-/** 每日签到：发元宝，去重。返回 { state, awarded }。 */
-export function applySignIn(state: PetState, today: string, reward = 30): { state: PetState; awarded: boolean } {
+/** 每日签到：发元宝，去重，连续签到递增奖励。返回 { state, awarded, reward }。 */
+export function applySignIn(state: PetState, today: string): { state: PetState; awarded: boolean; reward: number } {
   if (state.lastSignInDate === today) {
-    return { state, awarded: false }
+    return { state, awarded: false, reward: 0 }
   }
+  // R3: 连续签到递增奖励（30/35/40...最高 100，断签归零回 30）
+  const yesterday = new Date(new Date(today).getTime() - 86400000).toISOString().slice(0, 10)
+  const isContinuous = state.lastSignInDate === yesterday
+  const newStreak = isContinuous ? (state.signInStreakDays ?? 0) + 1 : 1
+  const reward = Math.min(30 + (newStreak - 1) * 5, 100)
   return {
-    state: { ...state, coins: state.coins + reward, lastSignInDate: today },
-    awarded: true
+    state: {
+      ...state,
+      coins: state.coins + reward,
+      lastSignInDate: today,
+      signInStreakDays: newStreak
+    },
+    awarded: true,
+    reward
   }
 }
 
