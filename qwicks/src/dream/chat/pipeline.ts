@@ -27,6 +27,9 @@ import {
   MemoryProvenance,
   MemoryScope,
   MemoryType,
+  SourceType,
+  SuppressionScope,
+  TemporalState,
   newMemoryId,
   nowIso
 } from '../types.js'
@@ -84,6 +87,19 @@ export interface ChatResult {
   rewrittenQuery: RewriteResult | null
   /** 每阶段的 fail-open 错误记录(空=全部成功)。 */
   failures: string[]
+  /**
+   * v3 状态提示(对齐文档 §12):
+   * - remembering:本次回答是否使用了记忆上下文
+   * - personalizing:是否注入了个性化记忆
+   * - memory_sources_used:本次使用的来源 id 列表(可解释性)
+   * - rewritten_query_from_memory:是否基于记忆改写了搜索查询
+   */
+  statusHints: {
+    remembering: boolean
+    personalizing: boolean
+    memorySourcesUsed: string[]
+    rewrittenQueryFromMemory: boolean
+  }
 }
 
 export interface DreamMemorySystemOptions {
@@ -240,7 +256,14 @@ export class DreamMemorySystem {
         gateReport: null,
         injectionDecision: null,
         rewrittenQuery: null,
-        failures: []
+        failures: [],
+        // v3:临时聊天不读不写,所有状态提示为 false/空(文档 §7)
+        statusHints: {
+          remembering: false,
+          personalizing: false,
+          memorySourcesUsed: [],
+          rewrittenQueryFromMemory: false
+        }
       }
     }
 
@@ -260,7 +283,13 @@ export class DreamMemorySystem {
         gateReport: null,
         injectionDecision: null,
         rewrittenQuery: null,
-        failures: []
+        failures: [],
+        statusHints: {
+          remembering: false,
+          personalizing: false,
+          memorySourcesUsed: [],
+          rewrittenQueryFromMemory: false
+        }
       }
     }
 
@@ -270,9 +299,26 @@ export class DreamMemorySystem {
       this.repository.saveChat(userId, 'assistant', opts.assistant, { threadId, turnId })
     }
 
+    // v3:创建/复用 SourceRecord(chat 来源谱系,文档 §1/§6)。
+    // externalRef 用 threadId/turnId;幂等:同 (user, chat, ref) 复用。
     // 以下每步都 try/catch fail-open(对齐 spec §8 "每一步都用 try/catch fail-open")。
     // 任何步骤失败不中断整个 turn,记录到 failures[] 供可观测。
     const failures: string[] = []
+    let chatSourceId: string | null = null
+    try {
+      const externalRef = [threadId, turnId].filter(Boolean).join('/') || `ts_${Date.now()}`
+      const source = this.controls2.upsertSource({
+        userId,
+        sourceType: SourceType.CHAT,
+        externalRef,
+        title: message.slice(0, 80),
+        content: message
+      })
+      chatSourceId = source.id
+    } catch (err) {
+      failures.push(`source_record: ${String(err)}`)
+    }
+
 
     // 3) extract
     let drafts: Awaited<ReturnType<typeof this.extraction.extractAsync>> = []
@@ -294,7 +340,7 @@ export class DreamMemorySystem {
     // 4) persist drafts (embed + store + conflict resolution)
     let newMemories: MemoryItem[] = []
     try {
-      newMemories = this.persistDrafts(sanitizedDrafts, userId, threadId, turnId)
+      newMemories = this.persistDrafts(sanitizedDrafts, userId, threadId, turnId, chatSourceId)
     } catch (err) { failures.push(`persist: ${String(err)}`) }
 
     // 5) retrieve
@@ -318,6 +364,12 @@ export class DreamMemorySystem {
         .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { ...h, score: Math.max(0, d.scoreAfter) } })
         .sort((a, b) => b.score - a.score)
     } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
+
+    // v3:过滤 suppression rule("Don't mention this again",文档 §8)
+    // —— 在 ObservableGate 之后、InjectionRouter 之前,确保被抑制的记忆不进入注入候选。
+    try {
+      routedHits = filterSuppressedHits(userId, routedHits, this.controls2)
+    } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
 
     // 5.6) SelectiveInjectionRouter
     let injectionDecision: InjectionDecision | null = null
@@ -372,6 +424,22 @@ export class DreamMemorySystem {
       void Promise.resolve().then(() => { try { this.scheduler.tick({ userId }) } catch { /* non-blocking */ } })
     }
 
+    // v3 状态提示(文档 §12):汇总本次回答的记忆使用情况。
+    const usedSourceIds = new Set<string>()
+    for (const h of routedHits) {
+      for (const sid of h.item.sourceIds) usedSourceIds.add(sid)
+    }
+    const rewrittenQueryFromMemory =
+      rewrittenQuery !== null &&
+      rewrittenQuery.rewritten.toLowerCase() !== message.toLowerCase() &&
+      rewrittenQuery.appliedMemories.length > 0
+    const statusHints = {
+      remembering: routedHits.length > 0,
+      personalizing: injectionDecision?.shouldInject === true && routedHits.length > 0,
+      memorySourcesUsed: [...usedSourceIds],
+      rewrittenQueryFromMemory
+    }
+
     return {
       reply,
       systemBlock: built?.system ?? '',
@@ -384,7 +452,8 @@ export class DreamMemorySystem {
       gateReport,
       injectionDecision,
       rewrittenQuery,
-      failures
+      failures,
+      statusHints
     }
   }
 
@@ -393,11 +462,15 @@ export class DreamMemorySystem {
     drafts: ReturnType<HeuristicExtractor['extract']>,
     userId: string,
     threadId: string | null,
-    turnId: string | null
+    turnId: string | null,
+    /** v3:把新 memory 链到这个 source id(来源谱系)。 */
+    sourceId: string | null = null
   ): MemoryItem[] {
     const out: MemoryItem[] = []
     const existing = this.repository.list(userId, {})
     for (const draft of drafts) {
+      // v3:从 content 推断 temporal_state + 时间窗口
+      const temporalInfo = detectTemporalFromContent(draft.content)
       const item = new MemoryItem(
         newMemoryId(),
         userId,
@@ -409,7 +482,7 @@ export class DreamMemorySystem {
         draft.confidence,
         nowIso(),
         nowIso(),
-        null,
+        temporalInfo.expiresAt,
         new MemoryProvenance(
           draft.provenance.source,
           draft.provenance.actor,
@@ -424,7 +497,19 @@ export class DreamMemorySystem {
         { ...draft.metadata },
         MemoryLifecycleStatus.ACTIVE,
         [],
-        2
+        2,
+        [],
+        sourceId ? [sourceId] : [], // v3 sourceIds
+        temporalInfo.state,
+        temporalInfo.validFrom,
+        temporalInfo.validUntil,
+        [],
+        [],
+        false,
+        false,
+        false,
+        draft.importance, // salience 默认 = importance
+        temporalInfo.topic
       )
       // 先 embed(必须在冲突消解之前,让 cosine 通道能工作 — 审计修复)
       const v = this.embedder.embed(item.content)
@@ -565,3 +650,121 @@ export class DreamMemorySystem {
     this.repository.close()
   }
 }
+
+// ----------------------------------------------------------------
+// v3 辅助:从 content 推断 temporal_state + 时间窗口 + topic
+// (对齐文档 §4 "识别过期信息 / 把旧计划转换为历史事实")
+// ----------------------------------------------------------------
+
+interface TemporalDetection {
+  state: TemporalState
+  validFrom: string | null
+  validUntil: string | null
+  expiresAt: string | null
+  topic: string | null
+}
+
+/** 计划性/将来时短语 → PLANNED。 */
+const PLANNED_PATTERNS: ReadonlyArray<readonly [RegExp, string | null]> = [
+  // [pattern, topic hint]
+  [/\b(?:I(?:'m| am)?\s+)?(?:will|'ll|going to|gonna|plan(?:ning)? to|intend to|aim to)\b/i, null],
+  [/\bvisit\s+\w+/i, 'travel'],
+  [/\btravel(?:ing)?\s+to\s+(\w+)/i, 'travel'],
+  [/\btrip\s+to\s+(\w+)/i, 'travel'],
+  [/\bvacation\s+in\s+(\w+)/i, 'travel'],
+  [/我要去|我打算去|我计划去|我准备去|我将去|我要到|要去|打算去|计划去|准备去/, null],
+  [/去(.+?)旅行|到(.+?)旅游|去(.+?)出差/, 'travel']
+]
+
+/** 当前状态短语 → CURRENT(默认)。 */
+const CURRENT_PATTERNS: ReadonlyArray<RegExp> = [
+  /\b(?:I\s+)?(?:live|work|study|am based)\s+in\b/i,
+  /\bcurrently\b/i,
+  /我现在住|我现在在|我目前在|我居住在|我在(.+?)工作/
+]
+
+/** 时间窗口提取(YYYY-MM / YYYY-MM-DD / next week / 下个月 等)。 */
+function extractTimeWindow(text: string): { validFrom?: string; validUntil?: string } {
+  const out: { validFrom?: string; validUntil?: string } = {}
+  // ISO 日期 YYYY-MM-DD
+  const isoMatch = text.match(/(\d{4})-(\d{2})-(\d{2})/g)
+  if (isoMatch) {
+    if (isoMatch.length >= 2) {
+      out.validFrom = `${isoMatch[0]}T00:00:00Z`
+      out.validUntil = `${isoMatch[1]}T23:59:59Z`
+    } else {
+      // 单日期视为截止(validUntil)
+      out.validUntil = `${isoMatch[0]}T23:59:59Z`
+    }
+  }
+  // 月份 YYYY-MM
+  const monthMatch = text.match(/(\d{4})-(\d{2})(?!\d)/g)
+  if (monthMatch && !isoMatch) {
+    const [y, m] = monthMatch[0]!.split('-')
+    // 月末作为 validUntil
+    const lastDay = new Date(Number(y), Number(m), 0).getDate()
+    out.validUntil = `${monthMatch[0]}-${String(lastDay).padStart(2, '0')}T23:59:59Z`
+  }
+  return out
+}
+
+function detectTemporalFromContent(content: string): TemporalDetection {
+  const result: TemporalDetection = {
+    state: TemporalState.CURRENT,
+    validFrom: null,
+    validUntil: null,
+    expiresAt: null,
+    topic: null
+  }
+  // 检测计划性
+  for (const [pat, topicHint] of PLANNED_PATTERNS) {
+    if (pat.test(content)) {
+      result.state = TemporalState.PLANNED
+      if (topicHint) result.topic = topicHint
+      // 尝试提取目的地作为 topic 后缀(如 travel:sg)
+      const destMatch =
+        content.match(/travel(?:ing)?\s+to\s+([A-Za-z]+)/i) ||
+        content.match(/visit\s+([A-Za-z]+)/i) ||
+        content.match(/trip\s+to\s+([A-Za-z]+)/i) ||
+        content.match(/去([新加坡日本韩国美国英国法国德国]+)/)
+      if (destMatch) {
+        const dest = destMatch[1]!.toLowerCase().slice(0, 8)
+        result.topic = `travel:${dest}`
+      }
+      break
+    }
+  }
+  // 时间窗口
+  const window = extractTimeWindow(content)
+  if (window.validFrom) result.validFrom = window.validFrom
+  if (window.validUntil) {
+    result.validUntil = window.validUntil
+    // 计划性记忆的 valid_until 同时作为 expiresAt(过期后 dreaming 会转 occurred)
+    if (result.state === TemporalState.PLANNED) {
+      result.expiresAt = window.validUntil
+    }
+  }
+  return result
+}
+
+/**
+ * v3:从 routed hits + suppression rules 过滤掉被抑制的记忆(文档 §8)。
+ * 同时检查 topic-level 与 memory-level suppression。
+ */
+function filterSuppressedHits(
+  userId: string,
+  hits: RetrievalHit[],
+  controls2: MemoryControls
+): RetrievalHit[] {
+  return hits.filter((h) => {
+    // memory-level suppression
+    if (controls2.isSuppressed(userId, SuppressionScope.MEMORY, h.item.id)) return false
+    if (h.item.isSuppressed) return false
+    // topic-level suppression
+    if (h.item.topic && controls2.isSuppressed(userId, SuppressionScope.TOPIC, h.item.topic)) {
+      return false
+    }
+    return true
+  })
+}
+
