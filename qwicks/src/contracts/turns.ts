@@ -50,6 +50,10 @@ export const TurnStatus = z.enum([
 ])
 export type TurnStatus = z.infer<typeof TurnStatus>
 
+/** Per-turn memory mode (report S6.3). normal=temporary off disables Dream read/write. */
+export const TurnMemoryModeSchema = z.enum(["normal","temporary","off"])
+export type TurnMemoryMode = z.infer<typeof TurnMemoryModeSchema>
+
 export const TurnSchema = z.object({
   id: z.string().min(1),
   threadId: z.string().min(1),
@@ -78,6 +82,7 @@ export const TurnSchema = z.object({
    * otherwise agent thread, or a Build turn that runs as agent).
    */
   mode: TurnModeSchema.optional(),
+  memoryMode: TurnMemoryModeSchema.optional(),
   /**
    * True when no interactive user is attached to this turn (IM bridges,
    * headless runs). QWicks hides `user_input`/`request_user_input` and
@@ -118,6 +123,7 @@ export const StartTurnRequest = z.object({
    * path advertised in the context.
    */
   guiPlan: GuiPlanContextSchema.optional(),
+  memoryMode: TurnMemoryModeSchema.optional(),
   /**
    * True when the caller cannot relay structured input prompts to a
    * user (IM bridges such as WeChat/Feishu, headless runs). The turn

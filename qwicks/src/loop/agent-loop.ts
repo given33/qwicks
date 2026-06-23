@@ -453,7 +453,11 @@ export type AgentLoopOptions = {
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
   /** Phase 6 审计修复:如果 dreamSystem 存在,retrieveMemories 走语义 5 通道检索而非 n-gram。 */
-  dreamSystem?: { retrieve(query: string, userId: string, topK: number): Promise<Array<{ item: { id: string; content: string; scope: string }; score: number }>> }
+  dreamSystem?: {
+    retrieve(query: string, userId: string, topK: number): Promise<Array<{ item: { id: string; content: string; scope: string }; score: number }>>
+    beforeTurn?(input: { userId: string; prompt: string; threadId?: string | null; turnId?: string | null; temporary?: boolean; isSafetyContext?: boolean; contextBudgetTokens?: number }): Promise<{ memories: Array<{ id: string; content: string; scope: string }>; statusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }; rewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null; failures: string[] }>
+    afterTurn?(input: { userId: string; userPrompt: string; assistantReply: string; threadId?: string | null; turnId?: string | null; temporary?: boolean }): Promise<{ newMemories: unknown[]; sourceId: string | null; failures: string[]; dreamingTriggered: boolean }>
+  }
   tokenEconomy?: TokenEconomyConfig
   contextCompaction?: ContextCompactionConfig
   toolStorm?: ToolStormBreakerOptions & { enabled?: boolean }
@@ -515,6 +519,8 @@ export type AgentLoopOptions = {
  */
 export class AgentLoop {
   private readonly opts: AgentLoopOptions
+  private lastDreamStatusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean } | null = null
+  private lastDreamRewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null = null
   private readonly autoModelRoutes = new Map<string, AutoModelRouteSelection>()
   private readonly promptTokenPressure = new Map<string, { model: string; promptTokens: number }>()
   /** Threads for which a one-time pressure hydration from persisted usage was already attempted. */
@@ -2597,17 +2603,32 @@ export class AgentLoop {
   private async retrieveMemories(input: {
     prompt: string
     workspace: string
+    threadId?: string | null
+    turnId?: string | null
+    memoryMode?: 'normal' | 'temporary' | 'off'
   }) {
-    // Phase 6 审计修复:如果有 dreamSystem,走语义 5 通道检索 + 4 门控(非 n-gram)。
-    if (this.opts.dreamSystem) {
+    // P0-5(报告 §6.3/§15):temporary/off 模式完全不读记忆。
+    if (input.memoryMode === 'temporary' || input.memoryMode === 'off') return []
+    // P0-4(报告 §4.1/§6.1):优先用 Dream middleware beforeTurn。
+    if (this.opts.dreamSystem?.beforeTurn) {
+      try {
+        const result = await this.opts.dreamSystem.beforeTurn({
+          userId: 'default', prompt: input.prompt,
+          threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
+        })
+        const memories = result.memories
+        if (this.opts.memoryStore) this.opts.memoryStore.setLastInjected(memories.map((m) => m.id))
+        this.lastDreamStatusHints = result.statusHints
+        this.lastDreamRewrittenQuery = result.rewrittenQuery
+        return memories
+      } catch { /* fail-open */ }
+    } else if (this.opts.dreamSystem?.retrieve) {
       try {
         const hits = await this.opts.dreamSystem.retrieve(input.prompt, 'default', 8)
         const memories = hits.map((h) => ({ id: h.item.id, content: h.item.content, scope: h.item.scope }))
         if (this.opts.memoryStore) this.opts.memoryStore.setLastInjected(memories.map((m) => m.id))
         return memories
-      } catch {
-        // fail-open: fall through to n-gram path
-      }
+      } catch { /* fail-open */ }
     }
     if (!this.opts.memoryStore) return []
     const memories = await this.opts.memoryStore.retrieve({
@@ -2617,6 +2638,27 @@ export class AgentLoop {
     })
     this.opts.memoryStore.setLastInjected(memories.map((memory) => memory.id))
     return memories
+  }
+
+  /**
+   * P0-4(报告 §6.1):模型回答完成后调用 Dream afterTurn(写侧)。
+   * 保存 chat、抽取记忆、persist、dreaming。temporary/off 模式零写。fail-open。
+   */
+  private async dreamAfterTurn(input: {
+    userPrompt: string
+    assistantReply: string
+    threadId?: string | null
+    turnId?: string | null
+    memoryMode?: 'normal' | 'temporary' | 'off'
+  }): Promise<void> {
+    if (input.memoryMode === 'temporary' || input.memoryMode === 'off') return
+    if (!this.opts.dreamSystem?.afterTurn) return
+    try {
+      await this.opts.dreamSystem.afterTurn({
+        userId: 'default', userPrompt: input.userPrompt, assistantReply: input.assistantReply,
+        threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
+      })
+    } catch { /* fail-open: 记忆写入失败不中断用户对话 */ }
   }
 
   /** Convenience factory for tests: builds a loop with sensible defaults. */
