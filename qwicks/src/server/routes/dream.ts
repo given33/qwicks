@@ -16,6 +16,7 @@
 import type { DreamMemorySystem } from '../../dream/chat/pipeline.js'
 import type { ObservableDecision } from '../../dream/retrieval/observable-gate.js'
 import type { RetrievalHit } from '../../dream/retrieval/pipeline.js'
+import type { SourceType, SuppressionScope } from '../../dream/types.js'
 import { jsonResponse, type JsonResponse } from '../response.js'
 import { readJsonBody } from '../read-json-body.js'
 import { ERRORS } from './runtime-error.js'
@@ -161,6 +162,133 @@ export async function dreamRevokeConnector(system: DreamMemorySystem | undefined
   const userId = url.searchParams.get('user_id') ?? 'default'
   if (!account) return ERRORS.validation('account is required', [])
   const result = dream.revokeConnector(account, userId)
+  return jsonResponse(result)
+}
+
+// ================================================================
+// v3 路由:来源记录 / 抑制规则 / 级联删除 / 时间转换 / 状态提示
+// ================================================================
+
+/** v3:列出用户的来源记录(chat/file/gmail/custom_instruction/saved_memory)。 */
+export async function dreamListSources(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  const sourceType = url.searchParams.get('source_type') ?? undefined
+  const includeDeleted = url.searchParams.get('include_deleted') === 'true'
+  const sources = dream.controls2.listSources(userId, {
+    sourceType: sourceType as SourceType | undefined,
+    includeDeleted
+  })
+  return jsonResponse({ sources: sources.map((s) => s.toDict()) })
+}
+
+/** v3:获取单个来源。 */
+export async function dreamGetSource(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const source = dream.controls2.getSource(id)
+  if (!source) return ERRORS.notFound('source not found')
+  return jsonResponse({ source: source.toDict() })
+}
+
+/** v3:列出派生自某来源的 memory(谱系查询)。 */
+export async function dreamSourceLineage(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const source = dream.controls2.getSource(id)
+  if (!source) return ERRORS.notFound('source not found')
+  const derived = dream.controls2.memoriesDerivedFromSource(source.userId, id)
+  return jsonResponse({ source: source.toDict(), derivedMemories: derived.map((m) => m.toDict()) })
+}
+
+/** v3:级联删除来源 + 派生 memory(文档 §9 deletion lineage)。 */
+export async function dreamDeleteSourceAndDerived(system: DreamMemorySystem | undefined, id: string, request: Request): Promise<JsonResponse | Response> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  const hard = body.ok ? (body.value as { hard?: boolean }).hard === true : false
+  const result = dream.controls2.deleteSourceAndDerived(id, { hard })
+  if (!result.sourceDeleted) return ERRORS.notFound('source not found')
+  return jsonResponse(result)
+}
+
+/** v3:创建抑制规则("Don't mention this again",≠ 删除)。 */
+export async function dreamCreateSuppression(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse | Response> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { userId?: string; scope?: string; target?: string; reason?: string | null }
+  if (!v.userId || !v.scope || !v.target) {
+    return ERRORS.validation('userId, scope, target are required', [])
+  }
+  const rule = dream.controls2.suppress({
+    userId: v.userId,
+    scope: v.scope as SuppressionScope,
+    target: v.target,
+    reason: v.reason ?? null
+  })
+  return jsonResponse({ suppression: rule.toDict() })
+}
+
+/** v3:列出用户的抑制规则。 */
+export async function dreamListSuppressions(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  const includeInactive = url.searchParams.get('include_inactive') === 'true'
+  const rules = dream.controls2.listSuppressions(userId, { includeInactive })
+  return jsonResponse({ suppressions: rules.map((r) => r.toDict()) })
+}
+
+/** v3:取消抑制(active=false,保留记录)。 */
+export async function dreamUnsuppress(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse | Response> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { userId?: string; scope?: string; target?: string }
+  if (!v.userId || !v.scope || !v.target) {
+    return ERRORS.validation('userId, scope, target are required', [])
+  }
+  const ok = dream.controls2.unsuppress(v.userId, v.scope as SuppressionScope, v.target)
+  return jsonResponse({ unsuppressed: ok })
+}
+
+/** v3:物理删除抑制规则。 */
+export async function dreamDeleteSuppression(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const ok = dream.controls2.deleteSuppression(id)
+  if (!ok) return ERRORS.notFound('suppression rule not found')
+  return jsonResponse({ deleted: true })
+}
+
+/** v3:手动把 PLANNED memory 转为 OCCURRED(旅行结束 → 历史)。 */
+export async function dreamMarkOccurred(system: DreamMemorySystem | undefined, id: string, request: Request): Promise<JsonResponse | Response> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { historyContent?: string; reason?: string | null }
+  if (typeof v.historyContent !== 'string') {
+    return ERRORS.validation('historyContent is required', [])
+  }
+  const updated = dream.controls2.markOccurred(id, v.historyContent, { reason: v.reason ?? null })
+  if (!updated) return ERRORS.notFound('memory not found')
+  return jsonResponse({ memory: updated.toDict() })
+}
+
+/** v3:关闭 reference chat history(删除 chat-inferred memory,保留 saved + chat_log)。 */
+export async function dreamDisableReferenceChatHistory(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  const result = dream.controls2.disableReferenceChatHistory(userId)
   return jsonResponse(result)
 }
 

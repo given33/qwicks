@@ -58,7 +58,17 @@ import {
   dreamRevokeConnector,
   dreamSuppress,
   dreamSummary,
-  dreamVersions
+  dreamVersions,
+  dreamListSources,
+  dreamGetSource,
+  dreamSourceLineage,
+  dreamDeleteSourceAndDerived,
+  dreamCreateSuppression,
+  dreamListSuppressions,
+  dreamUnsuppress,
+  dreamDeleteSuppression,
+  dreamMarkOccurred,
+  dreamDisableReferenceChatHistory
 } from './dream.js'
 import {
   meshModelsResponse,
@@ -205,6 +215,47 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('POST', '/v1/dream/revoke-connector', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamRevokeConnector(runtime.dreamSystem, request)
+  })
+  // v3:来源记录 / 抑制规则 / 级联删除 / 时间转换 / 状态提示
+  router.add('GET', '/v1/dream/sources', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamListSources(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/sources/:id', async (_request, ctx) => {
+    if (!authorize(_request, runtime)) return ERRORS.unauthorized()
+    return dreamGetSource(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('GET', '/v1/dream/sources/:id/lineage', async (_request, ctx) => {
+    if (!authorize(_request, runtime)) return ERRORS.unauthorized()
+    return dreamSourceLineage(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('DELETE', '/v1/dream/sources/:id', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamDeleteSourceAndDerived(runtime.dreamSystem, ctx.params.id, request)
+  })
+  router.add('POST', '/v1/dream/suppressions', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamCreateSuppression(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/suppressions', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamListSuppressions(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/suppressions/unsuppress', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamUnsuppress(runtime.dreamSystem, request)
+  })
+  router.add('DELETE', '/v1/dream/suppressions/:id', async (_request, ctx) => {
+    if (!authorize(_request, runtime)) return ERRORS.unauthorized()
+    return dreamDeleteSuppression(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('POST', '/v1/dream/memory/:id/mark-occurred', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamMarkOccurred(runtime.dreamSystem, ctx.params.id, request)
+  })
+  router.add('POST', '/v1/dream/disable-reference-chat-history', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamDisableReferenceChatHistory(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
