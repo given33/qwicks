@@ -597,6 +597,7 @@ export async function createQWicksServeRuntime(
     toolHost,
     ...(attachmentStore ? { attachmentStore } : {}),
     ...(memoryStore ? { memoryStore } : {}),
+    ...(dreamSystem ? { dreamSystem } : {}),
     runTurn(threadId, turnId) {
       return loop.runTurn(threadId, turnId)
     },
@@ -788,7 +789,7 @@ export async function startQWicksServe(
  * (the Dream SQLite repository). The runtime must call `close()` on shutdown
  * to release file locks / file descriptors.
  */
-function buildMemoryStore(
+export function buildMemoryStore(
   config: MemoryCapabilityConfig,
   legacyRootDir: string
 ): { store: MemoryStore; close: () => void; dreamSystem?: DreamMemorySystem } {

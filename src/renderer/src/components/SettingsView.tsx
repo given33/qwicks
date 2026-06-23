@@ -61,6 +61,7 @@ import {
   MediaGenerationSettingsSection,
   MemorySettingsSection,
   ModelConfigurationSettingsSection,
+  DreamMemorySummarySection,
   ProvidersSettingsSection,
   SpeechToTextSettingsSection,
   UpdatesSettingsSection,
@@ -1031,6 +1032,17 @@ export function SettingsView(): ReactElement {
           {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'memory' ? <MemorySettingsSection ctx={settingsSectionContext} /> : null}
+          {category === 'memory' && memoryDiagnostics?.enabled ? (
+            <DreamMemorySummarySection
+              qwicks={{
+                getDreamSummary: (...args) => getProvider().getDreamSummary!(...args),
+                getDreamMemoryVersions: (...args) => getProvider().getDreamMemoryVersions!(...args),
+                restoreDreamMemoryVersion: (...args) => getProvider().restoreDreamMemoryVersion!(...args),
+                suppressDreamMemory: (...args) => getProvider().suppressDreamMemory!(...args),
+                setDreamOptOut: (...args) => getProvider().setDreamOptOut!(...args)
+              }}
+            />
+          ) : null}
           {category === 'shortcuts' ? <KeyboardShortcutsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'easterEgg' ? <EasterEggSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'claw' ? <ClawSettingsSection ctx={settingsSectionContext} /> : null}

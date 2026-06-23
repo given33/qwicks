@@ -6,7 +6,9 @@ import type {
   CoreMemoryRecordJson,
   CoreRuntimeInfoJson,
   CoreRuntimeSkillJson,
-  CoreRuntimeToolDiagnosticsJson
+  CoreRuntimeToolDiagnosticsJson,
+  DreamMemorySummaryJson,
+  DreamVersionJson
 } from './qwicks-contract'
 import type { ApprovalPolicy, SandboxMode } from '@shared/app-settings'
 
@@ -494,6 +496,12 @@ export interface AgentProvider {
   ): Promise<CoreMemoryRecordJson>
   deleteMemory?(memoryId: string, options?: { workspace?: string }): Promise<CoreMemoryRecordJson>
   getMemoryDiagnostics?(): Promise<CoreMemoryDiagnosticsJson>
+  // Phase 3: Dream memory user-control surfaces
+  getDreamSummary?(userId?: string): Promise<DreamMemorySummaryJson>
+  getDreamMemoryVersions?(memoryId: string): Promise<DreamVersionJson[]>
+  restoreDreamMemoryVersion?(memoryId: string, versionId: string): Promise<CoreMemoryRecordJson>
+  suppressDreamMemory?(memoryId: string): Promise<CoreMemoryRecordJson>
+  setDreamOptOut?(userId?: string, optOut?: boolean): Promise<void>
   steerUserMessage?(threadId: string, turnId: string, text: string): Promise<void>
   interruptTurn(threadId: string, turnId: string, options?: { discard?: boolean }): Promise<void>
   renameThread(threadId: string, title: string): Promise<void>
