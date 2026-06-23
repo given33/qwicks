@@ -45,5 +45,7 @@ contextBridge.exposeInMainWorld('pet', {
   study: (level: string): Promise<unknown> => ipcRenderer.invoke('pet:study', level),
   work: (jobId: string): Promise<unknown> => ipcRenderer.invoke('pet:work', jobId),
   getObstacles: (): Promise<unknown> => ipcRenderer.invoke('pet:get-obstacles'),
-  getDisplays: (): Promise<unknown> => ipcRenderer.invoke('pet:get-displays')
+  getDisplays: (): Promise<unknown> => ipcRenderer.invoke('pet:get-displays'),
+  activityComplete: (): Promise<unknown> => ipcRenderer.invoke('pet:activity-complete'),
+  touchBody: (part: string): Promise<unknown> => ipcRenderer.invoke('pet:touch-body', part)
 })
