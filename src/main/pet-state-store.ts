@@ -125,7 +125,11 @@ export class PetStateStore {
     }
     try {
       await mkdir(PET_STATE_DIR, { recursive: true })
-      await writeFile(PET_STATE_FILE, JSON.stringify(this.state, null, 2), 'utf8')
+      // 原子写（tmp+rename），防崩溃时半截 JSON
+      const tmpFile = PET_STATE_FILE + '.tmp'
+      await writeFile(tmpFile, JSON.stringify(this.state, null, 2), 'utf8')
+      const { rename } = await import('node:fs/promises')
+      await rename(tmpFile, PET_STATE_FILE)
     } catch (error) {
       console.warn('[pet-state] failed to flush:', error)
     }
