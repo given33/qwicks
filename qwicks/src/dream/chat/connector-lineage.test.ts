@@ -16,7 +16,7 @@ import { SourceType } from '../types.js'
  * 这里构造一个最小的 mock fetch,返回 Gmail API 风格的 JSON。
  */
 function mockGmailFetch(): typeof fetch {
-  return (async (input: RequestInfo | URL) => {
+  return (async (input) => {
     const url = typeof input === 'string' ? input : input.toString()
     // list messages
     if (url.includes('/messages') && !url.includes('/messages/')) {
@@ -60,8 +60,11 @@ describe('Connector ingestion creates SourceRecord + links sourceIds', () => {
       new OAuthToken(
         'fake_access_token',
         'fake_refresh_token',
-        null,
-        'https://www.googleapis.com/auth/gmail.readonly',
+        Math.floor(Date.now() / 1000) + 3600,
+        ['https://www.googleapis.com/auth/gmail.readonly'],
+        '',
+        '',
+        'acct_gmail',
         'google'
       )
     )
