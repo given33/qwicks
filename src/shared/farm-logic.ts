@@ -73,10 +73,13 @@ export function harvest(farm: FarmState, plotIndex: number, now: number): { farm
   const crop = findCrop(plot.cropId)
   if (!crop) return { farm, reward: 0, cropName: null }
   const stage = plotStage(plot, now)
-  const reward = stage === 'ripe' ? crop.sellPrice : 0
+  // BUG-24 修复：未成熟时不销毁作物（只返回 reward:0，保留 cropId 让它继续长）
+  if (stage !== 'ripe') {
+    return { farm, reward: 0, cropName: null }
+  }
   const plots = [...farm.plots]
   plots[plotIndex] = { cropId: null, plantedAt: null }
-  return { farm: { ...farm, plots }, reward, cropName: crop.name }
+  return { farm: { ...farm, plots }, reward: crop.sellPrice, cropName: crop.name }
 }
 
 /** 阶段对应的 emoji（渲染用）。 */
