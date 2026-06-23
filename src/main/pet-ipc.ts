@@ -327,4 +327,14 @@ export function registerPetStateIpc(): void {
   ipcMain.handle('pet:get-displays', () => {
     return screen.getAllDisplays().map((d) => ({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height }))
   })
+
+  // BUG-16 修复：行为完成走独立 IPC，不再复用 play（避免刷 playCount/play-10 成就）
+  ipcMain.handle('pet:activity-complete', () => {
+    store.update((state) => {
+      const moodBoost = 3 // 行为完成微量心情（不刷 playCount）
+      return { ...state, vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + moodBoost) } }
+    })
+    recordAndBroadcast('activity') // 记录行为次数（activities-20 成就用）
+    return { ok: true }
+  })
 }
