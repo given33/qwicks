@@ -1,0 +1,274 @@
+/**
+ * Dream 记忆控制 / 隐私层 —— 1:1 对齐 Python `dream/controls/api.py`。
+ *
+ * 提供:listMemories / getMemory / editMemory / deleteMemory(soft/hard) /
+ * suppressMemory(Don't-mention-again, ≠ 删除)/ optOut / optIn / isOptedOut /
+ * export / purge。外加 Phase 3 新增的版本历史(editMemory 记录 snapshot,
+ * versionHistory 列出,restoreVersion 按日期回滚)。
+ *
+ * 版本历史实现:每次 editMemory 把"改之前"的 item 快照写进 memory_event
+ * (kind=version_snapshot),versionHistory 读这些事件,restoreVersion 把指定
+ * 快照的内容/标签/重要度写回。
+ */
+import {
+  MemoryItem,
+  MemoryLifecycleStatus,
+  MemoryProvenance,
+  MemoryScope,
+  MemoryType,
+  nowIso,
+  parseMemoryType
+} from '../types.js'
+import type { MemoryRepository } from '../storage/repository.js'
+
+const OPT_OUT_TAG = '__memory_opt_out__'
+
+export interface UpsertDirectInput {
+  id: string
+  userId: string
+  type: MemoryType
+  content: string
+  importance?: number
+  confidence?: number
+}
+
+export interface ListMemoriesOptions {
+  types?: readonly MemoryType[]
+  scopes?: readonly MemoryScope[]
+  includeDeleted?: boolean
+  search?: string
+}
+
+export interface EditMemoryInput {
+  content?: string
+  importance?: number
+  tags?: string[]
+  type?: MemoryType
+}
+
+export interface VersionSnapshot {
+  versionId: string
+  at: string
+  content: string
+  importance: number
+  tags: string[]
+  type: MemoryType
+}
+
+export interface ExportResult {
+  userId: string
+  exportedAt: string
+  memories: MemoryItem[]
+  chats: Array<{ userId: string; threadId: string | null; turnId: string | null; role: string; content: string; ts: string }>
+  twin: unknown
+  twinGeneratedAt: string | null
+}
+
+export interface MemoryControlsOptions {
+  repository: MemoryRepository
+  nowIso?: () => string
+  idGenerator?: () => string
+}
+
+export class MemoryControls {
+  private readonly now: () => string
+  private readonly newId: () => string
+
+  constructor(private readonly opts: MemoryControlsOptions) {
+    this.now = opts.nowIso ?? nowIso
+    this.newId = opts.idGenerator ?? defaultVersionId
+  }
+
+  /** 直接 upsert(测试 / 内部注入用;不走 edit 版本快照)。 */
+  upsertDirect(input: UpsertDirectInput): MemoryItem {
+    const item = new MemoryItem(
+      input.id,
+      input.userId,
+      input.type,
+      input.content,
+      MemoryScope.USER,
+      [],
+      input.importance ?? 0.5,
+      input.confidence ?? 0.7,
+      this.now(),
+      this.now(),
+      null,
+      new MemoryProvenance('user')
+    )
+    return this.opts.repository.upsert(item)
+  }
+
+  listMemories(userId: string, opts: ListMemoriesOptions = {}): MemoryItem[] {
+    let items = this.opts.repository.list(userId, {
+      types: opts.types,
+      scopes: opts.scopes,
+      includeDeleted: opts.includeDeleted ?? false
+    })
+    if (opts.search) {
+      const s = opts.search.toLowerCase()
+      items = items.filter((it) => it.content.toLowerCase().includes(s) || it.tags.some((t) => t.toLowerCase().includes(s)))
+    }
+    return items
+  }
+
+  getMemory(memoryId: string): MemoryItem | null {
+    return this.opts.repository.get(memoryId)
+  }
+
+  editMemory(memoryId: string, patch: EditMemoryInput): MemoryItem | null {
+    const before = this.opts.repository.get(memoryId)
+    if (!before) return null
+    // 先存版本快照(改之前的状态)
+    this.recordSnapshot(before)
+    if (patch.content !== undefined) before.content = patch.content
+    if (patch.importance !== undefined) before.importance = Math.max(0, Math.min(1, patch.importance))
+    if (patch.tags !== undefined) before.tags = [...patch.tags]
+    if (patch.type !== undefined) before.type = patch.type
+    before.metadata.edited_at = this.now()
+    return this.opts.repository.upsert(before)
+  }
+
+  deleteMemory(memoryId: string, opts: { hard?: boolean } = {}): boolean {
+    return this.opts.repository.delete(memoryId, { hard: opts.hard ?? false })
+  }
+
+  /** "Don't mention this again" —— 抑制提及(≠ 删除)。transition 到 SUPPRESSED。 */
+  suppressMemory(memoryId: string): MemoryItem | null {
+    const item = this.opts.repository.get(memoryId)
+    if (!item) return null
+    if (item.status !== MemoryLifecycleStatus.SUPPRESSED) {
+      item.transitionStatus(MemoryLifecycleStatus.SUPPRESSED, { actor: 'controls.suppress', reason: 'dont_mention' })
+    }
+    return this.opts.repository.upsert(item)
+  }
+
+  optOut(userId: string, reason = 'user_request'): void {
+    const marker = new MemoryItem(
+      `optout_${userId}`,
+      userId,
+      MemoryType.PREFERENCE,
+      `Dream 记忆系统已被该用户禁用 (reason=${reason})`,
+      MemoryScope.USER,
+      [OPT_OUT_TAG, 'preference'],
+      1,
+      1,
+      this.now(),
+      this.now(),
+      null,
+      new MemoryProvenance('user', null, null, null, 1, undefined, `opt_out: ${reason}`),
+      null,
+      null,
+      [],
+      { opt_out: true, reason, opt_out_at: this.now() }
+    )
+    this.opts.repository.upsert(marker)
+  }
+
+  optIn(userId: string): number {
+    const items = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    let removed = 0
+    for (const it of items) {
+      if (it.tags.includes(OPT_OUT_TAG) || it.metadata.opt_out === true) {
+        this.opts.repository.delete(it.id, { hard: true })
+        removed += 1
+      }
+    }
+    return removed
+  }
+
+  isOptedOut(userId: string): boolean {
+    const items = this.opts.repository.list(userId, {})
+    return items.some((it) => it.tags.includes(OPT_OUT_TAG) || it.metadata.opt_out === true)
+  }
+
+  export(userId: string): ExportResult {
+    const memories = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    const chats = this.opts.repository.loadRecentChats(userId, 10_000)
+    const twin = this.opts.repository.loadTwin(userId)
+    return {
+      userId,
+      exportedAt: this.now(),
+      memories,
+      chats,
+      twin: twin ? safeJsonParse(twin[0]) : null,
+      twinGeneratedAt: twin ? twin[1] : null
+    }
+  }
+
+  purge(userId: string): number {
+    const items = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    let count = 0
+    for (const it of items) {
+      this.opts.repository.delete(it.id, { hard: true })
+      count += 1
+    }
+    return count
+  }
+
+  // ----------------------------------------------------------------
+  // 版本历史(对齐文档 §5.2 "查看 saved memories 历史版本并按日期恢复")
+  // ----------------------------------------------------------------
+
+  /** 列出某条 memory 的所有历史快照(newest-first)。 */
+  versionHistory(memoryId: string): VersionSnapshot[] {
+    const events = this.opts.repository.recentEvents('version_snapshot', { limit: 500 })
+    const snaps: VersionSnapshot[] = []
+    for (const e of events) {
+      const p = e.payload as { memory_id?: string; content?: string; importance?: number; tags?: string[]; type?: string; version_id?: string } | null
+      if (!p || p.memory_id !== memoryId) continue
+      snaps.push({
+        versionId: p.version_id ?? '',
+        at: e.at,
+        content: String(p.content ?? ''),
+        importance: typeof p.importance === 'number' ? p.importance : 0.5,
+        tags: Array.isArray(p.tags) ? (p.tags as string[]) : [],
+        type: typeof p.type === 'string' ? parseMemoryType(p.type) : MemoryType.FACT
+      })
+    }
+    return snaps
+  }
+
+  /** 把指定版本快照的内容回滚写回(创建一个新快照保存当前,然后写入旧版本)。 */
+  restoreVersion(memoryId: string, versionId: string): MemoryItem | null {
+    const history = this.versionHistory(memoryId)
+    const target = history.find((s) => s.versionId === versionId)
+    if (!target) return null
+    const current = this.opts.repository.get(memoryId)
+    if (!current) return null
+    // 先保存当前状态为新快照(回滚也是一种 edit)
+    this.recordSnapshot(current)
+    current.content = target.content
+    current.importance = target.importance
+    current.tags = [...target.tags]
+    current.type = target.type
+    current.metadata.restored_at = this.now()
+    return this.opts.repository.upsert(current)
+  }
+
+  private recordSnapshot(item: MemoryItem): void {
+    this.opts.repository.logEvent('version_snapshot', {
+      recordId: item.id,
+      payload: {
+        memory_id: item.id,
+        version_id: this.newId(),
+        at: this.now(),
+        content: item.content,
+        importance: item.importance,
+        tags: [...item.tags],
+        type: item.type
+      }
+    })
+  }
+}
+
+function safeJsonParse(s: string): unknown {
+  try {
+    return JSON.parse(s)
+  } catch {
+    return null
+  }
+}
+
+function defaultVersionId(): string {
+  return `ver_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+}

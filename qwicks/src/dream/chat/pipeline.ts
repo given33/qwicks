@@ -39,7 +39,7 @@ import { HeuristicExtractor } from '../extraction/heuristic-extractor.js'
 import { LlmExtractor } from '../extraction/llm-extractor.js'
 import { ExtractionRouter } from '../extraction/router.js'
 import { sanitizeForMemory } from '../security/sanitizer.js'
-import { RetrievalPipeline } from '../retrieval/pipeline.js'
+import { RetrievalPipeline, type RetrievalHit } from '../retrieval/pipeline.js'
 import { compare, decide } from '../conflict/engine.js'
 import {
   FreshnessBoostGate,
@@ -54,6 +54,9 @@ import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/na
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
 import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
+import { MemoryControls } from '../controls/api.js'
+import { buildMemorySummary, type MemorySummary } from '../memory_summary/builder.js'
+import { buildMemoryLedger, type BuildLedgerInput, type MemoryLedger } from '../memory_sources/ledger.js'
 
 export interface ChatResult {
   reply: string
@@ -62,7 +65,7 @@ export interface ChatResult {
   newMemories: MemoryItem[]
   hits: Array<{ item: MemoryItem; score: number }>
   /** 经过 ObservableGate 重排序/剔除后的最终注入集合(suppress 的不在此)。 */
-  routedHits: Array<{ item: MemoryItem; score: number }>
+  routedHits: RetrievalHit[]
   twin: ReturnType<TwinBuilder['build']> | null
   extractorBackend: string
   /** Phase 2:ObservableGate 决策汇总(评测/panel 用)。 */
@@ -106,6 +109,8 @@ export class DreamMemorySystem {
   readonly observableGate: ObservableGate
   readonly promptBuilder = new NaturalPromptBuilder()
   readonly controls = new DreamControls()
+  /** Phase 3:用户控制(list/edit/delete/suppress/opt-out/export/purge/versions)。 */
+  readonly controls2: MemoryControls
   private readonly userId: string
 
   constructor(opts: DreamMemorySystemOptions) {
@@ -117,6 +122,7 @@ export class DreamMemorySystem {
 
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
+    this.controls2 = new MemoryControls({ repository: this.repository })
 
     // embeddings:HTTP 优先 + hash 回退。Phase 1 默认 hash(无 embedding 服务时);
     // 若配置了 embedding baseUrl/model 可换 HTTP。这里 Phase 1 用 hash 保证零依赖可用。
@@ -398,6 +404,20 @@ export class DreamMemorySystem {
       out.push(item)
     }
     return out
+  }
+
+  /** Phase 3:构建用户的 7 区 Memory Summary。 */
+  buildSummary(userId: string): MemorySummary {
+    const items = this.repository.list(userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
+    return buildMemorySummary(items, { userId })
+  }
+
+  /** Phase 3:构建本次回答的 Memory Sources ledger(used/downranked/suppressed/skipped)。 */
+  buildLedger(input: BuildLedgerInput): MemoryLedger {
+    return buildMemoryLedger({
+      ...input,
+      allUserItems: input.allUserItems ?? this.repository.list(input.userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
+    })
   }
 
   close(): void {
