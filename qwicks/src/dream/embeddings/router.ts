@@ -20,12 +20,37 @@ export interface EmbeddingRouterOptions {
   probeOnWarmup?: boolean
 }
 
-export class EmbeddingRouter {
+export class EmbeddingRouter implements Embedder {
   private active: Embedder
   private failovered = false
 
   constructor(private readonly opts: EmbeddingRouterOptions) {
     this.active = opts.primary
+  }
+
+  // ---- Embedder 接口(委托给当前 active 后端)----
+  name(): string {
+    return this.active.name()
+  }
+  dim(): number {
+    return this.active.dim()
+  }
+  embed(text: string): number[] {
+    // 同步 embed:若 active 是 HttpEmbedder 会抛错(用 embedAsync)。
+    // 调用方(retrieval.embedQuery)应优先 embedAsync。这里直接委托。
+    return this.active.embed(text)
+  }
+  embedBatch(texts: string[]): number[][] {
+    return this.active.embedBatch(texts)
+  }
+  healthCheck(opts?: { probe?: boolean }): EmbeddingHealth {
+    return this.health()
+  }
+  strict(): boolean {
+    return !(this.opts.allowCpuFallback ?? false)
+  }
+  allowCpuFallback(): boolean {
+    return this.opts.allowCpuFallback ?? false
   }
 
   activeName(): string {

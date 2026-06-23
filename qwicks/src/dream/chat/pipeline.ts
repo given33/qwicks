@@ -37,6 +37,8 @@ import { DreamConfig } from '../config.js'
 import { SqliteMemoryRepository } from '../storage/sqlite-repository.js'
 import { FlatVectorIndex } from '../vectordb/flat-index.js'
 import { HashEmbedder } from '../embeddings/hash-provider.js'
+import { HttpEmbedder } from '../embeddings/http-provider.js'
+import type { Embedder } from '../embeddings/base.js'
 import { EmbeddingRouter } from '../embeddings/router.js'
 import { HeuristicExtractor } from '../extraction/heuristic-extractor.js'
 import { LlmExtractor } from '../extraction/llm-extractor.js'
@@ -165,7 +167,7 @@ export class DreamMemorySystem {
   /** 适配 qwicks 既有 MemoryStore 接口的扁平视图(runtime 把它喂给 HTTP/工具/agent-loop)。 */
   readonly dreamStore: import('../dream-store.js').DreamMemoryStore
   readonly vectorDb: FlatVectorIndex
-  readonly embedder: HashEmbedder
+  readonly embedder: Embedder
   readonly retrieval: RetrievalPipeline
   readonly extraction: ExtractionRouter
   readonly synthesizer: HeuristicSynthesizer | LlmSynthesizer
@@ -201,9 +203,21 @@ export class DreamMemorySystem {
     })
     this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
 
-    // embeddings:HTTP 优先 + hash 回退。Phase 1 默认 hash(无 embedding 服务时);
-    // 若配置了 embedding baseUrl/model 可换 HTTP。这里 Phase 1 用 hash 保证零依赖可用。
-    this.embedder = new HashEmbedder({ dim: 256 })
+    // embeddings:HTTP 优先 + hash 回退(报告 §4.7 P2-2)。
+    // 若配置了 embedding baseUrl,用 EmbeddingRouter(HttpEmbedder + HashEmbedder 回退);
+    // 否则纯 HashEmbedder(零依赖)。
+    const embConfig = this.config.embedding
+    if (embConfig && embConfig.backend === 'http' && embConfig.baseUrl) {
+      const http = new HttpEmbedder({
+        baseUrl: embConfig.baseUrl,
+        model: embConfig.modelName || 'bge-m3',
+        dim: embConfig.dim || 1024,
+        ...(embConfig.apiKey ? { apiKey: embConfig.apiKey } : {})
+      })
+      this.embedder = new EmbeddingRouter({ primary: http, fallback: new HashEmbedder({ dim: 256 }) })
+    } else {
+      this.embedder = new HashEmbedder({ dim: 256 })
+    }
 
     this.vectorDb = new FlatVectorIndex({
       dim: this.embedder.dim(),

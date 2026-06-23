@@ -146,7 +146,10 @@ export class RetrievalPipeline {
     if (candidates.length === 0) return []
 
     // 2) 五通道评分
-    const qvec = this.embedSync(query.query)
+    // v3(P2-2 报告 §4.7):查询嵌入改为 async-first —— 若 embedder 支持 embedAsync
+    // (HttpEmbedder),用它;否则回退同步(HashEmbedder)。这样真实 HTTP embedding
+    // 后端的 vector 通道不会因为同步 embed 抛错而变成 0。
+    const qvec = await this.embedQuery(query.query)
     const queryTokens = tokenize(query.query)
     const hits: RetrievalHit[] = []
 
@@ -232,6 +235,23 @@ export class RetrievalPipeline {
     } catch {
       return null
     }
+  }
+
+  /**
+   * v3(P2-2 报告 §4.7):异步查询嵌入。优先 embedAsync(HttpEmbedder),
+   * 失败/不可用回退同步(HashEmbedder)。返回 null 时 vector 通道为 0。
+   */
+  private async embedQuery(text: string): Promise<number[] | null> {
+    const e = this.opts.embedder as Embedder & { embedAsync?: (t: string) => Promise<number[]> }
+    if (typeof e.embedAsync === 'function') {
+      try {
+        const v = await e.embedAsync(text)
+        return v
+      } catch {
+        // HTTP embed 失败 → 回退同步(可能也失败,返回 null)
+      }
+    }
+    return this.embedSync(text)
   }
 
   /** embedder 可能是 async(HttpEmbedder)或 sync(HashEmbedder)。优先 async,失败回退 sync。 */
