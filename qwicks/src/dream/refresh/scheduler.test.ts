@@ -126,7 +126,7 @@ describe('DreamingScheduler', () => {
     const reinf = new MemoryReinforcement({ repository: repo })
     const sched = new DreamingScheduler({ decay, reinforcement: reinf })
     const ran = sched.tick({ userId: 'alice' })
-    expect(ran).toBe(false)
+    expect(ran.ran).toBe(false)
   })
 
   it('markDirty + tick runs decay+reinforcement for that user and clears dirty', () => {
@@ -139,7 +139,7 @@ describe('DreamingScheduler', () => {
     sched.markDirty('alice')
     expect(sched.isDirty('alice')).toBe(true)
     const ran = sched.tick({ userId: 'alice' })
-    expect(ran).toBe(true)
+    expect(ran.ran).toBe(true)
     expect(sched.isDirty('alice')).toBe(false)
     expect(repo.get('a')!.status).toBe(MemoryLifecycleStatus.EXPIRED)
   })
@@ -151,7 +151,7 @@ describe('DreamingScheduler', () => {
     const sched = new DreamingScheduler({ decay, reinforcement: reinf })
     sched.markDirty('alice')
     sched.markDirty('bob')
-    expect(sched.tick()).toBe(true)
+    expect(sched.tick().ran).toBe(true)
     expect(sched.dirtyCount()).toBe(0)
   })
 })

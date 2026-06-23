@@ -15,6 +15,8 @@ import { MemoryLifecycleStatus as Status } from '../types.js'
 import { assess } from '../temporal/engine.js'
 import type { MemoryItem } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
+import type { TemporalDreamer } from './temporal-dreamer.js'
+import type { TopOfMindBalancer } from './top-of-mind.js'
 
 const DO_NOT_DECAY_TAG = '__do_not_decay__'
 
@@ -86,6 +88,17 @@ export class MemoryReinforcement {
 export interface DreamingSchedulerOptions {
   decay: MemoryDecay
   reinforcement: MemoryReinforcement
+  /** v3:可选的时间状态转换器(planned→occurred 等)。 */
+  temporalDreamer?: TemporalDreamer
+  /** v3:可选的 top-of-mind 平衡器。 */
+  topOfMindBalancer?: TopOfMindBalancer
+}
+
+export interface DreamingTickResult {
+  ran: boolean
+  /** v3:各阶段的转换统计(若有配置)。 */
+  temporal?: import('./temporal-dreamer.js').TemporalDreamerResult
+  topOfMind?: import('./top-of-mind.js').TopOfMindBalancerResult
 }
 
 export class DreamingScheduler {
@@ -108,20 +121,31 @@ export class DreamingScheduler {
   }
 
   /**
-   * 跑一轮 dreaming:decay + reinforcement。指定 userId 只处理该 user 且清其 dirty;
-   * 不指定则处理所有 dirty user。返回是否实际跑了(有 dirty)。
+   * 跑一轮 dreaming:decay + reinforcement(+ v3 可选 temporal/top-of-mind)。
+   * 指定 userId 只处理该 user 且清其 dirty;不指定则处理所有 dirty user。
+   * 返回 DreamingTickResult(ran=true 表示实际跑了)。
    */
-  tick(opts: { userId?: string } = {}): boolean {
+  tick(opts: { userId?: string } = {}): DreamingTickResult {
     if (opts.userId) {
-      if (!this.dirty.has(opts.userId)) return false
+      if (!this.dirty.has(opts.userId)) return { ran: false }
       this.opts.decay.apply({ userId: opts.userId })
+      const temporal = this.opts.temporalDreamer?.apply({ userId: opts.userId })
+      const topOfMind = this.opts.topOfMindBalancer?.apply({ userId: opts.userId })
       this.dirty.delete(opts.userId)
-      return true
+      return { ran: true, temporal, topOfMind }
     }
-    if (this.dirty.size === 0) return false
-    for (const userId of this.dirty) this.opts.decay.apply({ userId })
+    if (this.dirty.size === 0) return { ran: false }
+    let temporal: import('./temporal-dreamer.js').TemporalDreamerResult | undefined
+    let topOfMind: import('./top-of-mind.js').TopOfMindBalancerResult | undefined
+    for (const userId of this.dirty) {
+      this.opts.decay.apply({ userId })
+      const t = this.opts.temporalDreamer?.apply({ userId })
+      const tom = this.opts.topOfMindBalancer?.apply({ userId })
+      if (t) temporal = mergeTemporal(temporal, t)
+      if (tom) topOfMind = mergeTopOfMind(topOfMind, tom)
+    }
     this.dirty.clear()
-    return true
+    return { ran: true, temporal, topOfMind }
   }
 
   /** 启动后台定时 dreaming(对齐 Python start_dreaming(interval_sec))。 */
@@ -143,5 +167,32 @@ export class DreamingScheduler {
       clearInterval(this.timer)
       this.timer = null
     }
+  }
+}
+
+/** 合并多次 apply 的 temporal 结果(跨 user)。 */
+function mergeTemporal(
+  acc: import('./temporal-dreamer.js').TemporalDreamerResult | undefined,
+  next: import('./temporal-dreamer.js').TemporalDreamerResult
+): import('./temporal-dreamer.js').TemporalDreamerResult {
+  if (!acc) return next
+  return {
+    occurred: acc.occurred + next.occurred,
+    expiredTemporal: acc.expiredTemporal + next.expiredTemporal,
+    changedMemoryIds: [...acc.changedMemoryIds, ...next.changedMemoryIds],
+    changeLog: [...acc.changeLog, ...next.changeLog]
+  }
+}
+
+/** 合并多次 apply 的 top-of-mind 结果(跨 user)。 */
+function mergeTopOfMind(
+  acc: import('./top-of-mind.js').TopOfMindBalancerResult | undefined,
+  next: import('./top-of-mind.js').TopOfMindBalancerResult
+): import('./top-of-mind.js').TopOfMindBalancerResult {
+  if (!acc) return next
+  return {
+    promoted: acc.promoted + next.promoted,
+    demoted: acc.demoted + next.demoted,
+    changedMemoryIds: [...acc.changedMemoryIds, ...next.changedMemoryIds]
   }
 }

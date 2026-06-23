@@ -54,6 +54,8 @@ import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/na
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
 import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
+import { TemporalDreamer } from '../refresh/temporal-dreamer.js'
+import { TopOfMindBalancer } from '../refresh/top-of-mind.js'
 import { DreamMemoryStore } from '../dream-store.js'
 import { MemoryControls } from '../controls/api.js'
 import { buildMemorySummary, type MemorySummary } from '../memory_summary/builder.js'
@@ -184,7 +186,16 @@ export class DreamMemorySystem {
     this.twinBuilder = new TwinBuilder()
     const decay = new MemoryDecay({ repository: this.repository })
     const reinforcement = new MemoryReinforcement({ repository: this.repository })
-    this.scheduler = new DreamingScheduler({ decay, reinforcement })
+    // v3:TemporalDreamer(planned→occurred)+ TopOfMindBalancer(salience 排序)
+    // 都接入 scheduler.tick,让 dreaming 自动执行时间转换与 top-of-mind 调整。
+    const temporalDreamer = new TemporalDreamer({ repository: this.repository })
+    const topOfMindBalancer = new TopOfMindBalancer({ repository: this.repository })
+    this.scheduler = new DreamingScheduler({
+      decay,
+      reinforcement,
+      temporalDreamer,
+      topOfMindBalancer
+    })
 
     // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)
     this.observableGate = new ObservableGate()
