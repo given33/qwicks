@@ -452,6 +452,8 @@ export type AgentLoopOptions = {
   skillRuntime?: SkillRuntime
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
+  /** Phase 6 审计修复:如果 dreamSystem 存在,retrieveMemories 走语义 5 通道检索而非 n-gram。 */
+  dreamSystem?: { retrieve(query: string, userId: string, topK: number): Promise<Array<{ item: { id: string; content: string; scope: string }; score: number }>> }
   tokenEconomy?: TokenEconomyConfig
   contextCompaction?: ContextCompactionConfig
   toolStorm?: ToolStormBreakerOptions & { enabled?: boolean }
@@ -2570,6 +2572,17 @@ export class AgentLoop {
     prompt: string
     workspace: string
   }) {
+    // Phase 6 审计修复:如果有 dreamSystem,走语义 5 通道检索 + 4 门控(非 n-gram)。
+    if (this.opts.dreamSystem) {
+      try {
+        const hits = await this.opts.dreamSystem.retrieve(input.prompt, 'default', 8)
+        const memories = hits.map((h) => ({ id: h.item.id, content: h.item.content, scope: h.item.scope }))
+        if (this.opts.memoryStore) this.opts.memoryStore.setLastInjected(memories.map((m) => m.id))
+        return memories
+      } catch {
+        // fail-open: fall through to n-gram path
+      }
+    }
     if (!this.opts.memoryStore) return []
     const memories = await this.opts.memoryStore.retrieve({
       query: input.prompt,

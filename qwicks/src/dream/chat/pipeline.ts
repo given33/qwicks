@@ -458,6 +458,19 @@ export class DreamMemorySystem {
     })
   }
 
+  /** Phase 6 审计修复:轻量级语义检索接口(供 agent-loop 直接调用,非 chat 全流程)。 */
+  async retrieve(query: string, userId: string, topK: number): Promise<Array<{ item: MemoryItem; score: number }>> {
+    const hits = await this.retrieval.retrieve({ userId, query, topK })
+    // 跑 ObservableGate(轻量)
+    const allItems = this.repository.list(userId, {})
+    const gateReport = this.observableGate.run({ userId, query, candidates: hits.map((h) => ({ item: h.item, score: h.score })), allUserItems: allItems })
+    return gateReport.decisions
+      .filter((d) => d.finalDecision !== 'suppress')
+      .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { item: h.item, score: Math.max(0, d.scoreAfter) } })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+  }
+
   /** Phase 5:从 Gmail 拉取邮件,抽取记忆(带 connector source lineage)。 */
   async ingestGmail(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
     const token = this.oauthStore.load(account)

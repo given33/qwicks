@@ -115,7 +115,13 @@ export function tickVitals(vitals: PetVitals, elapsedMs: number): PetVitals {
     health * MOOD_HEALTH_WEIGHT
   ))
 
-  return { hunger, cleanliness, health, mood }
+  // BUG-7 修复：所有输出 clamp 到 [0,100]
+  return {
+    hunger: clamp(hunger),
+    cleanliness: clamp(cleanliness),
+    health: clamp(health),
+    mood: clamp(mood)
+  }
 }
 
 function vitalityLow(value: number, threshold: number): boolean {
