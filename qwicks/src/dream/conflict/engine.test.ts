@@ -64,6 +64,23 @@ describe('ConflictEngine', () => {
     expect(a.verdict).toBe('none')
   })
 
+  it('v3 P2-4: SUPERSEDES on location-slot mismatch (moved from A to B)', () => {
+    // "I live in San Francisco" → "I now live in Tokyo" (same live-in, different place)
+    const existing = mk('e1', 'I live in San Francisco', MemoryType.FACT, [1, 0.8])
+    const fresh = mk('n1', 'I now live in Tokyo', MemoryType.FACT, [0.8, 1])
+    const a = compare(fresh, existing)
+    expect(a.verdict).toBe('supersedes')
+    expect(a.reason).toContain('location_slot_supersede')
+  })
+
+  it('v3 P2-4: COMPATIBLE (not supersede) when same location mentioned', () => {
+    const existing = mk('e1', 'I live in San Francisco', MemoryType.FACT, [1, 0.8])
+    const fresh = mk('n1', 'I work in San Francisco', MemoryType.FACT, [0.8, 1])
+    const a = compare(fresh, existing)
+    // Same location → not a location-slot supersede (overlap detected)
+    expect(a.reason).not.toContain('location_slot_supersede')
+  })
+
   it('NONE when existing is deleted', () => {
     const existing = mk('e1', 'I prefer Python', MemoryType.PREFERENCE, [1, 0])
     existing.metadata.__deleted__ = true

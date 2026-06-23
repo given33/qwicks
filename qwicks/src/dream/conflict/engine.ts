@@ -32,8 +32,48 @@ const NEGATION_PATTERNS: readonly RegExp[] = [
 ]
 
 const REPLACE_PATTERNS: readonly RegExp[] = [
-  /换成|改为|改成|改用|改去|替代|替换|update to|switch to|change to/i
+  /换成|改为|改成|改用|改去|替代|替换|update to|switch to|change to/i,
+  // v3(P2-4 报告 §4):增强迁移/变更意图检测
+  /\bmoved?\s+to\b/i, /\brelocated\s+to\b/i, /\bnow\s+live\s+in\b/i,
+  /\bI\s+(?:now|currently)\s+(?:live|work|study|am based)\s+in\b/i,
+  /搬到了?|搬去|现在住在|现在在|搬到|迁到|换到了?/
 ]
+
+/**
+ * v3(P2-4 报告 §4):结构化槽位匹配 —— 检测"住址/工作地变更"类 supersede。
+ * 若新旧记忆都包含 live-in/work-in 语义但地点不同,判定为 SUPERSEDES。
+ */
+const LOCATION_SLOT: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(?:live|live[sd]?|living|reside[sd]?|based|work[sing]?|study(?:ing)?)\s+(?:in|at)\s+([A-Z][\w\s.]+?)(?:[.,;!?\n]|$)/i, 'location'],
+  [/(?:住在|在|来自|位于|搬到了?|搬去|现在住在)\s*([一-鿿]{2,8}[市省]?)/, 'location']
+]
+
+/**
+ * 检测"同槽位不同值"supersede:两条记忆都含 live-in/location 槽,
+ * 但值不同(地点不同)→ SUPERSEDES。
+ */
+function detectLocationSupersede(newText: string, oldText: string): boolean {
+  const newLocs = extractLocations(newText)
+  const oldLocs = extractLocations(oldText)
+  if (newLocs.size === 0 || oldLocs.size === 0) return false
+  // 有重叠则 COMPATIBLE(同一地点);完全不重叠 → SUPERSEDES(搬家了)
+  let overlap = false
+  for (const l of newLocs) {
+    for (const o of oldLocs) {
+      if (l.toLowerCase() === o.toLowerCase() || l.includes(o) || o.includes(l)) overlap = true
+    }
+  }
+  return !overlap
+}
+
+function extractLocations(text: string): Set<string> {
+  const out = new Set<string>()
+  for (const [pat] of LOCATION_SLOT) {
+    const m = text.match(pat)
+    if (m && m[1]) out.add(m[1].trim())
+  }
+  return out
+}
 
 function tokenize(text: string): Set<string> {
   return new Set((text.toLowerCase().match(/[\w\u4e00-\u9fff]+/g) ?? []))
@@ -96,6 +136,11 @@ export function compare(newItem: MemoryItem, existing: MemoryItem): ConflictAsse
   // 2) 重复
   if (sameType && jac > 0.6 && cos > 0.85) {
     return { verdict: ConflictVerdict.DUPLICATE, newId: newItem.id, relatedId: existing.id, reason: reasonFor({ ...detail, rule: 'duplicate' }), confidence: 0.85 }
+  }
+  // v3(P2-4 报告 §4):结构化 location 槽位 supersede ——
+  // "I now live in B" 取代 "I live in A"(同 live-in 语义,不同地点)
+  if (sameType && detectLocationSupersede(newItem.content, existing.content) && jac > 0.3) {
+    return { verdict: ConflictVerdict.SUPERSEDES, newId: newItem.id, relatedId: existing.id, reason: reasonFor({ ...detail, rule: 'location_slot_supersede' }), confidence: 0.8 }
   }
   // 3) 替代
   if (sameType && cos > 0.75 && (newRep || newItem.importance > existing.importance + 0.1)) {

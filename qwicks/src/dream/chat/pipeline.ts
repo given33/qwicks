@@ -985,6 +985,17 @@ function detectTemporalFromContent(content: string): TemporalDetection {
       result.expiresAt = window.validUntil
     }
   }
+  // v3(P2-4):若未设置 topic(非 travel),尝试 diet/location/work topic
+  if (!result.topic) {
+    const lower = content.toLowerCase()
+    if (/\b(?:vegan|vegetarian|pescatarian|kosher|halal|gluten.?free|keto|paleo)\b|(素食|纯素|清真|不吃肉|无麸质|生酮)/i.test(content)) {
+      result.topic = 'diet'
+    } else if (/\b(?:live|work|study|based)\s+in\b|(?:住在|在|来自|位于)\s*([一-鿿]{2,8})/i.test(content)) {
+      result.topic = 'location'
+    } else if (/\b(?:work|job|employ)\b|(?:工作|就职|公司)/i.test(content)) {
+      result.topic = 'work'
+    }
+  }
   return result
 }
 
