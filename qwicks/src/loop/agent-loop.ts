@@ -2688,7 +2688,22 @@ export class AgentLoop {
         userId: 'default', userPrompt: input.userPrompt, assistantReply: input.assistantReply,
         threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
       })
-    } catch { /* fail-open: 记忆写入失败不中断用户对话 */ }
+    } catch (err) {
+      // §5.5(二轮报告):fail-open 必须可观测 —— 记录 dream_stage_failed 事件,
+      // 否则线上只表现为"系统突然不记得"。
+      try {
+        await this.opts.events.record({
+          kind: 'error',
+          threadId: input.threadId ?? '',
+          turnId: input.turnId ?? '',
+          message: `Dream afterTurn failed: ${err instanceof Error ? err.message : String(err)}`,
+          code: 'dream_stage_failed',
+          severity: 'warning'
+        })
+      } catch {
+        // 事件记录本身失败也不能中断 turn
+      }
+    }
   }
 
   /** Convenience factory for tests: builds a loop with sensible defaults. */

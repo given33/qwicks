@@ -81,6 +81,43 @@ describe('ConflictEngine', () => {
     expect(a.reason).not.toContain('location_slot_supersede')
   })
 
+  // 二轮报告 §4.7 建议的 5 个 location supersede 测试用例
+  it('§4.7 case 1: I live in SF -> I now live in NY = SUPERSEDES', () => {
+    const existing = mk('e1', 'I live in San Francisco', MemoryType.FACT, [1, 0.8])
+    const fresh = mk('n1', 'I now live in New York', MemoryType.FACT, [0.8, 1])
+    expect(compare(fresh, existing).verdict).toBe('supersedes')
+  })
+
+  it('§4.7 case 2: visiting NY this week -> live in SF = NOT supersede (visit ≠ live)', () => {
+    const existing = mk('e1', 'I am visiting New York this week', MemoryType.FACT, [0.5, 1])
+    const fresh = mk('n1', 'I live in San Francisco', MemoryType.FACT, [1, 0.5])
+    // visiting ≠ live-in slot,不同语义槽,不触发 location supersede
+    const a = compare(fresh, existing)
+    expect(a.reason).not.toContain('location_slot_supersede')
+  })
+
+  it('§4.7 case 3: 我住在北京 -> 我现在住在上海 = SUPERSEDES', () => {
+    const existing = mk('e1', '我住在北京', MemoryType.FACT, [1, 0.5])
+    const fresh = mk('n1', '我现在住在上海', MemoryType.FACT, [0.5, 1])
+    expect(compare(fresh, existing).verdict).toBe('supersedes')
+  })
+
+  it('§4.7 case 4: 现在在上海出差 -> 住在北京 = NOT supersede (出差 ≠ 居住)', () => {
+    const existing = mk('e1', '我现在在上海出差', MemoryType.FACT, [0.5, 1])
+    const fresh = mk('n1', '我住在北京', MemoryType.FACT, [1, 0.5])
+    // "出差" 不匹配 live-in 槽位(住在/在+城市),不触发 location supersede
+    const a = compare(fresh, existing)
+    expect(a.reason).not.toContain('location_slot_supersede')
+  })
+
+  it('§4.7 case 5: work in vs live in same city = NOT supersede (different slot)', () => {
+    const existing = mk('e1', 'I work in Tokyo', MemoryType.FACT, [0.8, 1])
+    const fresh = mk('n1', 'I live in Tokyo', MemoryType.FACT, [1, 0.8])
+    // Same city (Tokyo) → overlap → not supersede
+    const a = compare(fresh, existing)
+    expect(a.reason).not.toContain('location_slot_supersede')
+  })
+
   it('NONE when existing is deleted', () => {
     const existing = mk('e1', 'I prefer Python', MemoryType.PREFERENCE, [1, 0])
     existing.metadata.__deleted__ = true
