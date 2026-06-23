@@ -280,7 +280,7 @@ describe('[验收5] Memory Summary + Sources visibility', () => {
     const ledger = system.buildLedger({
       userId: 'alice',
       queryText: 'theme recommendation',
-      hits: result.hits.map((h) => ({ item: h.item, score: h.score })),
+      hits: result.hits as never,
       decisions: []
     })
     expect(ledger.userId).toBe('alice')

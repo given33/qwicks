@@ -500,3 +500,152 @@ Legacy persisted settings (`agentProvider: "codewhale"` or
 Legacy credentials, base URLs, ports, and model selections seed
 `agents.qwicks`; the saved settings file no longer keeps live
 CodeWhale or Reasonix agent entries.
+
+## Dream Memory System
+
+The Dream Memory System (`src/dream/`) is a long-term, semantic memory
+backend that learns from chat history, explicit saves, files, and connected
+apps (Gmail/Drive), then uses that context to personalize answers, rewrite
+search queries, and run background consolidation ("dreaming"). It is enabled
+by setting `capabilities.memory.backend = 'dream'` in the runtime config.
+
+### Data model
+
+Every memory is a `MemoryItem` (`src/dream/types.ts`) with:
+
+- **Identity**: `id`, `userId`, `type` (goal/skill/project/preference/
+  constraint/fact/episode/feedback), `scope`, `tags`, `content`.
+- **v3 strict fields**: `normalizedFacts[]`, `sourceIds[]`,
+  `temporalState` (planned/current/occurred/expired/superseded),
+  `validFrom`/`validUntil`, `supersedes[]`/`supersededBy[]`,
+  `isTopOfMind`, `isSuppressed`, `userCorrected`, `salience`,
+  `topic`, `lastUsedAt`, `sensitivity`, `shareable`.
+- **Lifecycle**: a 9-state machine (`active`/`suppressed`/`expired`/
+  `superseded`/`deleted`/`connector_revoked`/`archived`/`hypothesis`/
+  `confirmed`) with append-only `statusHistory`.
+
+Three first-class entities back provenance and control:
+
+- **`SourceRecord`** — a separate row per source (chat turn, file, Gmail
+  message, custom instruction, saved memory, Drive file) with `externalRef`
+  for idempotent ingest. Memories reference sources via `sourceIds`.
+- **`SuppressionRule`** — a "Don't mention this again" rule with scope
+  `memory`/`source`/`summary`/`topic`. Suppress ≠ delete: the data stays,
+  but the memory is excluded from proactive mentions (users can still ask
+  explicitly).
+- **`DerivationRecord`** — the dependency graph for synthesized memories.
+
+### The 12-stage chat loop
+
+`DreamMemorySystem.chat()` (`src/dream/chat/pipeline.ts`) runs:
+
+1. **temporary check** — zero side-effects (no memory, no chat log, no source)
+2. **opt-out check** — disabled users are fully invisible
+3. **save chat** + create/reuse a chat `SourceRecord`
+4. **extract** (LLM → heuristic fallback) → candidate drafts
+5. **sanitize** (PII redact / injection quarantine / reject)
+6. **persist drafts** (embed → conflict-resolve → store), linking to the
+   source via `sourceIds` and inferring `temporalState` from content
+7. **retrieve** (5-channel hybrid: vector / BM25 / exact / recency /
+   importance, with 4 hard gates)
+8. **ObservableGate** (judicious demote / freshness boost / user correction)
+9. **suppression filter** — drop MEMORY/TOPIC-suppressed hits
+10. **SelectiveInjectionRouter** (5-D: intent / relevance / risk / utility /
+    budget) — irrelevant queries get zero injection
+11. **query rewrite** — slot-fill diet/location/preferences for search/tools
+12. **twin build + synthesize + prompt build** → reply, then **dreaming**
+    marks the user dirty for background consolidation
+
+`ChatResult` exposes `statusHints` (`remembering`, `personalizing`,
+`memorySourcesUsed`, `rewrittenQueryFromMemory`) per the document's §12.
+
+### Dreaming pipeline
+
+`DreamingScheduler.tick()` (`src/dream/refresh/`) runs four stages:
+
+- **`MemoryDecay`** — `expiresAt` passed → lifecycle `EXPIRED`; stale →
+  importance demotion.
+- **`MemoryReinforcement`** — retrieved memories get importance boosts.
+- **`TemporalDreamer`** (v3) — `PLANNED` memories whose `validUntil` has
+  passed are converted to `OCCURRED` with historized content
+  ("I am going to visit Singapore" → "I visited Singapore…"). `CURRENT`
+  memories past `validUntil` become `temporal_state=expired`.
+- **`TopOfMindBalancer`** (v3) — promotes high-salience/recency/usage
+  memories to `isTopOfMind`, demotes stale ones, caps the pool.
+
+The scheduler auto-ticks in a microtask after each chat that writes new
+memories, and can run on an interval via `start(intervalMs)`. Every
+transition writes an explainable change log to `memory_event`.
+
+### Controls & privacy
+
+`MemoryControls` (`src/dream/controls/api.ts`) exposes:
+
+- **Saved memory CRUD**: list (filter/search), get, edit (version snapshots),
+  delete (soft/hard), version history, restore by version.
+- **Suppression**: `suppress` (≠ delete, idempotent), `unsuppress`
+  (deactivate), `deleteSuppression` (physical removal), `isSuppressed`.
+- **Sources**: `upsertSource` (idempotent by externalRef), `getSource`,
+  `listSources`, `deleteSource`, `deleteSourceAndDerived` (cascade:
+  removes source + all derived inferred memories, preserves user-saved),
+  `memoriesDerivedFromSource`.
+- **Temporal**: `markOccurred` (manual planned→occurred).
+- **Reference chat history**: `disableReferenceChatHistory` (removes
+  chat-inferred memories, keeps saved memories + raw chat log).
+- **Opt-out / export / purge**: full data lifecycle.
+
+All operations are exposed over HTTP under `/v1/dream/*` (see
+`src/server/routes/dream.ts`): `summary`, `ledger`, `memory/:id/versions`,
+`memory/:id/restore`, `memory/:id/suppress`, `opt-out`, `opt-in`,
+`export`, `purge`, `pulse`, `ingest/gmail`, `ingest/drive`,
+`revoke-connector`, plus v3 routes `sources`, `sources/:id`,
+`sources/:id/lineage`, `sources/:id` (DELETE cascade), `suppressions`,
+`suppressions/unsuppress`, `suppressions/:id` (DELETE),
+`memory/:id/mark-occurred`, `disable-reference-chat-history`.
+
+### Running the dreaming pipeline
+
+```bash
+# From qwicks/ — run the full dream test suite (includes stress + acceptance)
+.tools/test.sh src/dream/
+
+# Type-check the dream module
+.tools/typecheck.sh
+
+# Run only the acceptance suite (maps to the 10 document criteria)
+.tools/test.sh src/dream/acceptance.test.ts
+```
+
+Programmatically, to trigger dreaming for a user:
+
+```typescript
+import { DreamMemorySystem } from './dream/chat/pipeline.js'
+const system = new DreamMemorySystem({ dataDir: './data' })
+await system.chat('alice', 'remember I am vegan')  // writes + marks dirty
+system.scheduler.tick({ userId: 'alice' })          // runs decay + temporal + top-of-mind
+```
+
+### Viewing / editing / deleting memories
+
+```typescript
+const controls = system.controls2
+controls.listMemories('alice')                       // list (excludes deleted)
+controls.listMemories('alice', { search: 'vegan' })  // search
+controls.editMemory('mem_1', { content: 'updated' }) // edit (versioned)
+controls.deleteMemory('mem_1')                        // soft delete
+controls.versionHistory('mem_1')                      // audit history
+controls.suppress({ userId: 'alice', scope: 'memory', target: 'mem_1' })
+controls.deleteSourceAndDerived('src_1', { hard: true })  // cascade
+```
+
+### Test coverage
+
+- `src/dream/types.test.ts` — data model + v3 fields round-trip.
+- `src/dream/storage/repository.test.ts` — SQLite CRUD + migrations.
+- `src/dream/controls/api.test.ts` — controls + cascade + suppression.
+- `src/dream/refresh/*.test.ts` — decay, temporal dreamer, top-of-mind.
+- `src/dream/chat/pipeline*.test.ts` — 12-stage loop + gating + v3.
+- `src/dream/evaluation/stress.test.ts` — 300 generated cases
+  (mixed/adversarial/seeded) with PII + injection safety gates.
+- `src/dream/acceptance.test.ts` — 14 end-to-end tests mapping 1:1 to
+  the document's 10 acceptance criteria.
