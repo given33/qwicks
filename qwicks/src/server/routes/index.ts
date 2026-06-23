@@ -70,7 +70,8 @@ import {
   dreamMarkOccurred,
   dreamDisableReferenceChatHistory,
   dreamTriggerDreaming,
-  dreamDreamingStatus
+  dreamDreamingStatus,
+  dreamEmbeddingHealth
 } from './dream.js'
 import {
   meshModelsResponse,
@@ -267,6 +268,10 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('GET', '/v1/dream/dreaming/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamDreamingStatus(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/embedding/health', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamEmbeddingHealth(runtime.dreamSystem)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

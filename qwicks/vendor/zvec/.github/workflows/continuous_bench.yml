@@ -1,0 +1,33 @@
+name: Continuous Benchmark
+on:
+  # Temporarily disabled. Restore original triggers below to re-enable.
+  # push:
+  #   branches: [ "main"]
+  #   paths-ignore:
+  #     - '**.md'
+  # workflow_dispatch:
+  workflow_dispatch:
+    inputs:
+      __disabled__:
+        description: 'This workflow is temporarily disabled.'
+        required: false
+
+concurrency:
+  group: cb-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: false
+    runs-on: vdbbench
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run VectorDBBench
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          bash .github/workflows/scripts/run_vdb.sh

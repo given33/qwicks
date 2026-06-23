@@ -327,6 +327,32 @@ export async function dreamDreamingStatus(system: DreamMemorySystem | undefined,
   })
 }
 
+/**
+ * v3(二轮报告 §5.4):embedding + vectorDB health endpoint。
+ * 返回当前 embedding 后端、维度、降级状态、向量数。
+ */
+export async function dreamEmbeddingHealth(system: DreamMemorySystem | undefined): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const embedderHealth = dream.embedder.healthCheck()
+  const vectorHealth = dream.vectorDb.healthCheck()
+  return jsonResponse({
+    embedding: {
+      backend: embedderHealth.backend,
+      dim: embedderHealth.dim,
+      status: embedderHealth.status,
+      degraded: embedderHealth.degraded,
+      probeOk: embedderHealth.probeOk
+    },
+    vectorDb: {
+      backend: vectorHealth.backend,
+      dim: vectorHealth.dim,
+      docCount: vectorHealth.docCount,
+      status: vectorHealth.status
+    }
+  })
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

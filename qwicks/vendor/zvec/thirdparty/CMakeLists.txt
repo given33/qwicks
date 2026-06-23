@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_policy(SET CMP0048 NEW)
+project(thirdparty)
+
+include(${PROJECT_ROOT_DIR}/cmake/utils.cmake)
+
+set(CMAKE_MACOSX_RPATH ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(EXTERNAL_BINARY_DIR ${CMAKE_BINARY_DIR}/external)
+set(EXTERNAL_INC_DIR ${CMAKE_BINARY_DIR}/external/usr/local/include)
+#TODO(windows): fix EXTERNAL_LIB_DIR on Windows
+set(EXTERNAL_LIB_DIR ${CMAKE_BINARY_DIR}/external/usr/local/lib)
+file(MAKE_DIRECTORY ${EXTERNAL_INC_DIR})
+file(MAKE_DIRECTORY ${EXTERNAL_LIB_DIR})
+
+add_subdirectory(sparsehash sparsehash EXCLUDE_FROM_ALL)
+add_subdirectory(magic_enum magic_enum EXCLUDE_FROM_ALL)
+add_subdirectory(RaBitQ-Library RaBitQ-Library EXCLUDE_FROM_ALL)
+add_subdirectory(googletest googletest EXCLUDE_FROM_ALL)
+
+add_subdirectory(arrow arrow EXCLUDE_FROM_ALL)
+add_subdirectory(gflags gflags EXCLUDE_FROM_ALL)
+add_subdirectory(glog glog EXCLUDE_FROM_ALL)
+add_subdirectory(yaml-cpp yaml-cpp EXCLUDE_FROM_ALL)
+add_subdirectory(protobuf protobuf EXCLUDE_FROM_ALL)
+add_subdirectory(antlr antlr EXCLUDE_FROM_ALL)
+add_subdirectory(lz4 lz4 EXCLUDE_FROM_ALL)
+add_subdirectory(rocksdb rocksdb EXCLUDE_FROM_ALL)
+add_subdirectory(CRoaring CRoaring EXCLUDE_FROM_ALL)
+add_subdirectory(FastPFOR FastPFOR EXCLUDE_FROM_ALL)
+add_subdirectory(limonp limonp EXCLUDE_FROM_ALL)
+add_subdirectory(cppjieba cppjieba EXCLUDE_FROM_ALL)

@@ -209,10 +209,13 @@ export class DreamMemorySystem {
     })
     this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
 
-    // embeddings:HTTP 优先 + hash 回退(报告 §4.7 P2-2)。
+    // embeddings:HTTP 优先 + hash 回退(报告 §4.7 P2-2 / 二轮报告 §5.4)。
     // 若配置了 embedding baseUrl,用 EmbeddingRouter(HttpEmbedder + HashEmbedder 回退);
     // 否则纯 HashEmbedder(零依赖)。
+    // §5.4 修复:fallback HashEmbedder 的 dim 必须与 HTTP embedding dim 一致,
+    // 否则 failover 后向量维度不匹配会导致 vector index 崩溃。
     const embConfig = this.config.embedding
+    const fallbackDim = embConfig?.dim || 256
     if (embConfig && embConfig.backend === 'http' && embConfig.baseUrl) {
       const http = new HttpEmbedder({
         baseUrl: embConfig.baseUrl,
@@ -220,9 +223,10 @@ export class DreamMemorySystem {
         dim: embConfig.dim || 1024,
         ...(embConfig.apiKey ? { apiKey: embConfig.apiKey } : {})
       })
-      this.embedder = new EmbeddingRouter({ primary: http, fallback: new HashEmbedder({ dim: 256 }) })
+      // fallback dim 与 HTTP dim 一致(报告 §5.4)
+      this.embedder = new EmbeddingRouter({ primary: http, fallback: new HashEmbedder({ dim: fallbackDim }), allowCpuFallback: true })
     } else {
-      this.embedder = new HashEmbedder({ dim: 256 })
+      this.embedder = new HashEmbedder({ dim: fallbackDim })
     }
 
     this.vectorDb = new FlatVectorIndex({
