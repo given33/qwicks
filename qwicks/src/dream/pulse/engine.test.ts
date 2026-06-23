@@ -38,6 +38,18 @@ describe('generatePulseTopics (doc §7 — derives nightly research topics from 
     const memories = [mk('f1', 'a random fact', MemoryType.FACT, 0.3)]
     expect(generatePulseTopics(memories, { userId: 'alice' })).toEqual([])
   })
+
+  it('also derives topics from recent chat history (doc §7: both sources required)', () => {
+    const memories = [mk('f1', 'a fact', MemoryType.FACT, 0.3)]
+    const recentChats = [
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: 'I want to learn rust async programming this month' },
+      { role: 'user', content: 'how is the weather' }
+    ]
+    const topics = generatePulseTopics(memories, { userId: 'alice', recentChats })
+    expect(topics.some((t) => /rust async/i.test(t.query))).toBe(true)
+    expect(topics.some((t) => /weather/i.test(t.query))).toBe(false)
+  })
 })
 
 describe('PulseEngine.run + buildPulseDigest (doc §7 — async research + visual summary)', () => {

@@ -448,7 +448,13 @@ export class DreamMemorySystem {
   /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入(默认 no-op 占位)。 */
   async runPulse(userId: string, opts: { research?: PulseResearchFn; maxTopics?: number } = {}): Promise<PulseDigest> {
     const memories = this.repository.list(userId, {})
-    const topics = generatePulseTopics(memories, { userId, maxTopics: opts.maxTopics })
+    // 文档 §7:Pulse 同时参考 saved memories + chat history(两个 source 都开)。
+    const recentChats = this.repository.loadRecentChats(userId, 50)
+    const topics = generatePulseTopics(memories, {
+      userId,
+      maxTopics: opts.maxTopics,
+      recentChats: recentChats.map((c) => ({ role: c.role, content: c.content }))
+    })
     const research: PulseResearchFn = opts.research ?? (async (query) => ({ query, summary: '(未配置 research 函数)', sources: [], followUps: [] }))
     return buildPulseDigest({ userId, topics, research })
   }

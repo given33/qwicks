@@ -42,6 +42,10 @@ export interface PulseResult extends PulseResearchResult {
   error?: string
   sourceMemoryIds: string[]
   rationale: string
+  /** 文档 §7 "save for later" —— 用户是否已保存该研究条目。 */
+  saved: boolean
+  /** 文档 §7 "feedback" —— 用户对该条目的反馈(空表示未反馈)。 */
+  feedback?: string | null
 }
 
 export interface PulseDigest {
@@ -54,9 +58,14 @@ export interface PulseDigest {
 // 从 goal/project 记忆提炼主题的辅助:剥掉"我想/我的目标是"等前缀
 const GOAL_PREFIX = /^(?:我想|我要|我的目标是|我打算|我计划|i want to|i plan to|my goal is|i aim to|going to|i'm going to)\s*/i
 
+export interface ChatTurn {
+  role: string
+  content: string
+}
+
 export function generatePulseTopics(
   memories: readonly MemoryItem[],
-  opts: { userId: string; maxTopics?: number; minImportance?: number }
+  opts: { userId: string; maxTopics?: number; minImportance?: number; recentChats?: readonly ChatTurn[] }
 ): PulseTopic[] {
   const maxTopics = opts.maxTopics ?? 5
   const minImportance = opts.minImportance ?? 0.5
@@ -66,20 +75,28 @@ export function generatePulseTopics(
 
   const seen: Array<Set<string>> = []
   const topics: PulseTopic[] = []
-  for (const m of candidates) {
-    const cleaned = m.content.replace(GOAL_PREFIX, '').trim()
-    if (!cleaned || cleaned.length < 3) continue
-    // 语义去重:token 集合 Jaccard ≥ 0.6 视为同主题
+  const pushTopic = (cleaned: string, sourceMemoryIds: string[], rationale: string): boolean => {
+    if (!cleaned || cleaned.length < 3) return false
     const tokens = new Set(cleaned.toLowerCase().match(/[a-z0-9\u4e00-\u9fff]+/g) ?? [])
-    const isDup = seen.some((prev) => jaccard(tokens, prev) >= 0.6)
-    if (isDup) continue
+    if (seen.some((prev) => jaccard(tokens, prev) >= 0.6)) return false
     seen.push(tokens)
-    topics.push({
-      query: cleaned,
-      sourceMemoryIds: [m.id],
-      rationale: `${m.type}: ${cleaned.slice(0, 60)}`
-    })
-    if (topics.length >= maxTopics) break
+    topics.push({ query: cleaned, sourceMemoryIds, rationale })
+    return true
+  }
+  for (const m of candidates) {
+    pushTopic(m.content.replace(GOAL_PREFIX, '').trim(), [m.id], `${m.type}: ${m.content.slice(0, 60)}`)
+    if (topics.length >= maxTopics) return topics
+  }
+  // 文档 §7:Pulse 也参考 chat history(用户近期对话里提到的目标/项目)。
+  const GOAL_IN_CHAT = /(?:我想|我要|我的目标是|我打算|我计划|i want to|i plan to|my goal is|i aim to|i'm going to|i'm working on)\s*(.{4,80})/i
+  if (opts.recentChats) {
+    for (const turn of opts.recentChats) {
+      if (turn.role !== 'user') continue
+      const m = turn.content.match(GOAL_IN_CHAT)
+      if (!m) continue
+      pushTopic(m[1]!.trim().replace(/[。.!?！？]$/, ''), [], `chat: ${m[1]!.slice(0, 50)}`)
+      if (topics.length >= maxTopics) break
+    }
   }
   return topics
 }
@@ -114,7 +131,9 @@ export async function buildPulseDigest(opts: BuildDigestOptions): Promise<PulseD
         results[idx] = {
           ...r,
           sourceMemoryIds: topic.sourceMemoryIds,
-          rationale: topic.rationale
+          rationale: topic.rationale,
+          saved: false,
+          feedback: null
         }
       } catch (err) {
         results[idx] = {
@@ -124,7 +143,9 @@ export async function buildPulseDigest(opts: BuildDigestOptions): Promise<PulseD
           followUps: [],
           error: err instanceof Error ? err.message : String(err),
           sourceMemoryIds: topic.sourceMemoryIds,
-          rationale: topic.rationale
+          rationale: topic.rationale,
+          saved: false,
+          feedback: null
         }
       }
     }
@@ -153,7 +174,9 @@ export function pulseDigestToDict(digest: PulseDigest): Record<string, unknown> 
       follow_ups: r.followUps,
       ...(r.error ? { error: r.error } : {}),
       source_memory_ids: r.sourceMemoryIds,
-      rationale: r.rationale
+      rationale: r.rationale,
+      saved: r.saved,
+      ...(r.feedback ? { feedback: r.feedback } : {})
     }))
   }
 }

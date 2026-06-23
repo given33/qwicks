@@ -33,7 +33,7 @@ export interface RewriteResult {
 }
 
 // query 意图信号
-const FOOD_INTENT = /(?:restaurant|recipe|dinner|eat|food|餐|饭店|食谱|吃饭|推荐.*吃|lunch|breakfast|brunch|coffee|bar|pub)/i
+const FOOD_INTENT = /(?:restaurant|recipe|dinner|\beat\b|food|餐|饭店|食谱|吃饭|推荐.*吃|lunch|breakfast|brunch|coffee|\bbar\b|\bpub\b)/i
 const LOCATION_INTENT = /(?:near|nearby|local|around|close|附近|周边|本地|here|这附近|in my area)/i
 
 // 槽位抽取正则(从记忆 content 里抠值)
