@@ -13,9 +13,13 @@
 /** 五官参数：每种表情对应一组眼睛/嘴巴/腮红的画法。 */
 export type FaceParams = {
   /** 眼睛形状 */
-  eyes: 'normal' | 'happy' | 'sad' | 'wide' | 'closed' | 'wink' | 'heart' | 'star' | 'angry' | 'dizzy' | 'sparkle'
+  eyes:
+    | 'normal' | 'happy' | 'sad' | 'wide' | 'closed' | 'wink' | 'heart' | 'star'
+    | 'angry' | 'dizzy' | 'sparkle' | 'half' | 'triangle' | 'x' | 'spiral' | 'lined' | 'worried' | 'smug' | 'teary'
   /** 嘴巴形状 */
-  mouth: 'smile' | 'open' | 'frown' | 'flat' | 'o' | 'tongue' | 'cat' | 'shocked' | 'whistle'
+  mouth:
+    | 'smile' | 'open' | 'frown' | 'flat' | 'o' | 'tongue' | 'cat' | 'shocked' | 'whistle'
+    | 'grin' | 'pout' | 'side' | 'wavy' | 'zipper' | 'smirk' | 'teeth'
   /** 腮红强度 0-1（0=无） */
   blush: number
   /** 头顶附加（汗珠/气泡/感叹号/心/问号/zzz 等），可选 */
