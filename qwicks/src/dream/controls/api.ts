@@ -66,6 +66,12 @@ export interface ExportResult {
   userId: string
   exportedAt: string
   memories: MemoryItem[]
+  /** 1.3(工业级):分区输出 —— 显式保存的记忆(用户主动 remember)。 */
+  savedMemories?: MemoryItem[]
+  /** 1.3:从聊天历史推断的记忆。 */
+  chatInferredMemories?: MemoryItem[]
+  /** 1.3:从连接器(Gmail/Drive/File)推断的记忆。 */
+  connectorMemories?: MemoryItem[]
   chats: Array<{ userId: string; threadId: string | null; turnId: string | null; role: string; content: string; ts: string }>
   twin: unknown
   twinGeneratedAt: string | null
@@ -188,27 +194,68 @@ export class MemoryControls {
     return items.some((it) => it.tags.includes(OPT_OUT_TAG) || it.metadata.opt_out === true)
   }
 
-  export(userId: string): ExportResult {
-    const memories = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+  /**
+   * 1.3(工业级):导出记忆数据。
+   * @param opts.shareableOnly - 仅导出可共享内容(过滤 shareable=false + sensitivity=restricted)。
+   *   默认 false(完整导出,用于用户自己下载)。
+   * @param opts.partitionBySource - 按 saved/chat/connector 分区输出(对齐文档"区分 saved 与 chat-inferred")。
+   *   默认 true。
+   */
+  export(userId: string, opts: { shareableOnly?: boolean; partitionBySource?: boolean } = {}): ExportResult {
+    const shareableOnly = opts.shareableOnly === true
+    const partition = opts.partitionBySource !== false
+    let memories = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    // 隐私过滤
+    if (shareableOnly) {
+      memories = memories.filter((m) => m.shareable && m.sensitivity !== 'restricted')
+    }
     const chats = this.opts.repository.loadRecentChats(userId, 10_000)
     const twin = this.opts.repository.loadTwin(userId)
+    if (!partition) {
+      return {
+        userId,
+        exportedAt: this.now(),
+        memories,
+        chats,
+        twin: twin ? safeJsonParse(twin[0]) : null,
+        twinGeneratedAt: twin ? twin[1] : null
+      }
+    }
+    // 分区:savedMemories / chatInferredMemories / connectorMemories
+    const savedMemories = memories.filter((m) => m.provenance.source === 'user')
+    const chatInferredMemories = memories.filter((m) => m.provenance.source === 'chat')
+    const connectorMemories = memories.filter((m) => m.provenance.source === 'connector' || m.provenance.source === 'file' || m.provenance.source === 'gmail' || m.provenance.source === 'drive')
     return {
       userId,
       exportedAt: this.now(),
       memories,
+      savedMemories,
+      chatInferredMemories,
+      connectorMemories,
       chats,
       twin: twin ? safeJsonParse(twin[0]) : null,
       twinGeneratedAt: twin ? twin[1] : null
-    }
+    } as ExportResult
   }
 
+  /**
+   * 1.2(工业级 GDPR):彻底清空用户全部记忆数据。
+   * 清理 memory + source_record + suppression_rule + memory_source_link + chat_log + memory_user_state + memory_event。
+   */
   purge(userId: string): number {
     const items = this.opts.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
-    let count = 0
+    const count = items.length
     for (const it of items) {
       this.opts.repository.delete(it.id, { hard: true })
-      count += 1
     }
+    // 清理其余表(对齐 GDPR 全量擦除)
+    this.opts.repository.rawExec(`DELETE FROM source_record WHERE user_id=?`, [userId])
+    this.opts.repository.rawExec(`DELETE FROM suppression_rule WHERE user_id=?`, [userId])
+    this.opts.repository.rawExec(`DELETE FROM memory_source_link WHERE user_id=?`, [userId])
+    this.opts.repository.rawExec(`DELETE FROM chat_log WHERE user_id=?`, [userId])
+    this.opts.repository.rawExec(`DELETE FROM memory_user_state WHERE user_id=?`, [userId])
+    this.opts.repository.rawExec(`DELETE FROM memory_event WHERE user_id=?`, [userId])
+    this.opts.repository.logEvent('purge', { userId, payload: { memory_count: count } })
     return count
   }
 
@@ -241,6 +288,11 @@ export class MemoryControls {
     const target = history.find((s) => s.versionId === versionId)
     if (!target) return null
     const current = this.opts.repository.get(memoryId)
+    // 1.2(工业级):状态守卫 —— DELETED/CONNECTOR_REVOKED 的记忆不可恢复,
+    // 防止通过版本回滚复活已删除/已撤销的隐私数据。
+    if (current && (current.status === MemoryLifecycleStatus.DELETED || current.status === MemoryLifecycleStatus.CONNECTOR_REVOKED)) {
+      return null
+    }
     if (!current) return null
     // 先保存当前状态为新快照(回滚也是一种 edit)
     this.recordSnapshot(current)

@@ -418,9 +418,17 @@ export class SqliteMemoryRepository implements MemoryRepository {
 
   delete(id: string, opts: { hard?: boolean } = {}): boolean {
     if (opts.hard) {
-      const cur = this.db.prepare(/* sql */ `DELETE FROM memory WHERE id=?`).run(id)
-      this.logEvent('hard_delete', { recordId: id })
-      return cur.changes > 0
+      // 1.2(工业级 GDPR):hard delete 必须彻底清理所有关联数据,
+      // 包括 memory_source_link + memory_event(含内容快照)。
+      const tx = this.db.transaction(() => {
+        this.db.prepare(/* sql */ `DELETE FROM memory_source_link WHERE memory_id=?`).run(id)
+        this.db.prepare(/* sql */ `DELETE FROM memory_event WHERE record_id=?`).run(id)
+        const cur = this.db.prepare(/* sql */ `DELETE FROM memory WHERE id=?`).run(id)
+        return cur.changes > 0
+      })
+      const deleted = tx()
+      if (deleted) this.logEvent('hard_delete', { recordId: id })
+      return deleted
     }
     const existing = this.get(id)
     if (!existing) return false

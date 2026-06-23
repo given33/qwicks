@@ -112,6 +112,9 @@ export interface MemoryRepository {
   ): Array<{ at: string; userId: string | null; kind: string; recordId: string | null; payload: unknown }>
 
   close(): void
+
+  /** 直接执行裸 SQL(供 purge/cleanup 使用)。 */
+  rawExec(sql: string, params?: readonly unknown[]): void
 }
 
 /** 内部辅助:直接执行裸 SQL(仅供测试/迁移使用)。 */

@@ -27,6 +27,11 @@ export function buildMemoryToolProviders(store: MemoryStore | undefined): Capabi
         execute: async (args, context) => {
           const content = typeof args.content === 'string' ? args.content.trim() : ''
           if (!content) return { output: { error: 'content is required' }, isError: true }
+          // 1.1(工业级):临时对话/记忆关闭时拒绝写入(纵深防御)。
+          // 即使工具被广告(AgentLoop 已禁用),此处再守一层确保零副作用。
+          if (context.memoryPolicy && !context.memoryPolicy.enabled) {
+            return { output: { error: 'memory tools are disabled in this mode (temporary/off)' }, isError: true }
+          }
           return {
             output: {
               memory: await store.create({

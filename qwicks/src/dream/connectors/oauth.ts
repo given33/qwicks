@@ -126,15 +126,31 @@ export interface OAuthTokenStoreOptions {
 export class OAuthTokenStore {
   private readonly path: string
   private readonly key: Buffer
+  /** 1.4(工业级):是否使用默认(不安全)密钥 —— production 模式下 save() 抛错。 */
+  private readonly usingDefaultKey: boolean
 
   constructor(opts: OAuthTokenStoreOptions) {
     mkdirSync(opts.persistDir, { recursive: true })
     this.path = join(opts.persistDir, 'oauth_tokens.jsonl')
     const passphrase = opts.passphrase ?? process.env.DREAM_OAUTH_KEY ?? 'dream-default-key'
+    this.usingDefaultKey = passphrase === 'dream-default-key'
     this.key = deriveKey(passphrase)
   }
 
+  /** 1.4:是否在用默认(不安全)密钥。 */
+  isUsingDefaultKey(): boolean {
+    return this.usingDefaultKey
+  }
+
   save(account: string, token: OAuthToken): void {
+    // 1.4(工业级):production 模式(DREAM_OAUTH_PRODUCTION=true)下,
+    // 用默认密钥写入 OAuth token 是安全违规 —— 拒绝。
+    if (this.usingDefaultKey && process.env.DREAM_OAUTH_PRODUCTION === 'true') {
+      throw new Error(
+        'OAuthTokenStore: refusing to save token with default key in production mode. ' +
+          'Set DREAM_OAUTH_KEY environment variable or provide a custom passphrase.'
+      )
+    }
     const line = {
       account,
       provider: token.provider,

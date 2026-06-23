@@ -521,6 +521,8 @@ export class AgentLoop {
   private readonly opts: AgentLoopOptions
   private lastDreamStatusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean } | null = null
   private lastDreamRewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null = null
+  /** 1.1(工业级):缓存当前 turn 的 memoryMode,供 secondary tool context 检查。 */
+  private lastMemoryMode: 'normal' | 'temporary' | 'off' = 'normal'
   private readonly autoModelRoutes = new Map<string, AutoModelRouteSelection>()
   private readonly promptTokenPressure = new Map<string, { model: string; promptTokens: number }>()
   /** Threads for which a one-time pressure hydration from persisted usage was already attempted. */
@@ -1130,7 +1132,9 @@ export class AgentLoop {
       ...(activePlanContext ? { guiPlan: activePlanContext } : {}),
       model: modelCapabilities,
       activeSkillIds: skillResolution.activeSkillIds,
-      memoryPolicy: { enabled: Boolean(this.opts.memoryStore) },
+      // 1.1(工业级):temporary/off 模式下禁用 memory 工具(memory_create 不可写),
+      // 防止 LLM 在临时对话中调用 memory_create 绕过零副作用保证。
+      memoryPolicy: { enabled: Boolean(this.opts.memoryStore) && this.lastMemoryMode !== 'temporary' && this.lastMemoryMode !== 'off' },
       delegationPolicy: { enabled: false },
       // v3(P1-3 报告 §10):把 Dream 改写的查询传给工具上下文(web_search 可用)
       ...(this.lastDreamRewrittenQuery && this.lastDreamRewrittenQuery.appliedMemories.length > 0
@@ -1875,7 +1879,9 @@ export class AgentLoop {
       ...(input.activePlanContext ? { guiPlan: input.activePlanContext } : {}),
       model: input.modelCapabilities,
       activeSkillIds: input.activeSkillIds,
-      memoryPolicy: { enabled: Boolean(this.opts.memoryStore) },
+      // 1.1(工业级):temporary/off 模式下禁用 memory 工具(memory_create 不可写),
+      // 防止 LLM 在临时对话中调用 memory_create 绕过零副作用保证。
+      memoryPolicy: { enabled: Boolean(this.opts.memoryStore) && this.lastMemoryMode !== 'temporary' && this.lastMemoryMode !== 'off' },
       delegationPolicy: { enabled: false },
       ...(input.allowedToolNames ? { allowedToolNames: input.allowedToolNames } : {}),
       approvalPolicy: input.approvalPolicy,
@@ -2655,6 +2661,7 @@ export class AgentLoop {
     memoryMode?: 'normal' | 'temporary' | 'off'
   }) {
     // P0-5(报告 §6.3/§15):temporary/off 模式完全不读记忆。
+    this.lastMemoryMode = input.memoryMode ?? 'normal'
     if (input.memoryMode === 'temporary' || input.memoryMode === 'off') return []
     // P0-4(报告 §4.1/§6.1):优先用 Dream middleware beforeTurn。
     if (this.opts.dreamSystem?.beforeTurn) {
