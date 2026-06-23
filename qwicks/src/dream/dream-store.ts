@@ -27,10 +27,13 @@ import {
   MemoryLifecycleStatus,
   MemoryScope,
   MemoryType,
+  SourceType,
   newMemoryId,
   nowIso
 } from './types.js'
 import type { MemoryRepository } from './storage/repository.js'
+import type { MemoryControls } from './controls/api.js'
+import { sanitizeForMemory } from './security/sanitizer.js'
 
 export interface DreamMemoryStoreOptions {
   repository: MemoryRepository
@@ -40,6 +43,13 @@ export interface DreamMemoryStoreOptions {
   /** 测试用:注入时间和 id 生成。 */
   nowIso?: () => string
   newId?: () => string
+  /**
+   * v3(报告 §6.2):注入 MemoryControls,使 memory_create 工具路径走完整 Dream 语义
+   * (SourceRecord + sourceIds + sanitizer + userId)。若不提供,退回旧的扁平 create。
+   */
+  controls?: MemoryControls
+  /** v3(报告 §7.2):真实 userId(而非硬编码 default)。 */
+  userId?: string
 }
 
 export class DreamMemoryStore implements MemoryStore {
@@ -53,7 +63,40 @@ export class DreamMemoryStore implements MemoryStore {
   }
 
   async create(input: MemoryCreateRequest): Promise<MemoryRecord> {
-    const item = draftToItem(input, this.newId(), this.now())
+    const userId = this.options.userId ?? 'default'
+    // v3(报告 §4.2/§6.2):若注入了 controls,memory_create 走完整 Dream 语义 ——
+    // 创建 saved_memory SourceRecord + sourceIds + sanitizer + 真实 userId。
+    if (this.options.controls) {
+      try {
+        // 1) sanitizer:拦截 PII / prompt injection(报告 §4.12)
+        const sanitized = sanitizeForMemory(input.content, { source: 'user' })
+        if (sanitized.decision === 'reject') {
+          throw new Error('memory content rejected by sanitizer (PII or injection)')
+        }
+        const cleanContent = sanitized.decision === 'redact' ? sanitized.sanitized : input.content
+        // 2) 创建 saved_memory SourceRecord(来源谱系)
+        const externalRef = input.sourceThreadId
+          ? `${input.sourceThreadId}/${input.sourceTurnId ?? 'saved'}`
+          : `saved_${Date.now()}`
+        const source = this.options.controls.upsertSource({
+          userId,
+          sourceType: SourceType.SAVED_MEMORY,
+          externalRef,
+          title: cleanContent.slice(0, 80),
+          content: cleanContent
+        })
+        // 3) 构造 MemoryItem(带 sourceIds + 真实 userId + temporal 检测)
+        const item = draftToItem({ ...input, content: cleanContent }, this.newId(), this.now(), userId)
+        item.sourceIds = [source.id]
+        item.provenance.source = 'user'
+        // 4) 落库(经 sanitizer + source lineage)
+        this.options.repository.upsert(item)
+        return itemToRecord(item)
+      } catch {
+        // fail-open: 若 Dream 增强路径出错,退回旧的扁平 create(保证工具不中断)
+      }
+    }
+    const item = draftToItem(input, this.newId(), this.now(), userId)
     this.options.repository.upsert(item)
     return itemToRecord(item)
   }
@@ -164,12 +207,12 @@ export class DreamMemoryStore implements MemoryStore {
 // 扁平 MemoryRecord <-> 富 MemoryItem 映射
 // ----------------------------------------------------------------
 
-function draftToItem(input: MemoryCreateRequest, id: string, now: string): MemoryItem {
+function draftToItem(input: MemoryCreateRequest, id: string, now: string, userId: string = 'default'): MemoryItem {
   const scope = scopeToDream(input.scope ?? 'workspace')
   const type = inferType(input.content, input.tags)
   const item = new MemoryItem(
     id,
-    'default', // userId 在 Phase 0 用 default;Phase 1 chat 接入后按 user 维度隔离
+    userId, // v3(报告 §7.2):真实 userId,不再硬编码 default
     type,
     input.content,
     scope,

@@ -189,12 +189,16 @@ export class DreamMemorySystem {
 
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
+    this.controls2 = new MemoryControls({ repository: this.repository })
+    // v3(报告 §4.2/§6.2):DreamMemoryStore 注入 controls2 + userId,使 memory_create
+    // 工具路径走完整 Dream 语义(SourceRecord + sourceIds + sanitizer + 真实 userId)。
     this.dreamStore = new DreamMemoryStore({
       repository: this.repository,
       config: { enabled: true },
-      sqlitePath: join(opts.dataDir, 'dream_memory.db')
+      sqlitePath: join(opts.dataDir, 'dream_memory.db'),
+      controls: this.controls2,
+      userId: this.userId
     })
-    this.controls2 = new MemoryControls({ repository: this.repository })
     this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
 
     // embeddings:HTTP 优先 + hash 回退。Phase 1 默认 hash(无 embedding 服务时);
