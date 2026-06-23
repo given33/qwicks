@@ -38,9 +38,19 @@ describe('tickEgg', () => {
 
   it('growthSpeed accelerates hatching', () => {
     const g = defaultGrowth(0)
-    // 2x 速度，一半时间即孵化
     const next = tickEgg(g, EGG_HATCH_DURATION_MS / 2, 2)
     expect(next.stage).toBe('kid')
+  })
+  // BUG-1 回归：用传入 now 而非 Date.now()
+  it('uses injected now not Date.now()', () => {
+    const egg = { stage: 'egg' as const, stageEnteredAt: 1000, gender: 'GG' as const, level: 0, exp: 0, eggProgress: 99 }
+    const FIXED = 9999999999
+    expect(tickEgg(egg, 3600000, 1, FIXED).stageEnteredAt).toBe(FIXED)
+  })
+  // BUG-23 回归：growthSpeed=0 不瞬间孵化
+  it('growthSpeed=0 does not instantly hatch', () => {
+    const egg = { stage: 'egg' as const, stageEnteredAt: 0, gender: 'GG' as const, level: 0, exp: 0, eggProgress: 0 }
+    expect(tickEgg(egg, 1000, 0).stage).toBe('egg')
   })
 
   it('no-op when not egg', () => {

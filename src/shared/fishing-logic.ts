@@ -73,6 +73,10 @@ export function judgeCast(elapsedSinceCast: number, bitAt: number | null, curren
     return { outcome: 'early', combo: 0 }
   }
   const sinceBite = elapsedSinceCast - bitAt
+  // BUG-6 修复：时间倒流（提竿早于咬钩）判 early
+  if (sinceBite < 0) {
+    return { outcome: 'early', combo: 0 }
+  }
   if (sinceBite > BITE_WINDOW_MS) {
     return { outcome: 'escaped', combo: 0 }
   }

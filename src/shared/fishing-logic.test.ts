@@ -45,4 +45,8 @@ describe('judgeCast', () => {
     const r = judgeCast(5000, 1000, 2) // 咬钩在1000，5000才提，超窗口
     expect(r.outcome).toBe('escaped')
   })
+  // BUG-6 回归：时间倒流不应判 success
+  it('time-reversed reel judged early not success', () => {
+    expect(judgeCast(-100, 50, 3).outcome).not.toBe('success')
+  })
 })

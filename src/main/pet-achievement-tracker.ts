@@ -29,7 +29,7 @@ export function bumpStat(stats: PetStats | undefined, action: PetAction): PetSta
     case 'revive': s.revivedCount += 1; break
     case 'collapse': s.collapsedCount += 1; break
     case 'activity': s.activitiesExperienced += 1; break
-    case 'buy': break // 物品数由 inventory.length 反映
+    case 'buy': s.itemsOwned += 1; break // BUG-2 修复：真正累加 itemsOwned
   }
   return s
 }

@@ -4,7 +4,7 @@
  * 注册所有 pet:* 频道：状态查询、喂食/洗澡/看病/摸头/玩耍/购买/签到。
  * 全部路由到 PetStateStore，让纯函数（applyItemEffect/buyItem 等）处理业务逻辑。
  */
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, screen } from 'electron'
 import { getPetStateStore } from './pet-state-store'
 import { getDiaryStore } from './pet-diary-store'
 import { toggleConsoleWindow } from './pet-console-window'
@@ -21,6 +21,7 @@ import { canMarry, defaultMarriage, divorce, generateSuitor, layEgg, marry } fro
 import { TICKLE_REACTIONS, resolveTickle, type TickleType } from '../shared/pet-tickle'
 import { canEnroll, canWork, completeEducation, defaultCareer, EDUCATION_LEVELS, workReward, type EducationLevel, type JobId } from '../shared/pet-career'
 import { filterValidObstacles } from '../shared/pet-obstacles'
+import { personalityMods } from '../shared/pet-festivals'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -113,6 +114,8 @@ export function registerPetStateIpc(): void {
       result = { ok: true }
       return next
     })
+    // BUG-2 修复：购买成功记录动作 → itemsOwned 累加 → items-10 成就可达
+    if (result.ok) recordAndBroadcast('buy')
     return result
   })
 
@@ -228,18 +231,26 @@ export function registerPetStateIpc(): void {
     return { ok: true }
   })
 
-  // P2 Tickle 互动：摸/戳/逗/挑/痒 等 12 种，每种触发独特反应
+  // P2 Tickle 互动：摸/戳/逗/挑/痒 等 35 种，每种触发独特反应
+  // P4 个性影响互动心情加成（温柔系宠物被摸更开心等）
   ipcMain.handle('pet:tickle', (_e, type: string) => {
     if (!(type in TICKLE_REACTIONS)) return { ok: false }
     const reaction = resolveTickle(type as TickleType)
-    store.update((state) => ({
-      ...state,
-      vitals: {
-        ...state.vitals,
-        mood: Math.max(0, Math.min(100, state.vitals.mood + reaction.moodDelta)),
-        hunger: Math.max(0, Math.min(100, state.vitals.hunger + (reaction.hungerDelta ?? 0)))
+    store.update((state) => {
+      const mods = state.personality ? personalityMods(state.personality) : null
+      const moodMult = mods ? mods.petMoodMultiplier : 1
+      // 摸头类互动用 petMoodMultiplier，其他用 1（避免所有互动都放大）
+      const isPetType = type === 'pet' || type === 'stroke' || type === 'pat'
+      const adjustedMood = isPetType ? Math.round(reaction.moodDelta * moodMult) : reaction.moodDelta
+      return {
+        ...state,
+        vitals: {
+          ...state.vitals,
+          mood: Math.max(0, Math.min(100, state.vitals.mood + adjustedMood)),
+          hunger: Math.max(0, Math.min(100, state.vitals.hunger + (reaction.hungerDelta ?? 0)))
+        }
       }
-    }))
+    })
     recordAndBroadcast('pet')
     void getDiaryStore().append('✨', reaction.text)
     return { ok: true, reaction }
@@ -297,5 +308,10 @@ export function registerPetStateIpc(): void {
       .map((w) => w.getBounds())
       .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
     return filterValidObstacles(obstacles)
+  })
+
+  // P0 跨屏寻路：返回所有显示器 bounds（供渲染层建 walkable-graph）
+  ipcMain.handle('pet:get-displays', () => {
+    return screen.getAllDisplays().map((d) => ({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height }))
   })
 }

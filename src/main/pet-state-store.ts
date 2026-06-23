@@ -17,6 +17,9 @@ import {
   type PetState
 } from '../shared/pet-state'
 import { advanceToAdult, canAdvanceToAdult, defaultGrowth, tickEgg } from '../shared/pet-growth'
+import { personalityMods, rollPersonality, type Personality } from '../shared/pet-festivals'
+import { BrowserWindow } from 'electron'
+import { getDiaryStore } from './pet-diary-store'
 import { recordAction as recordPetAction, type PetAction } from './pet-achievement-tracker'
 
 const PET_STATE_DIR = join(homedir(), '.qwicks')
@@ -124,19 +127,45 @@ export class PetStateStore {
       const now = Date.now()
       const elapsed = now - this.state.lastTickAt
       if (elapsed < 1000) return
-      const vitals = tickVitals(this.state.vitals, elapsed)
+      let vitals = tickVitals(this.state.vitals, elapsed)
+      // P4 个性影响：吃货饥饿衰减更快（已体现在 tickVitals 结果上，这里按 personality 微调）
+      const mods = this.state.personality ? personalityMods(this.state.personality) : null
+      if (mods && mods.hungerDecayMultiplier !== 1) {
+        // 按倍率额外调整 hunger（>1 更快饿=更少剩余）
+        const extraDecay = (vitals.hunger) * (mods.hungerDecayMultiplier - 1) * (elapsed / (1000 * 60 * 60))
+        vitals = { ...vitals, hunger: Math.max(0, vitals.hunger - extraDecay) }
+      }
       // M5 成长推进：蛋孵化 + 幼年晋升检查
       let growth = this.state.growth ?? defaultGrowth(now)
+      let personality = this.state.personality
       if (growth.stage === 'egg') {
+        const before = growth.stage
         growth = tickEgg(growth, elapsed)
+        // 刚孵化成幼年 → 随机分配个性（P4）
+        if (before === 'egg' && growth.stage === 'kid' && !personality) {
+          personality = rollPersonality()
+        }
       } else if (growth.stage === 'kid' && canAdvanceToAdult(growth, now)) {
         growth = advanceToAdult(growth, now)
+        // BUG-26 修复：成年晋升设 reachedAdult → become-adult 成就可达
+        const stats = { ...(this.state.stats ?? { feedCount: 0, bathCount: 0, cureCount: 0, petCount: 0, playCount: 0, signInStreak: 0, activitiesExperienced: 0, itemsOwned: 0, revivedCount: 0, maxLevel: 0, reachedAdult: false, collapsedCount: 0 }), reachedAdult: true }
+        this.state = { ...this.state, stats }
+        const newly = this.recordAction('pet')
+        for (const id of newly) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              try { win.webContents.send('pet:achievement-unlocked', id) } catch { /* window dying */ }
+            }
+          }
+        }
+        void getDiaryStore().append('🎉', '宠物成年了！')
       }
       this.state = {
         ...this.state,
         vitals,
         status: deriveStatus(vitals),
         growth,
+        personality,
         lastTickAt: now
       }
       this.scheduleSave()

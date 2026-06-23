@@ -48,6 +48,11 @@ describe('tickVitals', () => {
     const next = tickVitals(v, 0) // 0 时间，只重算 mood
     expect(next.mood).toBeCloseTo(100, 0)
   })
+  // BUG-7 回归：脏数据 >100 应被 clamp
+  it('clamps dirty input >100 to [0,100]', () => {
+    const next = tickVitals({ hunger: 120, cleanliness: 50, health: 50, mood: 50 }, HOUR)
+    expect(next.hunger).toBeLessThanOrEqual(100)
+  })
 })
 
 describe('deriveStatus', () => {
