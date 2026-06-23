@@ -42,7 +42,8 @@ export const RuntimeEventKind = z.enum([
   'pipeline_stage',
   'usage',
   'error',
-  'heartbeat'
+  'heartbeat',
+  'memory_status'
 ])
 export type RuntimeEventKind = z.infer<typeof RuntimeEventKind>
 
@@ -253,6 +254,21 @@ export const HeartbeatEvent = RuntimeEventBase.extend({
 })
 export type HeartbeatEvent = z.infer<typeof HeartbeatEvent>
 
+/**
+ * v3(P1-1 报告 §12):记忆状态提示事件 —— 当回答使用了记忆上下文时,
+ * 通过 SSE 推送 remembering/personalizing/memorySourcesUsed/rewrittenQueryFromMemory,
+ * 让 renderer 显示"正在使用记忆"状态。
+ */
+export const MemoryStatusEvent = RuntimeEventBase.extend({
+  kind: z.literal('memory_status'),
+  remembering: z.boolean(),
+  personalizing: z.boolean(),
+  memorySourcesUsed: z.array(z.string()),
+  rewrittenQueryFromMemory: z.boolean(),
+  injectedMemoryIds: z.array(z.string()).optional()
+})
+export type MemoryStatusEvent = z.infer<typeof MemoryStatusEvent>
+
 export const RuntimeEvent = z.discriminatedUnion('kind', [
   ItemEvent,
   ThreadLifecycleEvent,
@@ -269,7 +285,8 @@ export const RuntimeEvent = z.discriminatedUnion('kind', [
   PipelineStageEvent,
   UsageEvent,
   ErrorEvent,
-  HeartbeatEvent
+  HeartbeatEvent,
+  MemoryStatusEvent
 ])
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>
 

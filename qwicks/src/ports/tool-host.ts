@@ -82,6 +82,15 @@ export type ToolHostContext = {
   allowedProviderIds?: readonly string[]
   /** Optional tool-name allow-list. When set, other tools are not advertised or executed. */
   allowedToolNames?: readonly string[]
+  /**
+   * v3(P1-3 报告 §10):记忆改写后的查询 —— 当 Dream beforeTurn 基于用户偏好
+   * (diet/location)改写了搜索查询时,web_search 等工具可用此增强查询。
+   */
+  memoryRewrite?: {
+    originalQuery: string
+    rewrittenQuery: string
+    appliedMemoryIds: readonly string[]
+  }
   approvalPolicy: ApprovalPolicy
   /** Filesystem/command sandbox selected for this turn. Defaults at execution time for old callers. */
   sandboxMode?: SandboxMode

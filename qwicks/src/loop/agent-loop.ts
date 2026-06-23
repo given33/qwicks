@@ -1132,6 +1132,16 @@ export class AgentLoop {
       activeSkillIds: skillResolution.activeSkillIds,
       memoryPolicy: { enabled: Boolean(this.opts.memoryStore) },
       delegationPolicy: { enabled: false },
+      // v3(P1-3 报告 §10):把 Dream 改写的查询传给工具上下文(web_search 可用)
+      ...(this.lastDreamRewrittenQuery && this.lastDreamRewrittenQuery.appliedMemories.length > 0
+        ? {
+            memoryRewrite: {
+              originalQuery: turn?.prompt ?? '',
+              rewrittenQuery: this.lastDreamRewrittenQuery.rewritten,
+              appliedMemoryIds: this.lastDreamRewrittenQuery.appliedMemories.map((m) => m.memoryId)
+            }
+          }
+        : {}),
       ...(allowedToolNames ? { allowedToolNames } : {}),
       approvalPolicy,
       sandboxMode,
@@ -1182,6 +1192,26 @@ export class AgentLoop {
         toolCatalogToolCount: toolCatalog.toolCount,
         toolCatalogDrift: toolCatalogDrift.kind !== 'none'
       })
+    }
+    // v3(P1-1 报告 §12):若有 Dream statusHints,推送 memory_status SSE 事件到 renderer
+    if (this.lastDreamStatusHints) {
+      try {
+        await this.opts.events.record({
+          kind: 'memory_status',
+          threadId,
+          turnId,
+          remembering: this.lastDreamStatusHints.remembering,
+          personalizing: this.lastDreamStatusHints.personalizing,
+          memorySourcesUsed: this.lastDreamStatusHints.memorySourcesUsed,
+          rewrittenQueryFromMemory: this.lastDreamStatusHints.rewrittenQueryFromMemory,
+          injectedMemoryIds: memories.map((m) => m.id)
+        })
+      } catch {
+        // fail-open: SSE 事件失败不阻断 turn
+      }
+      // 重置(每 turn 的 hints 只发一次)
+      this.lastDreamStatusHints = null
+      this.lastDreamRewrittenQuery = null
     }
     if (toolCatalogDrift.kind === 'breaking') return 'stop'
     const toolKinds = new Map(toolSpecs.map((tool) => [tool.name, tool.toolKind]))

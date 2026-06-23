@@ -166,9 +166,15 @@ function createSearchTool(config: WebCapabilityConfig, provider: WebProvider) {
     policy: 'untrusted',
     execute: async (args, context) => {
       const startedAt = Date.now()
-      const query = pickString(args.query)
-      if (!query) return toolError('invalid_query', 'query is required')
+      const userQuery = pickString(args.query)
+      if (!userQuery) return toolError('invalid_query', 'query is required')
       if (!provider.search) return toolError('provider_unavailable', 'web search provider is unavailable')
+      // v3(P1-3 报告 §10):若 Dream 基于记忆改写了查询,用改写后的增强查询搜索。
+      // 例:用户问"附近餐厅",记忆里有 vegan + SF → 改写成"vegan restaurant San Francisco"。
+      const memoryRewrite = context.memoryRewrite
+      const query = memoryRewrite && memoryRewrite.originalQuery.trim().toLowerCase() === userQuery.trim().toLowerCase()
+        ? memoryRewrite.rewrittenQuery
+        : userQuery
       const limit = boundedInt(args.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT)
       const timeoutMs = boundedInt(args.timeout_ms, DEFAULT_WEB_TIMEOUT_MS, 1, DEFAULT_WEB_TIMEOUT_MS)
       try {
