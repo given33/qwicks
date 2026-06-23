@@ -211,14 +211,10 @@ export class DreamMemorySystem {
       }
     }
 
-    // 1) save chat (permanent only)
-    this.repository.saveChat(userId, 'user', message, { threadId, turnId })
-    if (opts.assistant) {
-      this.repository.saveChat(userId, 'assistant', opts.assistant, { threadId, turnId })
-    }
-
-    // 2) opt-out
-    if (this.controls.isOptedOut(userId)) {
+    // 2) opt-out —— 必须在 saveChat 之前(opt-out 用户不应留下任何 chat_log 副作用,
+    // 对齐文档 §4.7 "Memory 关闭=不读不写")。检查两套:in-memory DreamControls(快速
+    // 短路)+ 持久化 MemoryControls.isOptedOut(用户通过 controls2.optOut 落库的标记)。
+    if (this.controls.isOptedOut(userId) || this.controls2.isOptedOut(userId)) {
       return {
         reply: '(该用户已禁用 Dream 记忆系统 / Dream memory is disabled for this user)',
         systemBlock: '',
@@ -231,6 +227,12 @@ export class DreamMemorySystem {
         gateReport: null,
         injectionDecision: null
       }
+    }
+
+    // 1) save chat (permanent only; opt-out 用户已在上面短路,不会落 chat_log)
+    this.repository.saveChat(userId, 'user', message, { threadId, turnId })
+    if (opts.assistant) {
+      this.repository.saveChat(userId, 'assistant', opts.assistant, { threadId, turnId })
     }
 
     // 3) extract

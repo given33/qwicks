@@ -68,11 +68,13 @@ describe('DreamMemorySystem — Phase 3 user control surfaces', () => {
     expect(ledger.used.length + ledger.downranked.length + ledger.suppressed.length).toBeGreaterThan(0)
   })
 
-  it('opt-out then opt-in via controls', () => {
+  it('opt-out then opt-in via controls', async () => {
     sys.controls2.optOut('alice')
     expect(sys.controls2.isOptedOut('alice')).toBe(true)
-    // chat should reflect opt-out
-    void sys.chat('alice', 'hi').then((r) => expect(r.extractorBackend).toBe('opt_out'))
+    // chat should reflect opt-out (no read/write side-effects)
+    const r = await sys.chat('alice', 'hi')
+    expect(r.extractorBackend).toBe('opt_out')
+    expect(r.newMemories).toEqual([])
     sys.controls2.optIn('alice')
     expect(sys.controls2.isOptedOut('alice')).toBe(false)
   })
