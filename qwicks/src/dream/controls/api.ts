@@ -16,14 +16,15 @@ import {
   MemoryProvenance,
   MemoryScope,
   MemoryType,
+  newSourceId,
+  newSuppressionId,
   nowIso,
   parseMemoryType,
   SourceRecord,
   SourceType,
   SuppressionRule,
   SuppressionScope,
-  TemporalState,
-  newSourceId
+  TemporalState
 } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
 
@@ -384,7 +385,7 @@ export class MemoryControls {
       input.target
     )
     const rule = new SuppressionRule(
-      existing?.id ?? `sup_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
+      existing?.id ?? newSuppressionId(),
       input.userId,
       input.scope,
       input.target,

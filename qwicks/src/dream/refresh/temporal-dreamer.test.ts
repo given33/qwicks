@@ -58,6 +58,23 @@ describe('historizePlannedContent', () => {
     ).toContain('visited')
   })
 
+  it('converts "will travel to" to "traveled to" (no garbling)', () => {
+    const out = historizePlannedContent('I will travel to Japan', { validUntil: null })
+    expect(out).toContain('traveled to')
+    expect(out).not.toContain('will have') // 不应出现语法错误的 "will have travel"
+  })
+
+  it('converts "I will visit" to past tense without "will have"', () => {
+    const out = historizePlannedContent('I will visit Singapore', { validUntil: null })
+    expect(out).toContain('visited')
+    expect(out).not.toContain('will have')
+  })
+
+  it('converts "going to go to" to "went to"', () => {
+    const out = historizePlannedContent('I am going to go to Paris', { validUntil: null })
+    expect(out).toContain('went to')
+  })
+
   it('appends the valid_until date when provided', () => {
     const out = historizePlannedContent('I will visit Singapore', {
       validUntil: '2026-07-15T00:00:00Z'

@@ -525,8 +525,8 @@ export class DreamMemorySystem {
           ex.transitionStatus(MemoryLifecycleStatus.SUPERSEDED, { actor: 'chat.persist', reason: 'superseded by newer' })
           this.repository.upsert(ex)
         } else if (action === 'merge_into_existing') {
-          // DUPLICATE:跳过插入(旧记忆已覆盖此内容)
-          return out
+          // DUPLICATE:跳过插入此条 draft(旧记忆已覆盖此内容),继续处理下一条
+          continue
         } else if (action === 'ask_user_or_invalidate_old') {
           // CONTRADICTS:标记旧记忆为 HYPOTHESIS(待用户确认),新记忆照常插入
           ex.transitionStatus(MemoryLifecycleStatus.HYPOTHESIS, { actor: 'chat.persist', reason: 'contradicts new memory' })
@@ -576,9 +576,21 @@ export class DreamMemorySystem {
     let ingested = 0
     for (const m of msgs) {
       const full = await gmail.fetch(m.id)
+      // v3:为每封邮件创建/复用 SourceRecord(谱系,文档 §6)
+      let gmailSourceId: string | null = null
+      try {
+        const source = this.controls2.upsertSource({
+          userId: account,
+          sourceType: SourceType.GMAIL,
+          externalRef: m.id,
+          title: full.subject ?? '(no subject)',
+          content: full.snippet
+        })
+        gmailSourceId = source.id
+      } catch { /* fail-open: 谱系缺失不阻断摄入 */ }
       const drafts = gmail.extractDrafts(full, account)
       for (const d of drafts) {
-        this.persistDrafts([d], account, null, null)
+        this.persistDrafts([d], account, null, null, gmailSourceId)
         ingested += 1
       }
     }
@@ -594,9 +606,21 @@ export class DreamMemorySystem {
     let ingested = 0
     for (const f of files) {
       const content = await drive.fetchContent(f)
+      // v3:为每个文件创建/复用 SourceRecord(谱系,文档 §6)
+      let driveSourceId: string | null = null
+      try {
+        const source = this.controls2.upsertSource({
+          userId: account,
+          sourceType: SourceType.DRIVE,
+          externalRef: f.id,
+          title: f.name,
+          content
+        })
+        driveSourceId = source.id
+      } catch { /* fail-open */ }
       const drafts = drive.extractDrafts({ fileId: f.id, fileName: f.name, content }, account)
       for (const d of drafts) {
-        this.persistDrafts([d], account, null, null)
+        this.persistDrafts([d], account, null, null, driveSourceId)
         ingested += 1
       }
     }

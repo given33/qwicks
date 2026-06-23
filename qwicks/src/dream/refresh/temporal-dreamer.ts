@@ -46,13 +46,21 @@ export function historizePlannedContent(content: string, opts: { validUntil?: st
   out = out.replace(/要去|打算去|计划去|准备去/g, '去了')
   out = out.replace(/将要|即将/g, '已经')
   // 英文将来时 → 过去时
-  out = out.replace(/\bI am (going to|gonna)\b/gi, 'I')
-  out = out.replace(/\bI will\b/gi, 'I will have')
-  out = out.replace(/\bI plan to\b/gi, 'I')
-  out = out.replace(/\bI'm planning to\b/gi, 'I')
-  out = out.replace(/\bI'm going to\b/gi, 'I')
+  // 顺序很重要:先处理具体短语("going to visit/travel/go"),再处理泛化"I am going to"。
   out = out.replace(/\bgoing to visit\b/gi, 'visited')
   out = out.replace(/\bgoing to travel to\b/gi, 'traveled to')
+  out = out.replace(/\bgoing to go to\b/gi, 'went to')
+  // "will visit X" / "will travel to X" → 过去时(去掉 will,动词变过去式)
+  out = out.replace(/\bwill visit\b/gi, 'visited')
+  out = out.replace(/\bwill travel to\b/gi, 'traveled to')
+  out = out.replace(/\bwill go to\b/gi, 'went to')
+  // 泛化的 "I am going to" / "I'm going to" / "I plan to" → "I"
+  out = out.replace(/\bI am (going to|gonna)\b/gi, 'I')
+  out = out.replace(/\bI'm (going to|gonna)\b/gi, 'I')
+  out = out.replace(/\bI plan to\b/gi, 'I')
+  out = out.replace(/\bI'm planning to\b/gi, 'I')
+  // 残留的孤立 "I will" → "I"(避免 "I will have X" 这种语法错误)
+  out = out.replace(/\bI will\b/gi, 'I')
   out = out.replace(/\bvisit\b(\s+\w)/gi, (_m, c) => `visited${c}`)
   // 添加历史前缀(若没有明显过去时标记)
   if (!/曾|已经|去了|visited|traveled|went|have/i.test(out)) {
