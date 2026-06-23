@@ -1721,16 +1721,18 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   isQuitting = true
   stopRuntimeWatchdog()
-  // M4: flush 宠物状态到盘（防丢）
-  void getPetStateStore().stop().catch(() => {})
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
-  void stopManagedRuntimesForQuit()
+  // BUG 修复：await pet state 落盘后再退出，避免状态丢失
+  void Promise.all([
+    stopManagedRuntimesForQuit(),
+    getPetStateStore().stop()
+  ])
     .catch((error) => {
-      console.warn('[qwicks-gui] failed to stop QWicks runtime:', error)
-      managedRuntimesStoppedForQuit = true
+      console.warn('[qwicks-gui] failed to stop runtimes/pet-state:', error)
     })
     .finally(() => {
+      managedRuntimesStoppedForQuit = true
       app.quit()
     })
 })
