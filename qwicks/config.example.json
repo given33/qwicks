@@ -108,7 +108,8 @@
       "textFallbackPreferredMimeType": "image/webp"
     },
     "memory": {
-      "enabled": false,
+      "enabled": true,
+      "backend": "dream",
       "scopes": ["user", "workspace", "project"],
       "maxInjectedRecords": 8
     },
