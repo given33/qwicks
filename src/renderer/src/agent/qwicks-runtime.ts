@@ -48,6 +48,8 @@ import type {
   CoreMemoryRecordJson,
   CoreResumeSessionResponseJson,
   CoreRuntimeInfoJson,
+  DreamMemorySummaryJson,
+  DreamVersionJson,
   CoreRuntimeEventJson,
   CoreRuntimeSkillJson,
   CoreRuntimeSkillsResponseJson,
@@ -743,6 +745,76 @@ export class QWicksRuntimeProvider implements AgentProvider {
       response.body,
       'runtime returned an invalid memory diagnostics response'
     )
+  }
+
+  // ---- Phase 3: Dream memory user-control surfaces (summary/ledger/versions/opt-out) ----
+
+  async getDreamSummary(userId = 'default'): Promise<DreamMemorySummaryJson> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/summary?user_id=${encodeURIComponent(userId)}`,
+      'GET'
+    )
+    if (!response.ok) {
+      throw runtimeErrorToError(readRuntimeError(response.body, 'failed to load dream memory summary'))
+    }
+    return readRuntimeJson<{ summary: DreamMemorySummaryJson }>(
+      response.body,
+      'runtime returned an invalid dream summary response'
+    ).summary
+  }
+
+  async getDreamMemoryVersions(memoryId: string): Promise<DreamVersionJson[]> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/memory/${encodeURIComponent(memoryId)}/versions`,
+      'GET'
+    )
+    if (!response.ok) {
+      throw runtimeErrorToError(readRuntimeError(response.body, 'failed to load dream memory versions'))
+    }
+    return readRuntimeJson<{ versions: DreamVersionJson[] }>(
+      response.body,
+      'runtime returned an invalid dream versions response'
+    ).versions ?? []
+  }
+
+  async restoreDreamMemoryVersion(memoryId: string, versionId: string): Promise<CoreMemoryRecordJson> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/memory/${encodeURIComponent(memoryId)}/restore`,
+      'POST',
+      JSON.stringify({ versionId })
+    )
+    if (!response.ok) {
+      throw runtimeErrorToError(readRuntimeError(response.body, 'failed to restore dream memory version'))
+    }
+    return readRuntimeJson<{ memory: CoreMemoryRecordJson }>(
+      response.body,
+      'runtime returned an invalid dream restore response'
+    ).memory
+  }
+
+  async suppressDreamMemory(memoryId: string): Promise<CoreMemoryRecordJson> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/memory/${encodeURIComponent(memoryId)}/suppress`,
+      'POST'
+    )
+    if (!response.ok) {
+      throw runtimeErrorToError(readRuntimeError(response.body, 'failed to suppress dream memory'))
+    }
+    return readRuntimeJson<{ memory: CoreMemoryRecordJson }>(
+      response.body,
+      'runtime returned an invalid dream suppress response'
+    ).memory
+  }
+
+  async setDreamOptOut(userId = 'default', optOut: boolean): Promise<void> {
+    const path = optOut ? '/v1/dream/opt-out' : '/v1/dream/opt-in'
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `${path}?user_id=${encodeURIComponent(userId)}`,
+      'POST'
+    )
+    if (!response.ok) {
+      throw runtimeErrorToError(readRuntimeError(response.body, 'failed to set dream opt-out'))
+    }
   }
 
   async forkThread(

@@ -46,6 +46,17 @@ import {
   updateMemory
 } from './memory.js'
 import {
+  dreamExport,
+  dreamLedger,
+  dreamOptIn,
+  dreamOptOut,
+  dreamPurge,
+  dreamRestore,
+  dreamSuppress,
+  dreamSummary,
+  dreamVersions
+} from './dream.js'
+import {
   meshModelsResponse,
   meshPairInitiate,
   meshPairVerify,
@@ -137,6 +148,43 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('DELETE', '/v1/memory/:id', async (request, ctx) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return deleteMemory(runtime.memoryStore, ctx.params.id, request)
+  })
+  // Phase 3:Dream memory 用户控制路由(仅 backend=dream 时 runtime.dreamSystem 存在)
+  router.add('GET', '/v1/dream/summary', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamSummary(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/ledger', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamLedger(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/memory/:id/versions', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamVersions(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('POST', '/v1/dream/memory/:id/restore', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamRestore(runtime.dreamSystem, ctx.params.id, request)
+  })
+  router.add('POST', '/v1/dream/memory/:id/suppress', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamSuppress(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('POST', '/v1/dream/opt-out', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamOptOut(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/opt-in', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamOptIn(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/export', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamExport(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/purge', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamPurge(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

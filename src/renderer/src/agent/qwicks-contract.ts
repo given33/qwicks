@@ -95,6 +95,62 @@ export type CoreMemoryRecordJson = {
   deletedAt?: string
 }
 
+// Phase 3:Dream memory 用户控制 JSON 契约(summary / ledger / versions)。
+export type DreamSummaryEntryJson = {
+  text: string
+  last_updated: string
+  confidence: number
+  source_count: number
+  memory_ids: string[]
+  structured_attrs: Record<string, unknown>
+  correction_url: string
+  importance: number
+}
+
+export type DreamMemorySummaryJson = {
+  user_id: string
+  generated_at: string
+  work: DreamSummaryEntryJson[]
+  projects: DreamSummaryEntryJson[]
+  preferences: DreamSummaryEntryJson[]
+  constraints: DreamSummaryEntryJson[]
+  locations: DreamSummaryEntryJson[]
+  sensitive: DreamSummaryEntryJson[]
+  hidden: DreamSummaryEntryJson[]
+  counts: Record<string, number>
+}
+
+export type DreamVersionJson = {
+  versionId: string
+  at: string
+  content: string
+  importance: number
+  tags: string[]
+  type: string
+}
+
+export type DreamLedgerEntryJson = {
+  memory_id: string
+  reason: string
+  score: number
+  source_text: string
+  source_type: string
+  timestamp: string
+  hidden_when_shared: boolean
+  metadata: Record<string, unknown>
+}
+
+export type DreamLedgerJson = {
+  query_id: string
+  user_id: string
+  query_text: string
+  used: DreamLedgerEntryJson[]
+  downranked: DreamLedgerEntryJson[]
+  suppressed: DreamLedgerEntryJson[]
+  skipped: DreamLedgerEntryJson[]
+  generated_at: string
+}
+
 export type CoreThreadGoalStatusJson =
   | 'active'
   | 'paused'

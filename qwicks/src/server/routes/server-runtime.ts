@@ -7,6 +7,9 @@ import type { SessionStore } from '../../ports/session-store.js'
 import type { ApprovalGate } from '../../ports/approval-gate.js'
 import type { UserInputGate } from '../../ports/user-input-gate.js'
 import type { WorkspaceInspector } from '../../ports/workspace-inspector.js'
+import type { AttachmentStore } from '../../attachments/attachment-store.js'
+import type { MemoryStore } from '../../memory/memory-store.js'
+import type { DreamMemorySystem } from '../../dream/chat/pipeline.js'
 import type { ToolHost, ToolProviderPolicy } from '../../ports/tool-host.js'
 import type { RuntimeEventRecorder } from '../../services/runtime-event-recorder.js'
 import type { LlmDebugRecorder } from '../../services/llm-debug-recorder.js'
@@ -22,9 +25,7 @@ import type {
 } from '../../adapters/tool/media-gen-tool-provider.js'
 import type { SkillRuntimeDiagnostics } from '../../skills/skill-runtime.js'
 import type { AttachmentDiagnostics } from '../../contracts/attachments.js'
-import type { AttachmentStore } from '../../attachments/attachment-store.js'
 import type { MemoryDiagnostics } from '../../contracts/memory.js'
-import type { MemoryStore } from '../../memory/memory-store.js'
 import type { ReviewTarget } from '../../contracts/review.js'
 import type { MeshRuntimeHandle } from '../../mesh/integration/mesh-runtime-handle.js'
 
@@ -63,6 +64,8 @@ export type ServerRuntime = {
   toolHost?: ToolHost
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
+  /** Phase 3:Dream memory system(仅当 capabilities.memory.backend='dream')。暴露 summary/ledger/version 接口。 */
+  dreamSystem?: DreamMemorySystem
   runTurn(threadId: string, turnId: string): Promise<'completed' | 'failed' | 'aborted'> | void
   /**
    * Relaunch goal continuation turns for threads whose in-flight turn was

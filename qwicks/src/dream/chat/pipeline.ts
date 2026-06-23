@@ -54,6 +54,7 @@ import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/na
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
 import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
+import { DreamMemoryStore } from '../dream-store.js'
 import { MemoryControls } from '../controls/api.js'
 import { buildMemorySummary, type MemorySummary } from '../memory_summary/builder.js'
 import { buildMemoryLedger, type BuildLedgerInput, type MemoryLedger } from '../memory_sources/ledger.js'
@@ -99,6 +100,8 @@ export class DreamControls {
 export class DreamMemorySystem {
   readonly config: DreamConfig
   readonly repository: SqliteMemoryRepository
+  /** 适配 qwicks 既有 MemoryStore 接口的扁平视图(runtime 把它喂给 HTTP/工具/agent-loop)。 */
+  readonly dreamStore: import('../dream-store.js').DreamMemoryStore
   readonly vectorDb: FlatVectorIndex
   readonly embedder: HashEmbedder
   readonly retrieval: RetrievalPipeline
@@ -122,6 +125,11 @@ export class DreamMemorySystem {
 
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
+    this.dreamStore = new DreamMemoryStore({
+      repository: this.repository,
+      config: { enabled: true },
+      sqlitePath: join(opts.dataDir, 'dream_memory.db')
+    })
     this.controls2 = new MemoryControls({ repository: this.repository })
 
     // embeddings:HTTP 优先 + hash 回退。Phase 1 默认 hash(无 embedding 服务时);

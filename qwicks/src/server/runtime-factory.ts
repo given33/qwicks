@@ -78,6 +78,7 @@ import { FileMemoryStore } from '../memory/memory-store.js'
 import type { MemoryStore } from '../memory/memory-store.js'
 import { DreamMemoryStore } from '../dream/dream-store.js'
 import { SqliteMemoryRepository } from '../dream/storage/sqlite-repository.js'
+import { DreamMemorySystem } from '../dream/chat/pipeline.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
 import { createMeshRuntimeSlot } from '../mesh/integration/mesh-runtime-slot.js'
@@ -275,6 +276,7 @@ export async function createQWicksServeRuntime(
     ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'))
     : undefined
   const memoryStore = memory?.store
+  const dreamSystem = memory?.dreamSystem
   const imageGenProviders = buildImageGenToolProviders(options.capabilities?.imageGen, {
     attachmentStore,
     nowIso
@@ -331,6 +333,7 @@ export async function createQWicksServeRuntime(
     tokenEconomy,
     ...(options.runtime ? { runtime: options.runtime } : {}),
     ...(memoryStore ? { memoryStore } : {}),
+    ...(dreamSystem ? { dreamSystem } : {}),
     nowIso
   }))
 
@@ -568,6 +571,7 @@ export async function createQWicksServeRuntime(
     ...(resolvedHooks.length ? { hooks: resolvedHooks } : {}),
     ...(attachmentStore ? { attachmentStore } : {}),
     ...(memoryStore ? { memoryStore } : {}),
+    ...(dreamSystem ? { dreamSystem } : {}),
     onPlanWritten: async ({ threadId, planId, relativePath, markdown }) => {
       await threadService.syncTodosFromPlan(threadId, {
         planId,
@@ -787,16 +791,19 @@ export async function startQWicksServe(
 function buildMemoryStore(
   config: MemoryCapabilityConfig,
   legacyRootDir: string
-): { store: MemoryStore; close: () => void } {
+): { store: MemoryStore; close: () => void; dreamSystem?: DreamMemorySystem } {
   if (config.backend === 'dream') {
     const sqlitePath = join(legacyRootDir, 'dream_memory.db')
-    const repository = new SqliteMemoryRepository({ sqlitePath })
-    const store = new DreamMemoryStore({ repository, config, sqlitePath })
+    // 构建完整 DreamMemorySystem(facade),这样 HTTP 路由能暴露 summary/ledger/versions。
+    // DreamMemorySystem 内部会创建自己的 repository + DreamMemoryStore,这里复用它的 store。
+    const dreamSystem = new DreamMemorySystem({ dataDir: legacyRootDir })
+    const store = dreamSystem.dreamStore
     return {
       store,
+      dreamSystem,
       close: () => {
         try {
-          store.close()
+          dreamSystem.close()
         } catch {
           // 防御性:关闭失败不应阻塞 shutdown。
         }
