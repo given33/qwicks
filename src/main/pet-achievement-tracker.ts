@@ -16,7 +16,7 @@ type PetStateLike = {
 
 export type PetAction =
   | 'feed' | 'bath' | 'cure' | 'pet' | 'play' | 'signIn'
-  | 'revive' | 'collapse' | 'activity' | 'buy'
+  | 'revive' | 'collapse' | 'activity' | 'buy' | 'tickle' | 'reward'
 
 /** 给 state 的 stats 计数 +1，返回新 stats。 */
 export function bumpStat(stats: PetStats | undefined, action: PetAction): PetStats {
@@ -31,7 +31,9 @@ export function bumpStat(stats: PetStats | undefined, action: PetAction): PetSta
     case 'revive': s.revivedCount += 1; break
     case 'collapse': s.collapsedCount += 1; break
     case 'activity': s.activitiesExperienced += 1; break
-    case 'buy': break // 物品数由 inventory.length 反映
+    case 'buy': s.itemsOwned += 1; break
+    case 'tickle': s.playCount += 1; break
+    case 'reward': break
   }
   return s
 }

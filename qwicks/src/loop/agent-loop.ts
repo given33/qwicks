@@ -664,6 +664,29 @@ export class AgentLoop {
       this.emptyPostToolRecoveryStepsByTurn.delete(turnId)
       this.turnFailures.delete(turnId)
       await this.runTurnEndHooks(threadId, turnId, finalStatus ?? 'failed', finalError)
+      // P0-4(报告 §6.1):turn 成功完成后,调用 Dream afterTurn(写侧:
+      // 保存 chat + 抽取记忆 + persist + dreaming)。temporary/off 零写。
+      if (finalStatus === 'completed') {
+        try {
+          const turn = await this.opts.turns.getTurn(threadId, turnId)
+          const items = await this.opts.sessionStore.loadItems(threadId)
+          const assistantItem = [...items]
+            .reverse()
+            .find((it) => it.turnId === turnId && it.role === 'assistant' && it.kind === 'assistant_text')
+          const assistantReply = (assistantItem as { text?: string } | undefined)?.text ?? ''
+          if (turn?.prompt) {
+            await this.dreamAfterTurn({
+              userPrompt: turn.prompt,
+              assistantReply,
+              threadId,
+              turnId,
+              memoryMode: turn.memoryMode
+            })
+          }
+        } catch {
+          // fail-open: Dream afterTurn 失败不影响 turn 完成
+        }
+      }
     }
   }
 
@@ -1067,7 +1090,10 @@ export class AgentLoop {
     }
     const memories = await this.retrieveMemories({
       prompt: turn?.prompt ?? '',
-      workspace: thread?.workspace ?? ''
+      workspace: thread?.workspace ?? '',
+      threadId,
+      turnId,
+      memoryMode: turn?.memoryMode
     })
     const planTurnActive = effectiveMode === 'plan' || Boolean(activePlanContext)
     const activeGoalInstruction = planTurnActive
