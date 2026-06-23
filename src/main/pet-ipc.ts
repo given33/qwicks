@@ -183,8 +183,8 @@ export function registerPetStateIpc(): void {
   // M9-M11 奖励元宝（钓鱼/农场/小游戏结算用）
   ipcMain.handle('pet:reward', (_e, amount: number) => {
     store.update((state) => ({ ...state, coins: state.coins + Math.max(0, Math.floor(amount)) }))
-    // BUG-13 修复：reward 后检测成就（rich-500）
-    recordAndBroadcast('buy') // 复用 buy action 触发成就检测（会读 coins）
+    // BUG-13 修复：reward 后用专用 action 检测成就（不动 itemsOwned）
+    recordAndBroadcast('reward')
     return { ok: true }
   })
 

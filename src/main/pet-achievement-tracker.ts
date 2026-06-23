@@ -15,7 +15,7 @@ type PetStateLike = {
 
 export type PetAction =
   | 'feed' | 'bath' | 'cure' | 'pet' | 'play' | 'signIn'
-  | 'revive' | 'collapse' | 'activity' | 'buy'
+  | 'revive' | 'collapse' | 'activity' | 'buy' | 'tickle' | 'reward'
 
 /** 给 state 的 stats 计数 +1，返回新 stats。 */
 export function bumpStat(stats: PetStats | undefined, action: PetAction): PetStats {
@@ -30,7 +30,9 @@ export function bumpStat(stats: PetStats | undefined, action: PetAction): PetSta
     case 'revive': s.revivedCount += 1; break
     case 'collapse': s.collapsedCount += 1; break
     case 'activity': s.activitiesExperienced += 1; break
-    case 'buy': s.itemsOwned += 1; break // BUG-2 修复：真正累加 itemsOwned
+    case 'buy': s.itemsOwned += 1; break
+    case 'tickle': s.playCount += 1; break // tickle 算互动玩耍
+    case 'reward': break // 只触发成就检测（rich-500 读 coins），不增任何计数器
   }
   return s
 }
