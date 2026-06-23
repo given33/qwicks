@@ -498,7 +498,41 @@ export class SqliteMemoryRepository implements MemoryRepository {
     const res = this.db
       .prepare(/* sql */ `UPDATE memory SET schema_version=3 WHERE schema_version<3`)
       .run()
+    // v3(二轮报告 §2.4):回填 memory_source_link 表(从 source_ids JSON 列)
+    this.backfillSourceLinks()
     return { migratedCount: res.changes }
+  }
+
+  /**
+   * v3(二轮报告 §2.4):把老 memory.source_ids JSON 回填到 memory_source_link 表。
+   * 幂等:已存在的 link 行用 INSERT OR IGNORE 跳过。
+   */
+  backfillSourceLinks(): { backfilled: number } {
+    let backfilled = 0
+    try {
+      const rows = this.db
+        .prepare(/* sql */ `SELECT id, user_id, source_ids, created_at FROM memory WHERE source_ids IS NOT NULL AND source_ids != '[]'`)
+        .all() as Array<{ id: string; user_id: string; source_ids: string; created_at: string }>
+      const ins = this.db.prepare(
+        /* sql */ `INSERT OR IGNORE INTO memory_source_link(memory_id, source_id, user_id, created_at) VALUES (?,?,?,?)`
+      )
+      for (const row of rows) {
+        let sourceIds: string[] = []
+        try {
+          const parsed = JSON.parse(row.source_ids)
+          if (Array.isArray(parsed)) sourceIds = parsed.filter((s) => typeof s === 'string')
+        } catch {
+          continue
+        }
+        for (const sid of sourceIds) {
+          const r = ins.run(row.id, sid, row.user_id, row.created_at)
+          backfilled += r.changes
+        }
+      }
+    } catch {
+      // memory_source_link 表可能不存在(极老 DB)→ 静默跳过
+    }
+    return { backfilled }
   }
 
   saveChat(
