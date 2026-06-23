@@ -45,7 +45,9 @@ const REPLACE_PATTERNS: readonly RegExp[] = [
  */
 const LOCATION_SLOT: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:live|live[sd]?|living|reside[sd]?|based|work[sing]?|study(?:ing)?)\s+(?:in|at)\s+([A-Z][\w\s.]+?)(?:[.,;!?\n]|$)/i, 'location'],
-  [/(?:住在|在|来自|位于|搬到了?|搬去|现在住在)\s*([一-鿿]{2,8}[市省]?)/, 'location']
+  // AUDIT MEDIUM-2:收窄中文槽位 —— 去掉裸"在"(会误匹配"在X出差"),
+  // 只匹配明确的居住/搬迁语义。出差/旅游/访问用 negative 排除。
+  [/(?:住在|来自|位于|搬到了?|搬去|现在住在|居住在)\s*([一-鿿]{2,8}[市省]?)/, 'location']
 ]
 
 /**

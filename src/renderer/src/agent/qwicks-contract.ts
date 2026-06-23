@@ -628,6 +628,16 @@ export type CoreRuntimeEventJson = {
   code?: string
   severity?: 'info' | 'warning' | 'error'
   child?: CoreChildRuntimeMetadataJson
+  // v3(CHIEF P0-1/P0-3):memory_status + memory_sources_ready 事件字段
+  remembering?: boolean
+  personalizing?: boolean
+  memorySourcesUsed?: string[]
+  rewrittenQueryFromMemory?: boolean
+  injectedMemoryIds?: string[]
+  usedMemoryIds?: string[]
+  downrankedMemoryIds?: string[]
+  suppressedMemoryIds?: string[]
+  sourceIds?: string[]
 }
 
 export type RuntimeErrorJson = {

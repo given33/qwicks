@@ -215,7 +215,10 @@ export class DreamMemorySystem {
     // §5.4 修复:fallback HashEmbedder 的 dim 必须与 HTTP embedding dim 一致,
     // 否则 failover 后向量维度不匹配会导致 vector index 崩溃。
     const embConfig = this.config.embedding
-    const fallbackDim = embConfig?.dim || 256
+    // §5.4 修复(AUDIT MEDIUM-1):fallback dim 必须与 HTTP dim 一致。
+    // 两个默认值都取 embConfig.dim || 1024,避免 embConfig.dim 未设置时
+    // fallback=256 而 HTTP=1024 的维度分歧(failover 后 vector index 崩溃)。
+    const fallbackDim = embConfig?.dim || 1024
     if (embConfig && embConfig.backend === 'http' && embConfig.baseUrl) {
       const http = new HttpEmbedder({
         baseUrl: embConfig.baseUrl,

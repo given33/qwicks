@@ -1239,6 +1239,25 @@ export async function dispatchQWicksRuntimeEvent(
       }
       sink.onRuntimeError?.(runtimeErrorFromEvent(event, 'Runtime error'))
       return
+    case 'memory_status': {
+      // v3(CHIEF P0-3):把 memory_status SSE 事件转成 renderer 可消费的状态。
+      sink.onMemoryStatus?.({
+        remembering: event.remembering ?? false,
+        personalizing: event.personalizing ?? false,
+        memorySourcesUsed: event.memorySourcesUsed ?? [],
+        rewrittenQueryFromMemory: event.rewrittenQueryFromMemory ?? false
+      })
+      return
+    }
+    case 'memory_sources_ready': {
+      sink.onMemorySourcesReady?.({
+        usedMemoryIds: event.usedMemoryIds ?? [],
+        downrankedMemoryIds: event.downrankedMemoryIds ?? [],
+        suppressedMemoryIds: event.suppressedMemoryIds ?? [],
+        sourceIds: event.sourceIds ?? []
+      })
+      return
+    }
     default:
       return
   }

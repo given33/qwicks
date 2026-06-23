@@ -1209,6 +1209,23 @@ export class AgentLoop {
       } catch {
         // fail-open: SSE 事件失败不阻断 turn
       }
+      // v3(CHIEF P0-1 报告二轮 §4.3):推送 memory_sources_ready 事件,
+      // 让 renderer 在 assistant bubble 旁显示来源图标 + used/downranked/suppressed 面板。
+      if (memories.length > 0 || this.lastDreamStatusHints.memorySourcesUsed.length > 0) {
+        try {
+          await this.opts.events.record({
+            kind: 'memory_sources_ready',
+            threadId,
+            turnId,
+            usedMemoryIds: memories.map((m) => m.id),
+            downrankedMemoryIds: [],
+            suppressedMemoryIds: [],
+            sourceIds: this.lastDreamStatusHints.memorySourcesUsed
+          })
+        } catch {
+          // fail-open
+        }
+      }
       // 重置(每 turn 的 hints 只发一次)
       this.lastDreamStatusHints = null
       this.lastDreamRewrittenQuery = null

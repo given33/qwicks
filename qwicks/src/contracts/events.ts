@@ -43,7 +43,8 @@ export const RuntimeEventKind = z.enum([
   'usage',
   'error',
   'heartbeat',
-  'memory_status'
+  'memory_status',
+  'memory_sources_ready'
 ])
 export type RuntimeEventKind = z.infer<typeof RuntimeEventKind>
 
@@ -269,6 +270,24 @@ export const MemoryStatusEvent = RuntimeEventBase.extend({
 })
 export type MemoryStatusEvent = z.infer<typeof MemoryStatusEvent>
 
+/**
+ * v3(CHIEF P0-1 报告二轮 §4.3/§13):Memory Sources 就绪事件 ——
+ * AgentLoop 在 beforeTurn 后自动构建 ledger 并推送此事件,
+ * 让 renderer 在 assistant bubble 旁显示来源图标。
+ */
+export const MemorySourcesReadyEvent = RuntimeEventBase.extend({
+  kind: z.literal('memory_sources_ready'),
+  /** used:注入的记忆 id 列表。 */
+  usedMemoryIds: z.array(z.string()),
+  /** downranked:被降权但未注入的记忆 id 列表。 */
+  downrankedMemoryIds: z.array(z.string()),
+  /** suppressed:被抑制的记忆 id 列表。 */
+  suppressedMemoryIds: z.array(z.string()),
+  /** 来源 id 列表(用于 renderer 展示来源面板)。 */
+  sourceIds: z.array(z.string())
+})
+export type MemorySourcesReadyEvent = z.infer<typeof MemorySourcesReadyEvent>
+
 export const RuntimeEvent = z.discriminatedUnion('kind', [
   ItemEvent,
   ThreadLifecycleEvent,
@@ -286,7 +305,8 @@ export const RuntimeEvent = z.discriminatedUnion('kind', [
   UsageEvent,
   ErrorEvent,
   HeartbeatEvent,
-  MemoryStatusEvent
+  MemoryStatusEvent,
+  MemorySourcesReadyEvent
 ])
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>
 
