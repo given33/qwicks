@@ -18,11 +18,6 @@ import {
 } from '../shared/pet-state'
 import { advanceToAdult, canAdvanceToAdult, defaultGrowth, tickEgg } from '../shared/pet-growth'
 import { personalityMods, rollPersonality, type Personality } from '../shared/pet-festivals'
-import { BrowserWindow } from 'electron'
-import { getDiaryStore } from './pet-diary-store'
-import { defaultStats } from '../shared/pet-achievements'
-import { defaultCareer } from '../shared/pet-career'
-import { defaultMarriage } from '../shared/pet-marriage'
 import { recordAction as recordPetAction, type PetAction } from './pet-achievement-tracker'
 
 const PET_STATE_DIR = join(homedir(), '.qwicks')
@@ -95,13 +90,7 @@ export class PetStateStore {
         ...base,
         ...parsed,
         vitals: { ...base.vitals, ...parsed.vitals },
-        growth: parsed.growth ?? defaultGrowth(Date.now()),
-        // BUG-22 修复：旧存档缺字段时补全默认值，防 bumpStat 产生 NaN
-        stats: parsed.stats ?? defaultStats(),
-        achievements: parsed.achievements ?? { unlocked: [], unlockedAt: {} },
-        personality: parsed.personality,
-        career: parsed.career ?? defaultCareer(),
-        marriage: parsed.marriage ?? defaultMarriage()
+        growth: parsed.growth ?? defaultGrowth(Date.now())
       }
       this.state = applyOfflineCatchUp(merged, Date.now())
     } catch {
@@ -125,11 +114,7 @@ export class PetStateStore {
     }
     try {
       await mkdir(PET_STATE_DIR, { recursive: true })
-      // 原子写（tmp+rename），防崩溃时半截 JSON
-      const tmpFile = PET_STATE_FILE + '.tmp'
-      await writeFile(tmpFile, JSON.stringify(this.state, null, 2), 'utf8')
-      const { rename } = await import('node:fs/promises')
-      await rename(tmpFile, PET_STATE_FILE)
+      await writeFile(PET_STATE_FILE, JSON.stringify(this.state, null, 2), 'utf8')
     } catch (error) {
       console.warn('[pet-state] failed to flush:', error)
     }
@@ -160,18 +145,6 @@ export class PetStateStore {
         }
       } else if (growth.stage === 'kid' && canAdvanceToAdult(growth, now)) {
         growth = advanceToAdult(growth, now)
-        // BUG-26 修复：成年晋升设 reachedAdult → become-adult 成就可达
-        const stats = { ...(this.state.stats ?? { feedCount: 0, bathCount: 0, cureCount: 0, petCount: 0, playCount: 0, signInStreak: 0, activitiesExperienced: 0, itemsOwned: 0, revivedCount: 0, maxLevel: 0, reachedAdult: false, collapsedCount: 0 }), reachedAdult: true }
-        this.state = { ...this.state, stats }
-        const newly = this.recordAction('pet')
-        for (const id of newly) {
-          for (const win of BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed()) {
-              try { win.webContents.send('pet:achievement-unlocked', id) } catch { /* window dying */ }
-            }
-          }
-        }
-        void getDiaryStore().append('🎉', '宠物成年了！')
       }
       this.state = {
         ...this.state,
