@@ -67,13 +67,14 @@ export class DreamMemoryStore implements MemoryStore {
     // v3(报告 §4.2/§6.2):若注入了 controls,memory_create 走完整 Dream 语义 ——
     // 创建 saved_memory SourceRecord + sourceIds + sanitizer + 真实 userId。
     if (this.options.controls) {
+      // 1) sanitizer:拦截 PII / prompt injection(报告 §4.12)。
+      // sanitizer 拒绝必须向上抛出(不能 fail-open),否则注入内容会走旧路径落库。
+      const sanitized = sanitizeForMemory(input.content, { source: 'user' })
+      if (sanitized.decision === 'reject' || sanitized.findings.some((f) => f.kind.startsWith('injection_'))) {
+        throw new Error('memory content rejected by sanitizer (PII or prompt injection)')
+      }
+      const cleanContent = sanitized.decision === 'redact' ? sanitized.sanitized : input.content
       try {
-        // 1) sanitizer:拦截 PII / prompt injection(报告 §4.12)
-        const sanitized = sanitizeForMemory(input.content, { source: 'user' })
-        if (sanitized.decision === 'reject') {
-          throw new Error('memory content rejected by sanitizer (PII or injection)')
-        }
-        const cleanContent = sanitized.decision === 'redact' ? sanitized.sanitized : input.content
         // 2) 创建 saved_memory SourceRecord(来源谱系)
         const externalRef = input.sourceThreadId
           ? `${input.sourceThreadId}/${input.sourceTurnId ?? 'saved'}`
@@ -93,7 +94,7 @@ export class DreamMemoryStore implements MemoryStore {
         this.options.repository.upsert(item)
         return itemToRecord(item)
       } catch {
-        // fail-open: 若 Dream 增强路径出错,退回旧的扁平 create(保证工具不中断)
+        // fail-open: 仅对 SourceRecord/persist 的意外错误退回旧路径(sanitizer 已在上面处理)
       }
     }
     const item = draftToItem(input, this.newId(), this.now(), userId)
