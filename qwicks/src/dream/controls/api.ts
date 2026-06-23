@@ -501,6 +501,28 @@ export class MemoryControls {
    * 手动把一条 PLANNED memory 转为 OCCURRED(旅行结束 → 历史)。
    * 返回更新后的 memory 或 null。也供 dreaming 自动调用。
    */
+  /**
+   * 2.2(工业级 报告 §12 SOP):用户标记"这条记忆不对"。
+   * - 设置 userCorrected=true(影响检索加权)
+   * - 记录到 repository event(可追溯)
+   * - demote importance(降低后续注入概率)
+   */
+  markWrong(memoryId: string, feedback?: string): MemoryItem | null {
+    const m = this.opts.repository.get(memoryId)
+    if (!m) return null
+    m.markUserCorrected()
+    // demote importance 让 ObservableGate/UserCorrectionGate 降低权重
+    m.importance = Math.max(0.1, m.importance * 0.5)
+    m.updatedAt = this.now()
+    this.opts.repository.upsert(m)
+    this.opts.repository.logEvent('user_correction', {
+      recordId: memoryId,
+      userId: m.userId,
+      payload: { feedback: feedback ?? null, newImportance: m.importance, action: 'mark_wrong' }
+    })
+    return m
+  }
+
   markOccurred(
     memoryId: string,
     historyContent: string,

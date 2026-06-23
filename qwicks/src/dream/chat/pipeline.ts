@@ -656,6 +656,20 @@ export class DreamMemorySystem {
    * - 返回注入用的记忆 + statusHints(供 turn metadata / SSE)
    * 不做任何写操作(不保存 chat、不抽取)。
    */
+  /**
+   * 2.1(工业级):按用户设置过滤记忆来源。
+   * savedMemoriesEnabled=false → 排除 provenance.source==='user'
+   * chatHistoryEnabled=false → 排除 provenance.source==='chat'
+   * connectorsEnabled=false → 排除 connector/file/gmail/drive 来源
+   */
+  private passesSourceFilter(item: MemoryItem, settings: { savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }): boolean {
+    const src = item.provenance.source
+    if (!settings.savedMemoriesEnabled && (src === 'user' || src === 'saved_memory')) return false
+    if (!settings.chatHistoryEnabled && src === 'chat') return false
+    if (!settings.connectorsEnabled && (src === 'connector' || src === 'file' || src === 'gmail' || src === 'drive')) return false
+    return true
+  }
+
   async beforeTurn(input: {
     userId: string
     prompt: string
@@ -670,12 +684,16 @@ export class DreamMemorySystem {
       return { memories: [], routedHits: [], statusHints: emptyStatusHints(), gateReport: null, injectionDecision: null, rewrittenQuery: null, failures: [] }
     }
     const failures: string[] = []
+    // 2.1(工业级):按用户设置过滤候选来源(saved memories / chat history / connectors 开关)。
+    const settings = this.repository.getMemorySettings(userId)
     let hits: RetrievalHit[] = []
     try {
       hits = await this.retrieval.retrieve({ userId, query: input.prompt, topK: this.config.retrieval.topK })
     } catch (err) { failures.push(`retrieve: ${String(err)}`) }
 
-    const allItems = this.repository.list(userId, {})
+    // 按开关过滤 hits:关闭的来源类型的记忆不参与注入
+    hits = hits.filter((h) => this.passesSourceFilter(h.item, settings))
+    const allItems = this.repository.list(userId, {}).filter((m) => this.passesSourceFilter(m, settings))
     let gateReport: GateReport | null = null
     let routedHits: RetrievalHit[] = []
     try {
@@ -690,7 +708,7 @@ export class DreamMemorySystem {
         .sort((a, b) => b.score - a.score)
     } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
 
-    try { routedHits = filterSuppressedHits(userId, routedHits, this.controls2) } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
+    try { routedHits = filterSuppressedWithExplicitAsk(userId, routedHits, this.controls2, input.prompt) } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
 
     let injectionDecision: InjectionDecision | null = null
     try {
@@ -748,6 +766,11 @@ export class DreamMemorySystem {
     const userId = input.userId
     if (input.temporary || this.controls.isOptedOut(userId) || this.controls2.isOptedOut(userId)) {
       return { newMemories: [], sourceId: null, failures: [], dreamingTriggered: false }
+    }
+    // 2.1(工业级):若用户关闭了 chat history inference,不抽取 chat-inferred memory。
+    const settings = this.repository.getMemorySettings(userId)
+    if (!settings.chatHistoryEnabled) {
+      return { newMemories: [], sourceId: null, failures: ['chat_history_inference_disabled'], dreamingTriggered: false }
     }
     const threadId = input.threadId ?? null
     const turnId = input.turnId ?? null
@@ -1035,6 +1058,51 @@ function filterSuppressedHits(
     if (h.item.isSuppressed) return false
     // topic-level suppression
     if (h.item.topic && controls2.isSuppressed(userId, SuppressionScope.TOPIC, h.item.topic)) {
+      return false
+    }
+    return true
+  })
+}
+
+/**
+ * 2.4(工业级 报告 §8):suppression 是软过滤 —— 当用户**明确询问**被 suppress 的
+ * topic/memory 时,恢复该条记忆(对齐文档"用户明确询问时仍可解释")。
+ * 检测显式询问:query 含 suppressed topic 关键词 + 显式询问意图词。
+ */
+const EXPLICIT_ASK_PATTERNS = /\b(?:tell me about|show me|why|what.*about|explain|remind me|remember|what do you know about)\b|告诉我|为什么|解释|为什么不再|你记得|你还知道/i
+
+function isExplicitAskAbout(query: string, target: string): boolean {
+  if (!EXPLICIT_ASK_PATTERNS.test(query)) return false
+  // query 需包含 target 的关键词(topic 名或 memory 内容片段)
+  const targetWords = target.toLowerCase().split(/[\s,，。;；]+/).filter((w) => w.length > 2)
+  const queryLower = query.toLowerCase()
+  return targetWords.some((w) => queryLower.includes(w))
+}
+
+/**
+ * 2.4 + 2.1:合并的 suppression + source-settings 过滤。
+ * 若用户明确询问被 suppress 的 topic → 恢复(soft filter,非 hard delete)。
+ */
+function filterSuppressedWithExplicitAsk(
+  userId: string,
+  hits: RetrievalHit[],
+  controls2: MemoryControls,
+  query: string
+): RetrievalHit[] {
+  return hits.filter((h) => {
+    // memory-level suppression
+    if (controls2.isSuppressed(userId, SuppressionScope.MEMORY, h.item.id)) {
+      // 显式询问该 memory 的内容 → 恢复
+      if (isExplicitAskAbout(query, h.item.content)) return true
+      return false
+    }
+    if (h.item.isSuppressed) {
+      if (isExplicitAskAbout(query, h.item.content)) return true
+      return false
+    }
+    // topic-level suppression
+    if (h.item.topic && controls2.isSuppressed(userId, SuppressionScope.TOPIC, h.item.topic)) {
+      if (isExplicitAskAbout(query, h.item.topic)) return true
       return false
     }
     return true

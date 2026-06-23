@@ -150,7 +150,7 @@ describe('[P0-8 e2e] Dream middleware full cycle (AgentLoop integration)', () =>
     ).rejects.toThrow(/injection|rejected/i)
   })
 
-  it('beforeTurn applies suppression rules (Don\'t mention this again)', async () => {
+  it('beforeTurn applies suppression rules (Don\'t mention this again) — soft filter', async () => {
     // 写一条记忆
     await system.afterTurn({
       userId: 'alice',
@@ -168,14 +168,24 @@ describe('[P0-8 e2e] Dream middleware full cycle (AgentLoop integration)', () =>
         scope: SuppressionScope.MEMORY,
         target: polMem.id
       })
-      // beforeTurn 不应返回被 suppress 的
-      const before = await system.beforeTurn({
+      // 2.4(工业级):非显式询问 → 被过滤(hard mute)
+      const beforeGeneric = await system.beforeTurn({
+        userId: 'alice',
+        prompt: 'what are your hobbies',
+        threadId: 't1',
+        turnId: 'turn_2a'
+      })
+      expect(beforeGeneric.memories.find((m) => m.id === polMem.id)).toBeUndefined()
+
+      // 2.4(工业级):显式询问("tell me about X")→ 恢复(soft filter,对齐文档 §8)
+      const beforeExplicit = await system.beforeTurn({
         userId: 'alice',
         prompt: 'tell me about politics',
         threadId: 't1',
-        turnId: 'turn_2'
+        turnId: 'turn_2b'
       })
-      expect(before.memories.find((m) => m.id === polMem.id)).toBeUndefined()
+      // 显式询问时 suppressed 记忆应恢复
+      expect(beforeExplicit.memories.find((m) => m.id === polMem.id)).toBeDefined()
     }
   })
 

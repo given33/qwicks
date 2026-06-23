@@ -12,6 +12,20 @@
  */
 import type { MemoryItem } from '../types.js'
 
+import { sanitizeForMemory } from '../security/sanitizer.js'
+
+/**
+ * 2.3(工业级 报告 §14):敏感槽位过滤 —— 提取的 slot value 在进入 rewritten query 前
+ * 必须经过 sanitizer。SSN/API key/密码/健康等敏感内容不得泄露到外部搜索。
+ * 返回 true=安全可注入,false=拒绝(含 PII/secret/injection)。
+ */
+function isSafeForExternalSearch(value: string): boolean {
+  const result = sanitizeForMemory(value, { source: 'user' })
+  if (result.decision === 'reject') return false
+  if (result.findings.some((f) => f.kind.startsWith('injection_') || f.kind.startsWith('secret_') || f.kind.startsWith('pii_'))) return false
+  return true
+}
+
 export interface RewriteContext {
   userId: string
   query: string
@@ -61,7 +75,8 @@ export function rewriteQuery(ctx: RewriteContext): RewriteResult {
     // diet 槽:仅当 query 有 food 意图时注入
     if (hasFood) {
       const diet = extractDiet(mem.content)
-      if (diet) {
+      // 2.3(工业级):敏感过滤 —— SSN/密码/健康信息不进入外部搜索 query
+      if (diet && isSafeForExternalSearch(diet)) {
         applied.push({ memoryId: mem.id, slot: 'diet', extractedValue: diet })
         additions.push(diet)
       }
@@ -69,7 +84,7 @@ export function rewriteQuery(ctx: RewriteContext): RewriteResult {
     // location 槽:仅当 query 有 location 意图时注入
     if (hasLocation) {
       const loc = extractLocation(mem.content)
-      if (loc) {
+      if (loc && isSafeForExternalSearch(loc)) {
         applied.push({ memoryId: mem.id, slot: 'location', extractedValue: loc })
         additions.push(loc)
       }

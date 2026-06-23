@@ -145,6 +145,15 @@ CREATE TABLE IF NOT EXISTS memory_source_link (
 CREATE INDEX IF NOT EXISTS ix_msl_source ON memory_source_link(source_id);
 CREATE INDEX IF NOT EXISTS ix_msl_user_source ON memory_source_link(user_id, source_id);
 CREATE INDEX IF NOT EXISTS ix_msl_memory ON memory_source_link(memory_id);
+
+-- 2.1(工业级):用户记忆设置(持久化双开关:saved memories / chat history inference)
+CREATE TABLE IF NOT EXISTS user_memory_settings (
+    user_id TEXT PRIMARY KEY,
+    saved_memories_enabled INTEGER NOT NULL DEFAULT 1,
+    chat_history_enabled INTEGER NOT NULL DEFAULT 1,
+    connectors_enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
 `
 
 interface MemoryRow {
@@ -864,6 +873,44 @@ export class SqliteMemoryRepository implements MemoryRepository {
 
   rawExec(sql: string, params: readonly unknown[] = []): void {
     this.db.prepare(sql).run(...params)
+  }
+
+  // ----------------------------------------------------------------
+  // 2.1(工业级):用户记忆设置(持久化双开关)
+  // ----------------------------------------------------------------
+
+  getMemorySettings(userId: string): { savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean } {
+    const row = this.db
+      .prepare(/* sql */ `SELECT saved_memories_enabled, chat_history_enabled, connectors_enabled FROM user_memory_settings WHERE user_id=?`)
+      .get(userId) as { saved_memories_enabled: number; chat_history_enabled: number; connectors_enabled: number } | undefined
+    if (!row) return { savedMemoriesEnabled: true, chatHistoryEnabled: true, connectorsEnabled: true }
+    return {
+      savedMemoriesEnabled: row.saved_memories_enabled === 1,
+      chatHistoryEnabled: row.chat_history_enabled === 1,
+      connectorsEnabled: row.connectors_enabled === 1
+    }
+  }
+
+  setMemorySettings(userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>): void {
+    const current = this.getMemorySettings(userId)
+    const merged = {
+      saved_memories_enabled: settings.savedMemoriesEnabled ?? current.savedMemoriesEnabled ? 1 : 0,
+      chat_history_enabled: settings.chatHistoryEnabled ?? current.chatHistoryEnabled ? 1 : 0,
+      connectors_enabled: settings.connectorsEnabled ?? current.connectorsEnabled ? 1 : 0,
+      updated_at: this.now()
+    }
+    this.db
+      .prepare(
+        /* sql */ `INSERT INTO user_memory_settings (user_id, saved_memories_enabled, chat_history_enabled, connectors_enabled, updated_at)
+                   VALUES (@user_id, @saved_memories_enabled, @chat_history_enabled, @connectors_enabled, @updated_at)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                     saved_memories_enabled=excluded.saved_memories_enabled,
+                     chat_history_enabled=excluded.chat_history_enabled,
+                     connectors_enabled=excluded.connectors_enabled,
+                     updated_at=excluded.updated_at`
+      )
+      .run({ user_id: userId, ...merged })
+    this.logEvent('memory_settings_changed', { userId, payload: merged })
   }
 
   close(): void {

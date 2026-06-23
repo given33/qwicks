@@ -115,6 +115,10 @@ export interface MemoryRepository {
 
   /** 直接执行裸 SQL(供 purge/cleanup 使用)。 */
   rawExec(sql: string, params?: readonly unknown[]): void
+
+  // ---- 2.1(工业级):用户记忆设置(持久化双开关) ----
+  getMemorySettings(userId: string): { savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }
+  setMemorySettings(userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>): void
 }
 
 /** 内部辅助:直接执行裸 SQL(仅供测试/迁移使用)。 */
