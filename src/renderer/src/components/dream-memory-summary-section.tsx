@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Eye, History, RotateCcw, ShieldOff } from 'lucide-react'
+import { Database, Eye, History, Link2, RotateCcw, ShieldOff, Zap } from 'lucide-react'
 import type {
   CoreMemoryRecordJson,
   DreamMemorySummaryJson,
@@ -40,12 +40,25 @@ export function DreamMemorySummarySection({
     restoreDreamMemoryVersion: (memoryId: string, versionId: string) => Promise<CoreMemoryRecordJson>
     suppressDreamMemory: (memoryId: string) => Promise<CoreMemoryRecordJson>
     setDreamOptOut: (userId: string, optOut: boolean) => Promise<void>
+    // v3(P1-2/4/5/6):可选的新方法(渐进接入)
+    disableDreamReferenceChatHistory?: (userId: string) => Promise<{ removedInferred: number }>
+    triggerDreamDreaming?: (userId: string) => Promise<{ ran: boolean; temporalOccurred: number; topOfMindPromoted: number }>
+    getDreamDreamingStatus?: (userId: string) => Promise<{ dirtyCount: number; isDirty: boolean }>
+    getDreamSources?: (userId: string) => Promise<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>>
+    getDreamSuppressions?: (userId: string) => Promise<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>
   }
 }): ReactElement {
   const [summary, setSummary] = useState<DreamMemorySummaryJson | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [versionsFor, setVersionsFor] = useState<{ memoryId: string; entries: DreamVersionJson[] } | null>(null)
   const [optedOut, setOptedOut] = useState(false)
+  // v3(P1-2/4/5/6):新增 UI 状态
+  const [showSources, setShowSources] = useState(false)
+  const [sources, setSources] = useState<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>>([])
+  const [showSuppressions, setShowSuppressions] = useState(false)
+  const [suppressions, setSuppressions] = useState<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>([])
+  const [dreamingStatus, setDreamingStatus] = useState<{ dirtyCount: number; isDirty: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -84,6 +97,59 @@ export function DreamMemorySummarySection({
     setOptedOut(next)
     await qwicks.setDreamOptOut(userId, next)
     if (!next) await reload()
+  }
+
+  // v3(P1-4 报告 §6.3):关闭 reference chat history
+  const handleDisableRefChat = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      if (qwicks.disableDreamReferenceChatHistory) {
+        await qwicks.disableDreamReferenceChatHistory(userId)
+        await reload()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+    setBusy(false)
+  }
+
+  // v3(P1-6 报告 §9):手动触发 dreaming
+  const handleTriggerDreaming = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      if (qwicks.triggerDreamDreaming) {
+        await qwicks.triggerDreamDreaming(userId)
+        await reload()
+        if (qwicks.getDreamDreamingStatus) {
+          setDreamingStatus(await qwicks.getDreamDreamingStatus(userId))
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+    setBusy(false)
+  }
+
+  // v3(P1-2 报告 §6.4):加载来源记录
+  const handleLoadSources = async (): Promise<void> => {
+    if (!qwicks.getDreamSources) return
+    try {
+      setSources(await qwicks.getDreamSources(userId))
+      setShowSources(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // v3(P1-2 报告 §8):加载抑制规则
+  const handleLoadSuppressions = async (): Promise<void> => {
+    if (!qwicks.getDreamSuppressions) return
+    try {
+      setSuppressions(await qwicks.getDreamSuppressions(userId))
+      setShowSuppressions(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   if (error) {
@@ -127,6 +193,118 @@ export function DreamMemorySummarySection({
           </button>
         }
       />
+
+      {/* v3(P1-4 报告 §6.3):Reference chat history 开关 */}
+      <SettingRow
+        title="关闭参考聊天历史"
+        description="删除由历史聊天推断的记忆,保留显式保存的记忆和原始聊天(对齐文档 §3)。"
+        control={
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleDisableRefChat()}
+            className="px-3 py-1 rounded text-xs bg-amber-700 text-zinc-100 hover:bg-amber-600 disabled:opacity-50"
+          >
+            关闭参考历史
+          </button>
+        }
+      />
+
+      {/* v3(P1-6 报告 §9):Dreaming 手动触发 + 状态 */}
+      <SettingRow
+        title="Dreaming 后台刷新"
+        description="手动触发一轮记忆刷新(去重/过期/时间转换/top-of-mind 调整)。"
+        control={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleTriggerDreaming()}
+              className="px-3 py-1 rounded text-xs bg-sky-700 text-zinc-100 hover:bg-sky-600 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Zap size={12} /> 立即刷新
+            </button>
+            {dreamingStatus && (
+              <span className="text-xs text-zinc-500">
+                待处理: {dreamingStatus.dirtyCount}
+              </span>
+            )}
+          </div>
+        }
+      />
+
+      {/* v3(P1-2 报告 §6.4):Memory Sources + 抑制规则入口 */}
+      <div className="flex gap-2 mb-3">
+        {qwicks.getDreamSources && (
+          <button
+            type="button"
+            onClick={() => void handleLoadSources()}
+            className="px-3 py-1 rounded text-xs bg-zinc-700 text-zinc-200 hover:bg-zinc-600 flex items-center gap-1"
+          >
+            <Link2 size={12} /> 来源记录
+          </button>
+        )}
+        {qwicks.getDreamSuppressions && (
+          <button
+            type="button"
+            onClick={() => void handleLoadSuppressions()}
+            className="px-3 py-1 rounded text-xs bg-zinc-700 text-zinc-200 hover:bg-zinc-600 flex items-center gap-1"
+          >
+            <ShieldOff size={12} /> 抑制规则
+          </button>
+        )}
+      </div>
+
+      {/* v3(P1-2):来源记录面板 */}
+      {showSources && (
+        <div className="mt-3 border border-zinc-700 rounded p-3 bg-zinc-900/50">
+          <div className="text-sm font-medium text-zinc-200 mb-2 flex items-center gap-2">
+            <Database size={14} /> 来源记录 ({sources.length})
+          </div>
+          {sources.length === 0 ? (
+            <div className="text-xs text-zinc-400">暂无来源。</div>
+          ) : (
+            <ul className="space-y-1 max-h-40 overflow-y-auto">
+              {sources.map((s) => (
+                <li key={s.id} className="text-xs text-zinc-300">
+                  <span className="text-zinc-500">[{s.source_type}]</span>{' '}
+                  {s.title ?? s.external_ref ?? s.id}
+                  {s.deleted && <span className="text-red-400 ml-1">(已删除)</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" onClick={() => setShowSources(false)} className="text-xs underline mt-2 text-zinc-400">
+            关闭
+          </button>
+        </div>
+      )}
+
+      {/* v3(P1-2):抑制规则面板 */}
+      {showSuppressions && (
+        <div className="mt-3 border border-zinc-700 rounded p-3 bg-zinc-900/50">
+          <div className="text-sm font-medium text-zinc-200 mb-2 flex items-center gap-2">
+            <ShieldOff size={14} /> 抑制规则 ({suppressions.length})
+          </div>
+          {suppressions.length === 0 ? (
+            <div className="text-xs text-zinc-400">暂无抑制规则。</div>
+          ) : (
+            <ul className="space-y-1 max-h-40 overflow-y-auto">
+              {suppressions.map((r) => (
+                <li key={r.id} className="text-xs text-zinc-300">
+                  <span className="text-zinc-500">[{r.scope}]</span>{' '}
+                  {r.target}
+                  {r.reason && <span className="text-zinc-500 ml-1">({r.reason})</span>}
+                  {!r.active && <span className="text-zinc-500 ml-1">(已恢复)</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" onClick={() => setShowSuppressions(false)} className="text-xs underline mt-2 text-zinc-400">
+            关闭
+          </button>
+        </div>
+      )}
 
       {sections.map((section) => {
         const entries = summary[section]

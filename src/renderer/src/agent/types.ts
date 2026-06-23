@@ -502,6 +502,17 @@ export interface AgentProvider {
   restoreDreamMemoryVersion?(memoryId: string, versionId: string): Promise<CoreMemoryRecordJson>
   suppressDreamMemory?(memoryId: string): Promise<CoreMemoryRecordJson>
   setDreamOptOut?(userId?: string, optOut?: boolean): Promise<void>
+  // v3(P1-2/4/5/6 报告 §6.4-§6.6):新增 dream 控制面方法
+  /** 关闭 reference chat history(删除 chat-inferred memory,保留 saved + chat_log)。 */
+  disableDreamReferenceChatHistory?(userId?: string): Promise<{ removedInferred: number }>
+  /** 手动触发一轮 dreaming。 */
+  triggerDreamDreaming?(userId?: string): Promise<{ ran: boolean; temporalOccurred: number; topOfMindPromoted: number }>
+  /** 查询 dreaming job 状态。 */
+  getDreamDreamingStatus?(userId?: string): Promise<{ dirtyCount: number; isDirty: boolean }>
+  /** 列出来源记录(回答级 Memory Sources 可解释性)。 */
+  getDreamSources?(userId?: string, sourceType?: string): Promise<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>>
+  /** 列出抑制规则(Don't mention this again)。 */
+  getDreamSuppressions?(userId?: string): Promise<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>
   steerUserMessage?(threadId: string, turnId: string, text: string): Promise<void>
   interruptTurn(threadId: string, turnId: string, options?: { discard?: boolean }): Promise<void>
   renameThread(threadId: string, title: string): Promise<void>

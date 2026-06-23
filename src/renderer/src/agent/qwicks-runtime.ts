@@ -817,6 +817,57 @@ export class QWicksRuntimeProvider implements AgentProvider {
     }
   }
 
+  // v3(P1-2/4/5/6):新增 dream 控制面方法
+  async disableDreamReferenceChatHistory(userId = 'default'): Promise<{ removedInferred: number }> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/disable-reference-chat-history?user_id=${encodeURIComponent(userId)}`,
+      'POST'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to disable reference chat history'))
+    const body = readRuntimeJson<{ removedInferred?: number }>(response.body, 'invalid disable-response')
+    return { removedInferred: body.removedInferred ?? 0 }
+  }
+
+  async triggerDreamDreaming(userId = 'default'): Promise<{ ran: boolean; temporalOccurred: number; topOfMindPromoted: number }> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/dreaming/trigger?user_id=${encodeURIComponent(userId)}`,
+      'POST'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to trigger dreaming'))
+    const body = readRuntimeJson<{ ran: boolean; temporalOccurred: number; topOfMindPromoted: number }>(response.body, 'invalid dreaming-trigger response')
+    return body
+  }
+
+  async getDreamDreamingStatus(userId = 'default'): Promise<{ dirtyCount: number; isDirty: boolean }> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/dreaming/status?user_id=${encodeURIComponent(userId)}`,
+      'GET'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to get dreaming status'))
+    const body = readRuntimeJson<{ dirtyCount: number; isDirty?: boolean }>(response.body, 'invalid dreaming-status response')
+    return { dirtyCount: body.dirtyCount ?? 0, isDirty: body.isDirty ?? false }
+  }
+
+  async getDreamSources(userId = 'default', sourceType?: string): Promise<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>> {
+    const params = new URLSearchParams({ user_id: userId })
+    if (sourceType) params.set('source_type', sourceType)
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/sources?${params.toString()}`,
+      'GET'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to get dream sources'))
+    return readRuntimeJson<{ sources: Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }> }>(response.body, 'invalid sources response').sources ?? []
+  }
+
+  async getDreamSuppressions(userId = 'default'): Promise<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/suppressions?user_id=${encodeURIComponent(userId)}`,
+      'GET'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to get dream suppressions'))
+    return readRuntimeJson<{ suppressions: Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }> }>(response.body, 'invalid suppressions response').suppressions ?? []
+  }
+
   async forkThread(
     threadId: string,
     options?: { relation?: 'primary' | 'fork' | 'side'; title?: string; turnId?: string }
