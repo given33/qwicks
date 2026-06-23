@@ -68,7 +68,9 @@ import {
   dreamUnsuppress,
   dreamDeleteSuppression,
   dreamMarkOccurred,
-  dreamDisableReferenceChatHistory
+  dreamDisableReferenceChatHistory,
+  dreamTriggerDreaming,
+  dreamDreamingStatus
 } from './dream.js'
 import {
   meshModelsResponse,
@@ -256,6 +258,15 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('POST', '/v1/dream/disable-reference-chat-history', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamDisableReferenceChatHistory(runtime.dreamSystem, request)
+  })
+  // v3(P1-6):dreaming 手动触发 + 状态查询
+  router.add('POST', '/v1/dream/dreaming/trigger', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamTriggerDreaming(runtime.dreamSystem, request)
+  })
+  router.add('GET', '/v1/dream/dreaming/status', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamDreamingStatus(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

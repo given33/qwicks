@@ -292,6 +292,41 @@ export async function dreamDisableReferenceChatHistory(system: DreamMemorySystem
   return jsonResponse(result)
 }
 
+/**
+ * v3(P1-6 报告 §9):手动触发一轮 dreaming(decay + temporal + top-of-mind)。
+ * 返回各阶段的执行统计。
+ */
+export async function dreamTriggerDreaming(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? undefined
+  dream.scheduler.markDirty(userId ?? '__all__')
+  const result = dream.scheduler.tick({ ...(userId ? { userId } : {}) })
+  return jsonResponse({
+    ran: result.ran,
+    temporalOccurred: result.temporal?.occurred ?? 0,
+    temporalExpired: result.temporal?.expiredTemporal ?? 0,
+    topOfMindPromoted: result.topOfMind?.promoted ?? 0,
+    topOfMindDemoted: result.topOfMind?.demoted ?? 0,
+    changedMemoryIds: result.temporal?.changedMemoryIds ?? []
+  })
+}
+
+/**
+ * v3(P1-6):查询 dreaming job 状态(dirty 标记 + 调度器信息)。
+ */
+export async function dreamDreamingStatus(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? undefined
+  return jsonResponse({
+    dirtyCount: dream.scheduler.dirtyCount(),
+    ...(userId ? { isDirty: dream.scheduler.isDirty(userId) } : {})
+  })
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
