@@ -63,10 +63,28 @@ export class PetDiaryStore {
     }
   }
 
+  // BUG-30 修复：并发锁防多 handler 同时 flush
+  private flushing: Promise<void> | null = null
+
   async flush(): Promise<void> {
+    // 互斥：正在 flush 时排队等待
+    if (this.flushing) return this.flushing
+    this.flushing = this.doFlush()
+    try {
+      await this.flushing
+    } finally {
+      this.flushing = null
+    }
+  }
+
+  private async doFlush(): Promise<void> {
     try {
       await mkdir(DIARY_DIR, { recursive: true })
-      await writeFile(DIARY_FILE, JSON.stringify(this.diary, null, 2), 'utf8')
+      // BUG-30 修复：原子写（tmp + rename），防崩溃时半截 JSON
+      const tmpFile = DIARY_FILE + '.tmp'
+      await writeFile(tmpFile, JSON.stringify(this.diary, null, 2), 'utf8')
+      const { rename } = await import('node:fs/promises')
+      await rename(tmpFile, DIARY_FILE)
     } catch (error) {
       console.warn('[pet-diary] flush failed:', error)
     }
