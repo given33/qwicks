@@ -47,12 +47,15 @@ import {
 } from './memory.js'
 import {
   dreamExport,
+  dreamIngestDrive,
+  dreamIngestGmail,
   dreamLedger,
   dreamOptIn,
   dreamOptOut,
   dreamPulse,
   dreamPurge,
   dreamRestore,
+  dreamRevokeConnector,
   dreamSuppress,
   dreamSummary,
   dreamVersions
@@ -190,6 +193,18 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('POST', '/v1/dream/pulse', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamPulse(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/ingest/gmail', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamIngestGmail(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/ingest/drive', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamIngestDrive(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/revoke-connector', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamRevokeConnector(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

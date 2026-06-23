@@ -60,6 +60,9 @@ import { buildMemorySummary, type MemorySummary } from '../memory_summary/builde
 import { buildMemoryLedger, type BuildLedgerInput, type MemoryLedger } from '../memory_sources/ledger.js'
 import { rewriteQuery, type RewriteResult } from '../query_rewrite/rewriter.js'
 import { generatePulseTopics, buildPulseDigest, type PulseDigest, type PulseResearchFn } from '../pulse/engine.js'
+import { OAuthTokenStore, OAuthToken, type RefreshNetwork } from '../connectors/oauth.js'
+import { GmailConnector } from '../connectors/gmail.js'
+import { DriveConnector } from '../connectors/drive.js'
 
 export interface ChatResult {
   reply: string
@@ -113,6 +116,8 @@ export class DreamMemorySystem {
   readonly synthesizer: HeuristicSynthesizer | LlmSynthesizer
   readonly twinBuilder: TwinBuilder
   readonly scheduler: DreamingScheduler
+  /** Phase 5:连接器 OAuth token 存储(加密)。 */
+  readonly oauthStore: OAuthTokenStore
   readonly observableGate: ObservableGate
   readonly promptBuilder = new NaturalPromptBuilder()
   readonly controls = new DreamControls()
@@ -135,6 +140,7 @@ export class DreamMemorySystem {
       sqlitePath: join(opts.dataDir, 'dream_memory.db')
     })
     this.controls2 = new MemoryControls({ repository: this.repository })
+    this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
 
     // embeddings:HTTP 优先 + hash 回退。Phase 1 默认 hash(无 embedding 服务时);
     // 若配置了 embedding baseUrl/model 可换 HTTP。这里 Phase 1 用 hash 保证零依赖可用。
@@ -443,6 +449,58 @@ export class DreamMemorySystem {
       ...input,
       allUserItems: input.allUserItems ?? this.repository.list(input.userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
     })
+  }
+
+  /** Phase 5:从 Gmail 拉取邮件,抽取记忆(带 connector source lineage)。 */
+  async ingestGmail(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    const token = this.oauthStore.load(account)
+    if (!token) throw new Error(`no oauth token for ${account}`)
+    const gmail = new GmailConnector({ token, fetchImpl: opts.fetchImpl })
+    const msgs = await gmail.list({ maxResults: opts.maxResults ?? 20 })
+    let ingested = 0
+    for (const m of msgs) {
+      const full = await gmail.fetch(m.id)
+      const drafts = gmail.extractDrafts(full, account)
+      for (const d of drafts) {
+        this.persistDrafts([d], account, null, null)
+        ingested += 1
+      }
+    }
+    return { ingested }
+  }
+
+  /** Phase 5:从 Drive 拉取文件,抽取记忆(带 connector source lineage)。 */
+  async ingestDrive(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    const token = this.oauthStore.load(account)
+    if (!token) throw new Error(`no oauth token for ${account}`)
+    const drive = new DriveConnector({ token, fetchImpl: opts.fetchImpl })
+    const files = await drive.list({ maxResults: opts.maxResults ?? 10 })
+    let ingested = 0
+    for (const f of files) {
+      const content = await drive.fetchContent(f)
+      const drafts = drive.extractDrafts({ fileId: f.id, fileName: f.name, content }, account)
+      for (const d of drafts) {
+        this.persistDrafts([d], account, null, null)
+        ingested += 1
+      }
+    }
+    return { ingested }
+  }
+
+  /** Phase 5:撤销连接器授权 → CONNECTOR_REVOKED tombstone(文档 §8.1 删除一致性)。 */
+  revokeConnector(account: string, userId: string): { affected: number } {
+    this.oauthStore.delete(account)
+    // 把该 account 来源的 connector memory 全部标记 CONNECTOR_REVOKED
+    const all = this.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    let affected = 0
+    for (const it of all) {
+      if (it.provenance.source === 'connector' && it.metadata.source_account === account) {
+        it.transitionStatus(MemoryLifecycleStatus.CONNECTOR_REVOKED, { actor: 'connector.revoke', reason: `account ${account} revoked` })
+        this.repository.upsert(it)
+        affected += 1
+      }
+    }
+    return { affected }
   }
 
   /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入(默认 no-op 占位)。 */

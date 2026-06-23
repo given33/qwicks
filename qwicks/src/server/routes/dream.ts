@@ -119,3 +119,51 @@ export async function dreamPulse(system: DreamMemorySystem | undefined, request:
   const digest = await dream.runPulse(userId)
   return jsonResponse({ digest: digest.toDict() })
 }
+
+/** Phase 5:从 Gmail 拉取邮件抽取记忆(需先存 OAuth token)。 */
+export async function dreamIngestGmail(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { account?: string; maxResults?: number }
+  if (!v.account) return ERRORS.validation('account is required', [])
+  try {
+    const result = await dream.ingestGmail(v.account, { maxResults: v.maxResults })
+    return jsonResponse(result)
+  } catch (error) {
+    return ERRORS.notFound(errorMessage(error))
+  }
+}
+
+/** Phase 5:从 Drive 拉取文件抽取记忆。 */
+export async function dreamIngestDrive(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { account?: string; maxResults?: number }
+  if (!v.account) return ERRORS.validation('account is required', [])
+  try {
+    const result = await dream.ingestDrive(v.account, { maxResults: v.maxResults })
+    return jsonResponse(result)
+  } catch (error) {
+    return ERRORS.notFound(errorMessage(error))
+  }
+}
+
+/** Phase 5:撤销连接器授权(→ CONNECTOR_REVOKED tombstone)。 */
+export async function dreamRevokeConnector(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const account = url.searchParams.get('account')
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  if (!account) return ERRORS.validation('account is required', [])
+  const result = dream.revokeConnector(account, userId)
+  return jsonResponse(result)
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
