@@ -20,6 +20,9 @@ import { advanceToAdult, canAdvanceToAdult, defaultGrowth, tickEgg } from '../sh
 import { personalityMods, rollPersonality, type Personality } from '../shared/pet-festivals'
 import { BrowserWindow } from 'electron'
 import { getDiaryStore } from './pet-diary-store'
+import { defaultStats } from '../shared/pet-achievements'
+import { defaultCareer } from '../shared/pet-career'
+import { defaultMarriage } from '../shared/pet-marriage'
 import { recordAction as recordPetAction, type PetAction } from './pet-achievement-tracker'
 
 const PET_STATE_DIR = join(homedir(), '.qwicks')
@@ -92,7 +95,13 @@ export class PetStateStore {
         ...base,
         ...parsed,
         vitals: { ...base.vitals, ...parsed.vitals },
-        growth: parsed.growth ?? defaultGrowth(Date.now())
+        growth: parsed.growth ?? defaultGrowth(Date.now()),
+        // BUG-22 修复：旧存档缺字段时补全默认值，防 bumpStat 产生 NaN
+        stats: parsed.stats ?? defaultStats(),
+        achievements: parsed.achievements ?? { unlocked: [], unlockedAt: {} },
+        personality: parsed.personality,
+        career: parsed.career ?? defaultCareer(),
+        marriage: parsed.marriage ?? defaultMarriage()
       }
       this.state = applyOfflineCatchUp(merged, Date.now())
     } catch {
