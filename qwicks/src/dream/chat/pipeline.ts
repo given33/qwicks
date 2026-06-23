@@ -102,6 +102,41 @@ export interface ChatResult {
   }
 }
 
+/**
+ * v3 Dream middleware 结果类型(对齐报告 §6.1/§7.1)。
+ * Dream 作为 AgentLoop 的 memory middleware:beforeTurn 读、afterTurn 写。
+ */
+export interface DreamStatusHints {
+  remembering: boolean
+  personalizing: boolean
+  memorySourcesUsed: string[]
+  rewrittenQueryFromMemory: boolean
+}
+
+export interface DreamBeforeTurnResult {
+  /** 注入用的扁平记忆(id/content/scope),供 AgentLoop 构造 system context。 */
+  memories: Array<{ id: string; content: string; scope: string }>
+  /** 经过 gate/suppression/injection 后的完整 routed hits(供 ledger)。 */
+  routedHits: RetrievalHit[]
+  statusHints: DreamStatusHints
+  gateReport: GateReport | null
+  injectionDecision: InjectionDecision | null
+  rewrittenQuery: RewriteResult | null
+  failures: string[]
+}
+
+export interface DreamAfterTurnResult {
+  newMemories: MemoryItem[]
+  /** 本 turn 创建/复用的 chat SourceRecord id(谱系)。 */
+  sourceId: string | null
+  failures: string[]
+  dreamingTriggered: boolean
+}
+
+function emptyStatusHints(): DreamStatusHints {
+  return { remembering: false, personalizing: false, memorySourcesUsed: [], rewrittenQueryFromMemory: false }
+}
+
 export interface DreamMemorySystemOptions {
   dataDir: string
   userId?: string
@@ -575,6 +610,160 @@ export class DreamMemorySystem {
       .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { item: h.item, score: Math.max(0, d.scoreAfter) } })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
+  }
+
+  // ================================================================
+  // v3 Dream middleware(对齐报告 §6.1/§7.1 SOP)
+  // 把 Dream 拆成 beforeTurn(读)/ afterTurn(写+调度)/ retrieve(检索),
+  // 让主 AgentLoop 把 Dream 当 memory middleware,而非另一个 chat engine。
+  // ================================================================
+
+  /**
+   * beforeTurn:AgentLoop turn 开始时调用(读侧)。
+   * - temporary/opt-out 短路(不读记忆)
+   * - retrieve + ObservableGate + suppression filter + injection decision
+   * - 返回注入用的记忆 + statusHints(供 turn metadata / SSE)
+   * 不做任何写操作(不保存 chat、不抽取)。
+   */
+  async beforeTurn(input: {
+    userId: string
+    prompt: string
+    threadId?: string | null
+    turnId?: string | null
+    temporary?: boolean
+    isSafetyContext?: boolean
+    contextBudgetTokens?: number
+  }): Promise<DreamBeforeTurnResult> {
+    const userId = input.userId
+    if (input.temporary || this.controls.isOptedOut(userId) || this.controls2.isOptedOut(userId)) {
+      return { memories: [], routedHits: [], statusHints: emptyStatusHints(), gateReport: null, injectionDecision: null, rewrittenQuery: null, failures: [] }
+    }
+    const failures: string[] = []
+    let hits: RetrievalHit[] = []
+    try {
+      hits = await this.retrieval.retrieve({ userId, query: input.prompt, topK: this.config.retrieval.topK })
+    } catch (err) { failures.push(`retrieve: ${String(err)}`) }
+
+    const allItems = this.repository.list(userId, {})
+    let gateReport: GateReport | null = null
+    let routedHits: RetrievalHit[] = []
+    try {
+      gateReport = this.observableGate.run({
+        userId, query: input.prompt,
+        candidates: hits.map((h) => ({ item: h.item, score: h.score })),
+        allUserItems: allItems
+      })
+      routedHits = gateReport.decisions
+        .filter((d) => d.finalDecision !== 'suppress')
+        .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { ...h, score: Math.max(0, d.scoreAfter) } })
+        .sort((a, b) => b.score - a.score)
+    } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
+
+    try { routedHits = filterSuppressedHits(userId, routedHits, this.controls2) } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
+
+    let injectionDecision: InjectionDecision | null = null
+    try {
+      injectionDecision = decideInjection({
+        query: input.prompt, availableMemories: routedHits.map((h) => h.item), userId,
+        threadId: input.threadId ?? undefined, isSafetyContext: input.isSafetyContext,
+        contextBudgetTokens: input.contextBudgetTokens ?? 4000
+      })
+      if (!injectionDecision.shouldInject) routedHits = []
+    } catch (err) { failures.push(`injection: ${String(err)}`) }
+
+    let rewrittenQuery: RewriteResult | null = null
+    try { rewrittenQuery = rewriteQuery({ userId, query: input.prompt, memories: allItems }) } catch (err) { failures.push(`rewrite: ${String(err)}`) }
+
+    const memories = routedHits.map((h) => ({ id: h.item.id, content: h.item.content, scope: h.item.scope }))
+    const usedSourceIds = new Set<string>()
+    for (const h of routedHits) for (const sid of h.item.sourceIds) usedSourceIds.add(sid)
+    const rewrittenQueryFromMemory =
+      rewrittenQuery !== null &&
+      rewrittenQuery.rewritten.toLowerCase() !== input.prompt.toLowerCase() &&
+      rewrittenQuery.appliedMemories.length > 0
+
+    return {
+      memories,
+      routedHits,
+      statusHints: {
+        remembering: routedHits.length > 0,
+        personalizing: injectionDecision?.shouldInject === true && routedHits.length > 0,
+        memorySourcesUsed: [...usedSourceIds],
+        rewrittenQueryFromMemory
+      },
+      gateReport,
+      injectionDecision,
+      rewrittenQuery,
+      failures
+    }
+  }
+
+  /**
+   * afterTurn:AgentLoop 模型回答完成后调用(写侧)。
+   * - 保存 user + assistant chat log
+   * - 创建/复用 chat SourceRecord
+   * - extract + sanitize + persistDrafts(conflict + sourceIds)
+   * - dreaming markDirty + auto-tick
+   * temporary/opt-out 短路(零写)。
+   */
+  async afterTurn(input: {
+    userId: string
+    userPrompt: string
+    assistantReply: string
+    threadId?: string | null
+    turnId?: string | null
+    temporary?: boolean
+  }): Promise<DreamAfterTurnResult> {
+    const userId = input.userId
+    if (input.temporary || this.controls.isOptedOut(userId) || this.controls2.isOptedOut(userId)) {
+      return { newMemories: [], sourceId: null, failures: [], dreamingTriggered: false }
+    }
+    const threadId = input.threadId ?? null
+    const turnId = input.turnId ?? null
+    const failures: string[] = []
+
+    try {
+      this.repository.saveChat(userId, 'user', input.userPrompt, { threadId, turnId })
+      this.repository.saveChat(userId, 'assistant', input.assistantReply, { threadId, turnId })
+    } catch (err) { failures.push(`saveChat: ${String(err)}`) }
+
+    let chatSourceId: string | null = null
+    try {
+      const externalRef = [threadId, turnId].filter(Boolean).join('/') || `ts_${Date.now()}`
+      chatSourceId = this.controls2.upsertSource({
+        userId, sourceType: SourceType.CHAT, externalRef,
+        title: input.userPrompt.slice(0, 80), content: input.userPrompt
+      }).id
+    } catch (err) { failures.push(`source_record: ${String(err)}`) }
+
+    let drafts: Awaited<ReturnType<typeof this.extraction.extractAsync>> = []
+    try {
+      drafts = await this.extraction.extractAsync({ user: input.userPrompt, assistant: input.assistantReply })
+    } catch (err) { failures.push(`extract: ${String(err)}`) }
+
+    const sanitizedDrafts = drafts.filter((d) => {
+      try {
+        const res = sanitizeForMemory(d.content, { source: d.provenance.source })
+        if (res.decision === 'reject') return false
+        if (res.findings.some((f) => f.kind.startsWith('injection_'))) return false
+        if (res.decision === 'redact') d.content = res.sanitized
+        return true
+      } catch { return false }
+    })
+
+    let newMemories: MemoryItem[] = []
+    try {
+      newMemories = this.persistDrafts(sanitizedDrafts, userId, threadId, turnId, chatSourceId)
+    } catch (err) { failures.push(`persist: ${String(err)}`) }
+
+    let dreamingTriggered = false
+    if (newMemories.length > 0) {
+      this.scheduler.markDirty(userId)
+      dreamingTriggered = true
+      void Promise.resolve().then(() => { try { this.scheduler.tick({ userId }) } catch { /* non-blocking */ } })
+    }
+
+    return { newMemories, sourceId: chatSourceId, failures, dreamingTriggered }
   }
 
   /** Phase 5:从 Gmail 拉取邮件,抽取记忆(带 connector source lineage)。 */
