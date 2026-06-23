@@ -132,6 +132,19 @@ CREATE TABLE IF NOT EXISTS suppression_rule (
 );
 CREATE INDEX IF NOT EXISTS ix_suppression_user ON suppression_rule(user_id);
 CREATE INDEX IF NOT EXISTS ix_suppression_scope ON suppression_rule(scope);
+
+-- v3(报告 §7.3):规范化的 memory↔source 关联表。
+-- 与 memory.source_ids JSON 列并存(JSON 列向后兼容,此表用于可靠 JOIN 查询)。
+CREATE TABLE IF NOT EXISTS memory_source_link (
+    memory_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (memory_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS ix_msl_source ON memory_source_link(source_id);
+CREATE INDEX IF NOT EXISTS ix_msl_user_source ON memory_source_link(user_id, source_id);
+CREATE INDEX IF NOT EXISTS ix_msl_memory ON memory_source_link(memory_id);
 `
 
 interface MemoryRow {
@@ -280,6 +293,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
         topic: item.topic
       }
     })
+    // v3(报告 §7.3):同步 memory_source_link 规范化表(与 source_ids JSON 列并存)
+    this.syncSourceLinks(item)
     return item
   }
 
@@ -635,12 +650,48 @@ export class SqliteMemoryRepository implements MemoryRepository {
   }
 
   memoriesDerivedFromSource(userId: string, sourceId: string): MemoryItem[] {
+    // v3(报告 §7.3):优先用规范化的 memory_source_link JOIN 表(更快、无 LIKE 注入风险);
+    // 若 link 表为空(老数据迁移前),回退到 source_ids JSON LIKE。
+    try {
+      const linkRows = this.db
+        .prepare(
+          /* sql */ `SELECT m.* FROM memory m
+                     JOIN memory_source_link l ON l.memory_id = m.id
+                     WHERE l.user_id=? AND l.source_id=?
+                     ORDER BY m.updated_at DESC`
+        )
+        .all(userId, sourceId) as MemoryRow[]
+      if (linkRows.length > 0) {
+        return linkRows.map((r) => this.rowToItem(r))
+      }
+    } catch {
+      // link 表可能不存在(极老 DB)→ 回退 JSON LIKE
+    }
     const rows = this.db
       .prepare(
         /* sql */ `SELECT * FROM memory WHERE user_id=? AND source_ids LIKE ? ORDER BY updated_at DESC`
       )
       .all(userId, `%"${sourceId.replace(/"/g, '\\"')}"%`) as MemoryRow[]
     return rows.map((r) => this.rowToItem(r))
+  }
+
+  /**
+   * v3(报告 §7.3):同步 memory_source_link 规范化表。
+   * 删除该 memory 的旧 link 行,按 sourceIds 重新插入(幂等)。
+   */
+  private syncSourceLinks(item: MemoryItem): void {
+    try {
+      const del = this.db.prepare(/* sql */ `DELETE FROM memory_source_link WHERE memory_id=?`)
+      const ins = this.db.prepare(
+        /* sql */ `INSERT OR IGNORE INTO memory_source_link(memory_id, source_id, user_id, created_at) VALUES (?,?,?,?)`
+      )
+      del.run(item.id)
+      for (const sid of item.sourceIds) {
+        ins.run(item.id, sid, item.userId, item.createdAt)
+      }
+    } catch {
+      // link 表可能不存在(极老 DB,SCHEMA 未跑)→ 静默跳过(JSON 列仍可用)
+    }
   }
 
   // ----------------------------------------------------------------
