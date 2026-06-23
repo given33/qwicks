@@ -41,7 +41,7 @@ function g(re: RegExp): RegExp {
 const SECRET_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'pii_password',
-    g(/(?:password|passwd|pwd|secret|token)\s*(?:is|[:=])\s*["']?([^\s"',;]{4,})["']?/i)
+    g(/(?:password|passwd|pwd|secret|token|密码|密钥|口令)\s*(?:is|[:=]|是|：)\s*["']?([^\s"',;]{4,})["']?/i)
   ],
   [
     'pii_api_key',
@@ -94,16 +94,16 @@ export function redactSecrets(
 const INJECTION_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   [
     'injection_override',
-    g(/(?:ignore|disregard|forget|override|bypass)\s+(?:all|any|the|previous|prior|above|earlier)?\s*(?:instructions?|rules?|prompts?|directives?|safety)\b/i)
+    g(/(?:ignore|disregard|forget|override|bypass)\s+(?:all|any|the|previous|prior|above|earlier|everything|忽略|忘记|忽视|所有|之前)[\s\S]{0,30}?(?:instructions?|rules?|prompts?|directives?|safety|指令|规则|提示)/is)
   ],
   ['injection_role_tag', g(/<\s*\|?\s*(?:im_start|system|assistant|tool_call)\s*\|?[^>]*>/is)],
   [
     'injection_dev_mode',
-    g(/(?:developer\s+mode|dev\s+mode|debug\s+mode|jailbreak|do\s+anything\s+now|DAN\s+mode)\b/i)
+    g(/(?:developer\s+mode|dev\s+mode|debug\s+mode|jailbreak|do\s+anything\s+now|DAN\s+mode|unrestricted)\b/i)
   ],
   [
     'injection_secrets',
-    g(/(?:reveal|print|output|leak|expose|disclose)\s+(?:the\s+)?(?:secret|password|api[_\s]?key|token|credential|ssn|all\s+secrets)\b/i)
+    g(/(?:reveal|print|output|leak|expose|disclose|tell\s+me|show\s+me|give\s+me|输出|告诉我|展示)\s+(?:the\s+)?(?:secret|password|api[_\s]?key|token|credential|ssn|all\s+secrets|admin|system\s+prompt|系统提示)/i)
   ],
   ['injection_system_tag', g(/^\s*(?:system|assistant)\s*:\s*(?!$)/im)],
   ['injection_command', g(/(?:rm\s+-rf|sudo\s+|chmod\s+777|drop\s+table|truncate\s+table)\b/i)],

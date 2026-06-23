@@ -188,6 +188,8 @@ export class HeuristicExtractor implements Extractor {
   private splitSentences(text: string): string[] {
     // 对齐 Python _split_sentences:缩写词保护 + 句末标点切分 + 连接词再切。
     let t = text
+    // 保护 email/URL 中的句点(避免 @domain.com 被 . 切断)
+    t = t.replace(/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, (m) => m.replace(/\./g, '<DOT>'))
     for (const abbr of ABBREV) {
       t = t.replace(new RegExp(`${escapeRe(abbr)}\\.`, 'g'), abbr.replace(/\./g, '<DOT>'))
     }

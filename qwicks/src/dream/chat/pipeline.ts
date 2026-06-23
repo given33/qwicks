@@ -259,9 +259,13 @@ export class DreamMemorySystem {
     const drafts = await this.extraction.extractAsync({ user: message, assistant: opts.assistant ?? null })
 
     // 3.5) sanitize each draft (REDACT/QUARANTINE/REJECT)
+    // 对齐 Python:secrets → REDACT;高危注入 → REDACT;但注入类记忆(意图攻击)
+    // 对 dream 来说不应存储 —— reject 任何含注入 finding 的草稿(更严格的安全姿态)。
     const sanitizedDrafts = drafts.filter((d) => {
       const res = sanitizeForMemory(d.content, { source: d.provenance.source })
       if (res.decision === 'reject') return false
+      // 含注入 finding 的草稿一律拒绝(不存储攻击 payload)
+      if (res.findings.some((f) => f.kind.startsWith('injection_'))) return false
       if (res.decision === 'redact') d.content = res.sanitized
       return true
     })
