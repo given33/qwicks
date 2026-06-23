@@ -65,6 +65,14 @@ export function PetStage(): ReactElement {
     return { season, weather: pickWeather(season), festivalColor: festival?.themeColor }
   })
 
+  // R5 跨屏寻路：启动时拉取显示器，多屏时供漫步跨屏
+  const displaysRef = useRef<{ x: number; y: number; width: number; height: number }[]>([])
+  useEffect(() => {
+    const b = getBridge() as { getDisplays?: () => Promise<{ x: number; y: number; width: number; height: number }[]> } | null
+    if (!b?.getDisplays) return
+    void b.getDisplays().then((ds) => { displaysRef.current = ds })
+  }, [])
+
   // 热区穿透切换
   useEffect(() => {
     const onMove = (event: MouseEvent): void => {
@@ -145,6 +153,15 @@ export function PetStage(): ReactElement {
       } else if (current.kind === 'wander') {
         if (hasReachedTarget(pos, current.target)) {
           motionRef.current = transitionPetMotion(current, { type: 'reached' }, ctx)
+          // R5 跨屏：多屏时 30% 概率切到相邻屏
+          const ds = displaysRef.current
+          if (ds.length > 1 && Math.random() < 0.3) {
+            const others = ds.filter((d) => pos.x < d.x || pos.x >= d.x + d.width)
+            if (others.length > 0) {
+              const t = others[Math.floor(Math.random() * others.length)]!
+              setPosition({ x: t.x + t.width / 2 - PET_W / 2, y: t.y + t.height - PET_H - 40 })
+            }
+          }
         } else {
           // 撞墙检测（简化：触左右边）
           if (pos.x <= 0) {
