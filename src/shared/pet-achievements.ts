@@ -94,7 +94,7 @@ export function checkAchievements(stats: PetStats, alreadyUnlocked: string[], co
     'activities-20': stats.activitiesExperienced >= 20,
     'activities-all': stats.activitiesExperienced >= 43,
     'items-10': stats.itemsOwned >= 10,
-    'rich-500': (coins ?? 0) >= 500 // BUG-11 修复：接 coins 参数判定
+    'rich-500': (coins ?? 0) >= 500 // BUG-11 修复：接 coins 判定
   }
 
   for (const ach of PET_ACHIEVEMENTS) {
