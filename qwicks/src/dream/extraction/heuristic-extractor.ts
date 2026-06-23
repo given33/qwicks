@@ -17,7 +17,7 @@ import {
   MemoryItemDraft,
   MemoryProvenance,
   MemoryType,
-  type MemoryType as MT
+  MemoryType as MT
 } from '../types.js'
 import type { ExtractInput, Extractor } from './base.js'
 
@@ -105,6 +105,8 @@ export class HeuristicExtractor implements Extractor {
     for (const sentence of this.splitSentences(input.user)) {
       const s = sentence.trim()
       if (!s || s.length < 4) continue
+      // 跳过问句(用户在提问,不是在陈述事实/偏好 —— 不应存为记忆)。
+      if (this.isQuestion(s)) continue
       let matched: MT | null = null
       for (const [type, patterns] of PATTERNS) {
         if (patterns.some((p) => p.test(s))) {
@@ -154,10 +156,16 @@ export class HeuristicExtractor implements Extractor {
   }
 
   private importance(type: MT): number {
-    if (type === MemoryType.GOAL || type === MemoryType.SKILL || type === MemoryType.PREFERENCE) return 0.7
-    if (type === MemoryType.CONSTRAINT) return 0.65
-    if (type === MemoryType.PROJECT) return 0.6
+    if (type === MT.GOAL || type === MT.SKILL || type === MT.PREFERENCE) return 0.7
+    if (type === MT.CONSTRAINT) return 0.65
+    if (type === MT.PROJECT) return 0.6
     return 0.5
+  }
+
+  /** 问句检测:以问号结尾,或以疑问词开头(what/how/why/which/who/when/where/是否/怎么/什么/为什么)。 */
+  private isQuestion(s: string): boolean {
+    if (s.endsWith('?') || s.endsWith('？')) return true
+    return /^(?:what|how|why|which|who|when|where|can you|could you|do you|is it|are you|tell me|show me|remind me|什么|怎么|为什么|哪些|哪个|是否|能否|请问)/i.test(s.trim())
   }
 
   private tags(s: string, type: MT): string[] {

@@ -88,7 +88,11 @@ export function decideInjection(opts: DecideInjectionOptions): InjectionDecision
 
   // composite
   const score = queryIntent * 0.15 + memoryRelevance * 0.35 + risk * 0.2 + utility * 0.2 + budget * 0.1
-  const shouldInject = score >= 0.35
+  // 文档 §3.4:纯通用技术问题(无个人代词 + queryIntent ≤ 0.3)不应注入个人历史,
+  // 除非用户显式要求记忆。带 "my/I" 的个人查询(如 "what are my skills")仍注入。
+  const hasPersonalPronoun = /\b(?:my|i\b|i\s|mine|me\b|i'm|i have|i am)\b/i.test(q) || /我|我的|我有|我是/.test(q)
+  const isGenericImpersonal = !explicitTrigger && queryIntent <= 0.3 && !hasPersonalPronoun
+  const shouldInject = isGenericImpersonal ? false : score >= 0.35
 
   const reasons: string[] = []
   if (explicitTrigger) reasons.push('explicit_memory_trigger')

@@ -50,6 +50,8 @@ export type PetState = {
   marriage?: import('./pet-marriage').MarriageState
   /** P3 教育+职业状态。 */
   career?: import('./pet-career').CareerState
+  /** P4 个性（影响衰减/互动倍率）。孵化时随机分配。 */
+  personality?: import('./pet-festivals').Personality
 }
 
 /** 每小时衰减量（按 100 基准）。非线性：低值时衰减减缓。 */

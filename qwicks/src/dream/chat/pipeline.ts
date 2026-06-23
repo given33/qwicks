@@ -337,11 +337,13 @@ export class DreamMemorySystem {
     twin = synthResult.twin
     this.repository.saveTwin(userId, JSON.stringify({ ...twin, user_id: twin.userId }), twin.generatedAt)
 
-    // 8) prompt build (NaturalPromptBuilder) + source receipts(用 routedHits)
+    // 8) prompt build (NaturalPromptBuilder) + source receipts(用 routedHits)。
+    // shouldInject=false 时不注入任何个性化上下文(对齐文档 §3.4 "只在相关时才用记忆"):
+    // twin 传 null(不渲染画像),routedHits 已在上面清空。
     const built = this.promptBuilder.build({
       userId,
       query: message,
-      twin,
+      twin: injectionDecision.shouldInject ? twin : null,
       hits: routedHits,
       maxChars: this.config.prompt.maxSectionChars * 8
     })

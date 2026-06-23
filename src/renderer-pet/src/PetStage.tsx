@@ -30,6 +30,7 @@ import {
   type Season,
   type Weather
 } from './pet-environment'
+import { getActiveFestival, festivalGreeting } from '@shared/pet-festivals'
 
 const PET_W = 96
 const PET_H = 120
@@ -56,10 +57,12 @@ export function PetStage(): ReactElement {
   const [dustParticles, setDustParticles] = useState<Particle[]>([])
   const [showDizzy, setShowDizzy] = useState(false)
 
-  // 环境：季节 + 天气（启动时定一次）
-  const [env] = useState<{ season: Season; weather: Weather }>(() => {
+  // 环境：季节 + 天气 + 节日（启动时定一次）
+  const [env] = useState<{ season: Season; weather: Weather; festivalColor?: string }>(() => {
     const season = seasonForDate(new Date())
-    return { season, weather: pickWeather(season) }
+    // P4 节日彩蛋：检测当前节日，用其主题色染环境粒子
+    const festival = getActiveFestival(new Date())
+    return { season, weather: pickWeather(season), festivalColor: festival?.themeColor }
   })
 
   // 热区穿透切换
@@ -194,7 +197,7 @@ export function PetStage(): ReactElement {
   return (
     <>
       {/* 季节/天气粒子层（背景，pointer-events none） */}
-      <EnvironmentLayer season={env.season} weather={env.weather} />
+      <EnvironmentLayer season={env.season} weather={env.weather} festivalColor={env.festivalColor} />
 
       {/* 物理阴影（地面椭圆，悬空变小变淡） */}
       <div
@@ -287,14 +290,15 @@ function windowBounds() {
   return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
 }
 
-/** 季节/天气粒子层（简化版：根据天气渲染不同粒子）。 */
-function EnvironmentLayer({ season, weather }: { season: Season; weather: Weather }): ReactElement {
-  // 用一组 CSS 动画的粒子表现天气。M1 范围内做基础呈现。
-  const particleColor =
+/** 季节/天气粒子层（节日彩蛋用 themeColor 染色）。 */
+function EnvironmentLayer({ season, weather, festivalColor }: { season: Season; weather: Weather; festivalColor?: string }): ReactElement {
+  // P4 节日彩蛋：有节日主题色时覆盖粒子色（如春节红、圣诞绿）
+  const baseColor =
     weather === 'snow' ? 'rgba(255,255,255,0.85)'
       : weather === 'rain' ? 'rgba(150,180,200,0.6)'
         : season === 'autumn' ? 'rgba(220,140,60,0.6)'
           : 'rgba(255,220,150,0.4)'
+  const particleColor = festivalColor ?? baseColor
   const count = weather === 'sunny' ? 12 : 30
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
