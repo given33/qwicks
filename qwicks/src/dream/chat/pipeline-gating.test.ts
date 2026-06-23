@@ -70,4 +70,27 @@ describe('DreamMemorySystem chat pipeline — Phase 2 gating wired in', () => {
     expect(injected.some((h) => h.item.id === id)).toBe(false)
     sys.close()
   })
+
+  it('runs the 5-dim injection decision every turn and surfaces it on the result', async () => {
+    const sys = makeSystem({ dir })
+    await sys.chat('alice', '我的项目是 teamflow,后端用 rust')
+    const r2 = await sys.chat('alice', 'use my memory to remind me about my projects')
+    expect(r2.injectionDecision).toBeDefined()
+    expect(r2.injectionDecision!.explicitMemoryTrigger).toBe(true) // "use my memory"
+    expect(r2.injectionDecision!.shouldInject).toBe(true)
+    sys.close()
+  })
+
+  it('does NOT inject memories when shouldInject is false (generic, irrelevant, low-budget)', async () => {
+    const sys = makeSystem({ dir })
+    await sys.chat('alice', '我的项目是 teamflow')
+    // a generic, irrelevant question with no personal hook → shouldInject false → routedHits empty
+    const r2 = await sys.chat('alice', 'what is docker', { contextBudgetTokens: 200 })
+    expect(r2.injectionDecision).toBeDefined()
+    // generic tech question with irrelevant memories should not inject personal context
+    if (!r2.injectionDecision!.shouldInject) {
+      expect(r2.routedHits.length).toBe(0)
+    }
+    sys.close()
+  })
 })

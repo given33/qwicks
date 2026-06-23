@@ -49,6 +49,7 @@ import {
   type GateReport,
   type UserCorrection
 } from '../retrieval/observable-gate.js'
+import { decideInjection, type InjectionDecision } from '../retrieval/injection-decision.js'
 import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/natural-builder.js'
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
@@ -66,6 +67,8 @@ export interface ChatResult {
   extractorBackend: string
   /** Phase 2:ObservableGate 决策汇总(评测/panel 用)。 */
   gateReport: GateReport | null
+  /** Phase 2:5 维 SelectiveInjectionRouter 的 query-level "何时用记忆" 决策。 */
+  injectionDecision: InjectionDecision | null
 }
 
 export interface DreamMemorySystemOptions {
@@ -172,7 +175,16 @@ export class DreamMemorySystem {
   async chat(
     userId: string,
     message: string,
-    opts: { assistant?: string | null; threadId?: string | null; turnId?: string | null; temporary?: boolean } = {}
+    opts: {
+      assistant?: string | null
+      threadId?: string | null
+      turnId?: string | null
+      temporary?: boolean
+      /** 上下文 token 预算(影响 injection budget 维度)。 */
+      contextBudgetTokens?: number
+      /** 安全敏感上下文(降低 injection risk 维度)。 */
+      isSafetyContext?: boolean
+    } = {}
   ): Promise<ChatResult> {
     const threadId = opts.threadId ?? null
     const turnId = opts.turnId ?? null
@@ -188,7 +200,8 @@ export class DreamMemorySystem {
         routedHits: [],
         twin: null,
         extractorBackend: 'temporary_skip',
-        gateReport: null
+        gateReport: null,
+        injectionDecision: null
       }
     }
 
@@ -209,7 +222,8 @@ export class DreamMemorySystem {
         routedHits: [],
         twin: null,
         extractorBackend: 'opt_out',
-        gateReport: null
+        gateReport: null,
+        injectionDecision: null
       }
     }
 
@@ -243,13 +257,28 @@ export class DreamMemorySystem {
       candidates: hits.map((h) => ({ item: h.item, score: h.score })),
       allUserItems: allItems
     })
-    const routedHits = gateReport.decisions
+    let routedHits = gateReport.decisions
       .filter((d) => d.finalDecision !== 'suppress')
       .map((d) => {
         const h = hits.find((x) => x.item.id === d.memoryId)!
         return { ...h, score: Math.max(0, d.scoreAfter) }
       })
       .sort((a, b) => b.score - a.score)
+
+    // 5.6) Phase 2: SelectiveInjectionRouter —— 5 维 query-level "何时用记忆" 判断。
+    // 先判断本次请求是否会被个性化上下文改善(spec §7.3);shouldInject=false 则不注入
+    // (routedHits 清空),但决策仍然 surface 到 ChatResult 供评测/panel。
+    const injectionDecision = decideInjection({
+      query: message,
+      availableMemories: routedHits.map((h) => h.item),
+      userId,
+      threadId: threadId ?? undefined,
+      isSafetyContext: opts.isSafetyContext,
+      contextBudgetTokens: opts.contextBudgetTokens ?? 4000
+    })
+    if (!injectionDecision.shouldInject) {
+      routedHits = []
+    }
 
     // 6) build twin (early, for synthesis) — 用 routedHits(已 gate 过)
     let twin = this.twinBuilder.build({
@@ -305,7 +334,8 @@ export class DreamMemorySystem {
       routedHits,
       twin,
       extractorBackend: this.extraction.lastBackend(),
-      gateReport
+      gateReport,
+      injectionDecision
     }
   }
 

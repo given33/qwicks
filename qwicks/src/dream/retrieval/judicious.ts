@@ -84,7 +84,48 @@ export function detectSupersedeChain(items: readonly MemoryItem[], userId: strin
       }
     }
   }
+
+  // R70+ v4: cross-key supersede —— active_during_travel(旧) 被 current_location(新) supersede,
+  // previous_* 被 current_* supersede(对齐 Python judicious.py:175-203)。
+  const crossKeyPairs: ReadonlyArray<readonly [string, string]> = [
+    ['active_during_travel', 'current_location'],
+    ['expired_travel', 'current_location'],
+    ['expired_travel', 'post_travel_state'],
+    ['home_location', 'current_location'],
+    ['previous_http_lib', 'current_http_lib'],
+    ['previous_language', 'language'],
+    ['previous_location', 'current_location']
+  ]
+  for (const [oldKey, newKey] of crossKeyPairs) {
+    const olds = items.filter(
+      (it) => it.userId === userId && hasStructuredKey(it, oldKey)
+    )
+    const news = items.filter(
+      (it) => it.userId === userId && hasStructuredKey(it, newKey)
+    )
+    if (olds.length === 0 || news.length === 0) continue
+    const newLatest = [...news].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]!
+    const newIds = new Set(news.map((n) => n.id))
+    for (const oldItem of olds) {
+      if (newIds.has(oldItem.id)) continue // 不 supersede 自己
+      const oldVal = structuredVal(oldItem, oldKey)
+      const newVal = structuredVal(newLatest, newKey)
+      if (oldVal && newVal && String(oldVal).toLowerCase() !== String(newVal).toLowerCase()) {
+        chains.set(oldItem.id, newLatest.id)
+      }
+    }
+  }
   return chains
+}
+
+function hasStructuredKey(item: MemoryItem, key: string): boolean {
+  const attrs = item.metadata.structured_attrs
+  return !!attrs && typeof attrs === 'object' && key in (attrs as Record<string, unknown>)
+}
+
+function structuredVal(item: MemoryItem, key: string): unknown {
+  const attrs = item.metadata.structured_attrs as Record<string, unknown> | undefined
+  return attrs?.[key]
 }
 
 /** freshness 调整:supersede 旧值强 demote,新值 boost(对齐 Python freshness_score_adjust)。 */
