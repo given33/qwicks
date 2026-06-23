@@ -17,7 +17,13 @@ import {
   MemoryScope,
   MemoryType,
   nowIso,
-  parseMemoryType
+  parseMemoryType,
+  SourceRecord,
+  SourceType,
+  SuppressionRule,
+  SuppressionScope,
+  TemporalState,
+  newSourceId
 } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
 
@@ -258,6 +264,230 @@ export class MemoryControls {
         type: item.type
       }
     })
+  }
+
+  // ================================================================
+  // v3: Source Records(文档 §6 Memory Sources / §1 source lineage)
+  // ================================================================
+
+  /**
+   * 创建/更新来源记录。若同 (userId, sourceType, externalRef) 已存在则复用其 id,
+   * 实现 chat/file/gmail 来源的幂等摄入。
+   */
+  upsertSource(input: {
+    userId: string
+    sourceType: SourceType
+    externalRef?: string | null
+    title?: string | null
+    content?: string | null
+    attrs?: Record<string, unknown>
+    id?: string
+  }): SourceRecord {
+    // 去重:同 (user, type, externalRef) 复用 id
+    let id = input.id
+    if (!id && input.externalRef) {
+      const existing = this.opts.repository.findSourceByExternalRef(
+        input.userId,
+        input.sourceType,
+        input.externalRef
+      )
+      if (existing) id = existing.id
+    }
+    const source = new SourceRecord(
+      id ?? newSourceId(),
+      input.userId,
+      input.sourceType,
+      input.externalRef ?? null,
+      input.title ?? null,
+      input.content ?? null,
+      input.attrs ?? {}
+    )
+    return this.opts.repository.upsertSource(source)
+  }
+
+  getSource(sourceId: string): SourceRecord | null {
+    return this.opts.repository.getSource(sourceId)
+  }
+
+  listSources(userId: string, opts: { sourceType?: SourceType; includeDeleted?: boolean } = {}): SourceRecord[] {
+    return this.opts.repository.listSources(userId, opts)
+  }
+
+  /**
+   * 删除来源。软删(默认)保留行以便谱系查询;hard=true 物理删除。
+   * 注意:此方法只删 source 本身,不级联删派生 memory —— 用 deleteSourceAndDerived
+   * 做级联删除(文档 §9 "删除由来源派生出的 inferred memories")。
+   */
+  deleteSource(sourceId: string, opts: { hard?: boolean } = {}): boolean {
+    return this.opts.repository.deleteSource(sourceId, opts)
+  }
+
+  /**
+   * 级联删除:删来源 + 所有派生自它的 inferred memory(文档 §9 deletion lineage)。
+   * 返回受影响的 memory 数。saved memory 类型不级联(用户显式保存的需单独删)。
+   */
+  deleteSourceAndDerived(sourceId: string, opts: { hard?: boolean } = {}): {
+    sourceDeleted: boolean
+    derivedDeleted: number
+    derivedMemoryIds: string[]
+  } {
+    const source = this.opts.repository.getSource(sourceId)
+    if (!source) {
+      return { sourceDeleted: false, derivedDeleted: 0, derivedMemoryIds: [] }
+    }
+    const derived = this.opts.repository.memoriesDerivedFromSource(source.userId, sourceId)
+    const derivedIds: string[] = []
+    for (const m of derived) {
+      // 跳过用户显式保存的(saved memory 类型)—— 文档要求保留除非用户单独删
+      if (m.provenance.source === 'user' && source.sourceType === SourceType.SAVED_MEMORY) {
+        continue
+      }
+      this.opts.repository.delete(m.id, opts)
+      derivedIds.push(m.id)
+    }
+    const sourceDeleted = this.opts.repository.deleteSource(sourceId, opts)
+    this.opts.repository.logEvent('cascade_delete', {
+      recordId: sourceId,
+      userId: source.userId,
+      payload: {
+        source_type: source.sourceType,
+        derived_count: derivedIds.length,
+        derived_memory_ids: derivedIds,
+        hard: opts.hard === true
+      }
+    })
+    return { sourceDeleted, derivedDeleted: derivedIds.length, derivedMemoryIds: derivedIds }
+  }
+
+  /** 列出派生自某来源的 memory(谱系查询,文档 §1 memory source lineage)。 */
+  memoriesDerivedFromSource(userId: string, sourceId: string): MemoryItem[] {
+    return this.opts.repository.memoriesDerivedFromSource(userId, sourceId)
+  }
+
+  // ================================================================
+  // v3: Suppression Rules(文档 §8 Don't mention this again)
+  // ================================================================
+
+  /**
+   * 创建/更新抑制规则(≠ 删除)。幂等:同 (user, scope, target) 复用。
+   * 返回落库后的规则。用户明确询问时系统仍可解释相关信息。
+   */
+  suppress(input: {
+    userId: string
+    scope: SuppressionScope
+    target: string
+    reason?: string | null
+  }): SuppressionRule {
+    const existing = this.opts.repository.findSuppression(
+      input.userId,
+      input.scope,
+      input.target
+    )
+    const rule = new SuppressionRule(
+      existing?.id ?? `sup_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
+      input.userId,
+      input.scope,
+      input.target,
+      input.reason ?? null,
+      undefined,
+      true
+    )
+    const saved = this.opts.repository.upsertSuppression(rule)
+    // MEMORY scope:同时同步 memory.isSuppressed flag(便于检索快速过滤)
+    if (input.scope === SuppressionScope.MEMORY) {
+      const m = this.opts.repository.get(input.target)
+      if (m) {
+        m.isSuppressed = true
+        this.opts.repository.upsert(m)
+      }
+    }
+    return saved
+  }
+
+  /** 列出用户的所有活跃抑制规则。 */
+  listSuppressions(userId: string, opts: { includeInactive?: boolean } = {}): SuppressionRule[] {
+    return this.opts.repository.listSuppressions(userId, opts)
+  }
+
+  /** 恢复(取消)抑制 —— 不删除规则记录,只置 active=false。 */
+  unsuppress(userId: string, scope: SuppressionScope, target: string): boolean {
+    const existing = this.opts.repository.findSuppression(userId, scope, target)
+    if (!existing) return false
+    existing.active = false
+    this.opts.repository.upsertSuppression(existing)
+    if (scope === SuppressionScope.MEMORY) {
+      const m = this.opts.repository.get(target)
+      if (m) {
+        m.isSuppressed = false
+        this.opts.repository.upsert(m)
+      }
+    }
+    return true
+  }
+
+  /** 物理删除抑制规则(彻底移除,与 unsuppress 区分:后者保留记录)。 */
+  deleteSuppression(ruleId: string): boolean {
+    return this.opts.repository.deleteSuppression(ruleId)
+  }
+
+  /** 判断某 memory/topic 是否被抑制(检索/注入前过滤用)。 */
+  isSuppressed(
+    userId: string,
+    scope: SuppressionScope,
+    target: string
+  ): boolean {
+    const rule = this.opts.repository.findSuppression(userId, scope, target)
+    return rule !== null && rule.active
+  }
+
+  // ================================================================
+  // v3: Temporal state controls(文档 §4 dreaming 时间转换)
+  // ================================================================
+
+  /**
+   * 手动把一条 PLANNED memory 转为 OCCURRED(旅行结束 → 历史)。
+   * 返回更新后的 memory 或 null。也供 dreaming 自动调用。
+   */
+  markOccurred(
+    memoryId: string,
+    historyContent: string,
+    opts: { reason?: string | null } = {}
+  ): MemoryItem | null {
+    const m = this.opts.repository.get(memoryId)
+    if (!m) return null
+    m.transitionToOccurred(historyContent, { reason: opts.reason ?? 'manual_mark_occurred' })
+    return this.opts.repository.upsert(m)
+  }
+
+  // ================================================================
+  // v3: Reference chat history 控制(文档 §3)
+  // ================================================================
+
+  /**
+   * 关闭"reference chat history":删除所有由 chat 推断的 inferred memory,
+   * 保留显式 saved memory + 原始 chat_log(文档 §3 "关闭时停止使用并标记/删除
+   * 由历史聊天推断出的 inferred memories")。
+   * 返回删除的 memory 数。
+   */
+  disableReferenceChatHistory(userId: string): { removedInferred: number; removedIds: string[] } {
+    const all = this.opts.repository.list(userId, {
+      includeDeleted: true,
+      includeSuppressed: true,
+      includeExpired: true
+    })
+    const removedIds: string[] = []
+    for (const m of all) {
+      // 只删 provenance.source 为 chat 的 inferred memory
+      if (m.provenance.source === 'chat') {
+        this.opts.repository.delete(m.id, { hard: true })
+        removedIds.push(m.id)
+      }
+    }
+    this.opts.repository.logEvent('disable_reference_chat_history', {
+      userId,
+      payload: { removed_count: removedIds.length, removed_ids: removedIds }
+    })
+    return { removedInferred: removedIds.length, removedIds }
   }
 }
 
