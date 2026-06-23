@@ -11,6 +11,8 @@ import { FileSessionStore, FileThreadStore } from '../adapters/file/index.js'
 import { HybridSessionStore, HybridThreadStore } from '../adapters/hybrid/index.js'
 import { CompatModelClient } from '../adapters/model/compat-model-client.js'
 import { MultiProviderModelClient } from '../adapters/model/multi-provider-model-client.js'
+import type { ModelClient } from '../ports/model-client.js'
+import { adaptModelClientToDreamChat } from '../dream/chat/model-chat-adapter.js'
 import { CapabilityRegistry } from '../adapters/tool/capability-registry.js'
 import { buildGoalLocalTools } from '../adapters/tool/goal-tools.js'
 import { buildTodoLocalTools } from '../adapters/tool/todo-tools.js'
@@ -273,7 +275,7 @@ export async function createQWicksServeRuntime(
       })
     : undefined
   const memory = options.capabilities?.memory.enabled
-    ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'))
+    ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'), modelClient)
     : undefined
   const memoryStore = memory?.store
   const dreamSystem = memory?.dreamSystem
@@ -791,13 +793,16 @@ export async function startQWicksServe(
  */
 export function buildMemoryStore(
   config: MemoryCapabilityConfig,
-  legacyRootDir: string
+  legacyRootDir: string,
+  modelClient?: ModelClient
 ): { store: MemoryStore; close: () => void; dreamSystem?: DreamMemorySystem } {
   if (config.backend === 'dream') {
     const sqlitePath = join(legacyRootDir, 'dream_memory.db')
     // 构建完整 DreamMemorySystem(facade),这样 HTTP 路由能暴露 summary/ledger/versions。
-    // DreamMemorySystem 内部会创建自己的 repository + DreamMemoryStore,这里复用它的 store。
-    const dreamSystem = new DreamMemorySystem({ dataDir: legacyRootDir })
+    // v3(P2-1 报告 §4.8):若提供 modelClient,注入 LLM chat 适配器,使
+    // LlmExtractor/LlmSynthesizer 在真实 runtime 用真实模型而非 heuristic。
+    const chat = modelClient ? adaptModelClientToDreamChat(modelClient) : undefined
+    const dreamSystem = new DreamMemorySystem({ dataDir: legacyRootDir, ...(chat ? { chat } : {}) })
     const store = dreamSystem.dreamStore
     return {
       store,
