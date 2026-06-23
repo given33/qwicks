@@ -22,6 +22,7 @@ import { TICKLE_REACTIONS, resolveTickle, type TickleType } from '../shared/pet-
 import { canEnroll, canWork, completeEducation, defaultCareer, EDUCATION_LEVELS, workReward, type EducationLevel, type JobId } from '../shared/pet-career'
 import { filterValidObstacles } from '../shared/pet-obstacles'
 import { personalityMods } from '../shared/pet-festivals'
+import { bodyReact, deriveInteractionMood, BODY_PARTS } from '../shared/pet-body-interaction'
 import { findItem } from '../shared/pet-catalog'
 
 let registered = false
@@ -181,6 +182,7 @@ export function registerPetStateIpc(): void {
   // M9-M11 奖励元宝（钓鱼/农场/小游戏结算用）
   ipcMain.handle('pet:reward', (_e, amount: number) => {
     store.update((state) => ({ ...state, coins: state.coins + Math.max(0, Math.floor(amount)) }))
+    recordAndBroadcast('reward')
     return { ok: true }
   })
 
@@ -311,5 +313,22 @@ export function registerPetStateIpc(): void {
   // P0 跨屏寻路：返回所有显示器 bounds（供渲染层建 walkable-graph）
   ipcMain.handle('pet:get-displays', () => {
     return screen.getAllDisplays().map((d) => ({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height }))
+  })
+
+  // R4 部位互动：摸不同部位反应不同（学习 QQ interact 系统）
+  ipcMain.handle('pet:touch-body', (_e, part: string) => {
+    if (!BODY_PARTS.some((p) => p.id === part)) return { ok: false }
+    let reaction = bodyReact(part as 'head', 'neutral')
+    store.update((state) => {
+      const mood = deriveInteractionMood(state.vitals)
+      reaction = bodyReact(part as 'head', mood)
+      return {
+        ...state,
+        vitals: { ...state.vitals, mood: Math.max(0, Math.min(100, state.vitals.mood + reaction.moodDelta)) }
+      }
+    })
+    recordAndBroadcast('pet')
+    void getDiaryStore().append('✋', reaction.text)
+    return { ok: true, reaction }
   })
 }
