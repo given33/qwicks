@@ -80,6 +80,8 @@ export interface ChatResult {
   injectionDecision: InjectionDecision | null
   /** Phase 4:记忆改写后的搜索查询(供 web search / tool 调用使用,doc §3.5)。 */
   rewrittenQuery: RewriteResult | null
+  /** 每阶段的 fail-open 错误记录(空=全部成功)。 */
+  failures: string[]
 }
 
 export interface DreamMemorySystemOptions {
@@ -226,7 +228,8 @@ export class DreamMemorySystem {
         extractorBackend: 'temporary_skip',
         gateReport: null,
         injectionDecision: null,
-        rewrittenQuery: null
+        rewrittenQuery: null,
+        failures: []
       }
     }
 
@@ -245,7 +248,8 @@ export class DreamMemorySystem {
         extractorBackend: 'opt_out',
         gateReport: null,
         injectionDecision: null,
-        rewrittenQuery: null
+        rewrittenQuery: null,
+        failures: []
       }
     }
 
@@ -255,122 +259,112 @@ export class DreamMemorySystem {
       this.repository.saveChat(userId, 'assistant', opts.assistant, { threadId, turnId })
     }
 
+    // 以下每步都 try/catch fail-open(对齐 spec §8 "每一步都用 try/catch fail-open")。
+    // 任何步骤失败不中断整个 turn,记录到 failures[] 供可观测。
+    const failures: string[] = []
+
     // 3) extract
-    const drafts = await this.extraction.extractAsync({ user: message, assistant: opts.assistant ?? null })
+    let drafts: Awaited<ReturnType<typeof this.extraction.extractAsync>> = []
+    try {
+      drafts = await this.extraction.extractAsync({ user: message, assistant: opts.assistant ?? null })
+    } catch (err) { failures.push(`extract: ${String(err)}`) }
 
     // 3.5) sanitize each draft (REDACT/QUARANTINE/REJECT)
-    // 对齐 Python:secrets → REDACT;高危注入 → REDACT;但注入类记忆(意图攻击)
-    // 对 dream 来说不应存储 —— reject 任何含注入 finding 的草稿(更严格的安全姿态)。
-    const sanitizedDrafts = drafts.filter((d) => {
-      const res = sanitizeForMemory(d.content, { source: d.provenance.source })
-      if (res.decision === 'reject') return false
-      // 含注入 finding 的草稿一律拒绝(不存储攻击 payload)
-      if (res.findings.some((f) => f.kind.startsWith('injection_'))) return false
-      if (res.decision === 'redact') d.content = res.sanitized
-      return true
+    let sanitizedDrafts = drafts.filter((d) => {
+      try {
+        const res = sanitizeForMemory(d.content, { source: d.provenance.source })
+        if (res.decision === 'reject') return false
+        if (res.findings.some((f) => f.kind.startsWith('injection_'))) return false
+        if (res.decision === 'redact') d.content = res.sanitized
+        return true
+      } catch { return false }
     })
 
     // 4) persist drafts (embed + store + conflict resolution)
-    const newMemories = this.persistDrafts(sanitizedDrafts, userId, threadId, turnId)
+    let newMemories: MemoryItem[] = []
+    try {
+      newMemories = this.persistDrafts(sanitizedDrafts, userId, threadId, turnId)
+    } catch (err) { failures.push(`persist: ${String(err)}`) }
 
     // 5) retrieve
-    const hits = await this.retrieval.retrieve({
-      userId,
-      query: message,
-      topK: this.config.retrieval.topK
-    })
+    let hits: RetrievalHit[] = []
+    try {
+      hits = await this.retrieval.retrieve({ userId, query: message, topK: this.config.retrieval.topK })
+    } catch (err) { failures.push(`retrieve: ${String(err)}`) }
 
-    // 5.5) Phase 2: ObservableGate —— 跑 judicious/freshness/user_correction 三 gate,
-    // score_after 写回, suppress(score_after ≤ 0.05)的剔除出注入集。
+    // 5.5) ObservableGate
     const allItems = this.repository.list(userId, {})
-    const gateReport = this.observableGate.run({
-      userId,
-      query: message,
-      candidates: hits.map((h) => ({ item: h.item, score: h.score })),
-      allUserItems: allItems
-    })
-    let routedHits = gateReport.decisions
-      .filter((d) => d.finalDecision !== 'suppress')
-      .map((d) => {
-        const h = hits.find((x) => x.item.id === d.memoryId)!
-        return { ...h, score: Math.max(0, d.scoreAfter) }
+    let gateReport: GateReport | null = null
+    let routedHits: RetrievalHit[] = []
+    try {
+      gateReport = this.observableGate.run({
+        userId, query: message,
+        candidates: hits.map((h) => ({ item: h.item, score: h.score })),
+        allUserItems: allItems
       })
-      .sort((a, b) => b.score - a.score)
+      routedHits = gateReport.decisions
+        .filter((d) => d.finalDecision !== 'suppress')
+        .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { ...h, score: Math.max(0, d.scoreAfter) } })
+        .sort((a, b) => b.score - a.score)
+    } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
 
-    // 5.6) Phase 2: SelectiveInjectionRouter —— 5 维 query-level "何时用记忆" 判断。
-    // 先判断本次请求是否会被个性化上下文改善(spec §7.3);shouldInject=false 则不注入
-    // (routedHits 清空),但决策仍然 surface 到 ChatResult 供评测/panel。
-    const injectionDecision = decideInjection({
-      query: message,
-      availableMemories: routedHits.map((h) => h.item),
-      userId,
-      threadId: threadId ?? undefined,
-      isSafetyContext: opts.isSafetyContext,
-      contextBudgetTokens: opts.contextBudgetTokens ?? 4000
-    })
-    if (!injectionDecision.shouldInject) {
-      routedHits = []
-    }
-
-    // 5.7) Phase 4: Query Rewrite —— 记忆改写工具调用前的搜索查询(doc §3.5)。
-    // 用当前 user 的 active memory 做槽位填充(diet/location),供后续 web search / tool 调用使用。
-    const rewrittenQuery = rewriteQuery({
-      userId,
-      query: message,
-      memories: this.repository.list(userId, {})
-    })
-
-    // 6) build twin (early, for synthesis) — 用 routedHits(已 gate 过)
-    let twin = this.twinBuilder.build({
-      userId,
-      memories: allItems,
-      hits: routedHits.map((h) => ({ item: h.item, score: h.score }))
-    })
-
-    // 7) synthesize (update twin)
-    const synthInput = {
-      hits: routedHits,
-      user: message,
-      assistant: opts.assistant ?? null,
-      twin,
-      userId
-    }
-    const synthResult = this.synthesizer instanceof LlmSynthesizer
-      ? await this.synthesizer.synthesizeAsync(synthInput)
-      : this.synthesizer.synthesize(synthInput)
-    twin = synthResult.twin
-    this.repository.saveTwin(userId, JSON.stringify({ ...twin, user_id: twin.userId }), twin.generatedAt)
-
-    // 8) prompt build (NaturalPromptBuilder) + source receipts(用 routedHits)。
-    // shouldInject=false 时不注入任何个性化上下文(对齐文档 §3.4 "只在相关时才用记忆"):
-    // twin 传 null(不渲染画像),routedHits 已在上面清空。
-    const built = this.promptBuilder.build({
-      userId,
-      query: message,
-      twin: injectionDecision.shouldInject ? twin : null,
-      hits: routedHits,
-      maxChars: this.config.prompt.maxSectionChars * 8
-    })
-    const contextBlock = built.contextBlock
-    for (let pos = 0; pos < routedHits.length; pos++) {
-      const h = routedHits[pos]!
-      this.repository.logEvent('used_in_prompt', {
-        recordId: h.item.id,
-        userId,
-        payload: { turn_id: turnId, thread_id: threadId, query: message, position: pos, retrieval_score: h.score }
+    // 5.6) SelectiveInjectionRouter
+    let injectionDecision: InjectionDecision | null = null
+    try {
+      injectionDecision = decideInjection({
+        query: message, availableMemories: routedHits.map((h) => h.item), userId,
+        threadId: threadId ?? undefined, isSafetyContext: opts.isSafetyContext,
+        contextBudgetTokens: opts.contextBudgetTokens ?? 4000
       })
-    }
+      if (!injectionDecision.shouldInject) routedHits = []
+    } catch (err) { failures.push(`injection: ${String(err)}`) }
 
-    // 9) reply (natural fallback; LLM reply wired in Phase 2/3 controls)
+    // 5.7) Query Rewrite
+    let rewrittenQuery: RewriteResult | null = null
+    try {
+      rewrittenQuery = rewriteQuery({ userId, query: message, memories: this.repository.list(userId, {}) })
+    } catch (err) { failures.push(`rewrite: ${String(err)}`) }
+
+    // 6-7) build twin + synthesize
+    let twin: ReturnType<TwinBuilder['build']> | null = null
+    try {
+      twin = this.twinBuilder.build({ userId, memories: allItems, hits: routedHits.map((h) => ({ item: h.item, score: h.score })) })
+      const synthInput = { hits: routedHits, user: message, assistant: opts.assistant ?? null, twin, userId }
+      const synthResult = this.synthesizer instanceof LlmSynthesizer
+        ? await this.synthesizer.synthesizeAsync(synthInput)
+        : this.synthesizer.synthesize(synthInput)
+      twin = synthResult.twin
+      this.repository.saveTwin(userId, JSON.stringify({ ...twin, user_id: twin.userId }), twin.generatedAt)
+    } catch (err) { failures.push(`synthesize: ${String(err)}`) }
+
+    // 8) prompt build + source receipts
+    let built: ReturnType<typeof this.promptBuilder.build> | null = null
+    try {
+      built = this.promptBuilder.build({
+        userId, query: message,
+        twin: injectionDecision?.shouldInject ? twin : null,
+        hits: routedHits, maxChars: this.config.prompt.maxSectionChars * 8
+      })
+      for (let pos = 0; pos < routedHits.length; pos++) {
+        const h = routedHits[pos]!
+        this.repository.logEvent('used_in_prompt', { recordId: h.item.id, userId, payload: { turn_id: turnId, thread_id: threadId, query: message, position: pos, retrieval_score: h.score } })
+      }
+    } catch (err) { failures.push(`prompt: ${String(err)}`) }
+
+    // 9) reply
     const reply = naturalFallbackReply({ twin, hasHits: routedHits.length > 0, hits: routedHits, query: message })
 
-    // 10) dreaming: mark dirty (non-blocking; scheduler ticks in background)
-    if (newMemories.length > 0) this.scheduler.markDirty(userId)
+    // 10) dreaming: mark dirty + auto-tick(对齐审计修复:dreaming 不应积压不执行)
+    if (newMemories.length > 0) {
+      this.scheduler.markDirty(userId)
+      // 在 microtask 里非阻塞跑一次 tick,让 decay/reinforce 真正执行
+      void Promise.resolve().then(() => { try { this.scheduler.tick({ userId }) } catch { /* non-blocking */ } })
+    }
 
     return {
       reply,
-      systemBlock: built.system,
-      contextBlock,
+      systemBlock: built?.system ?? '',
+      contextBlock: built?.contextBlock ?? '',
       newMemories,
       hits,
       routedHits,
@@ -378,7 +372,8 @@ export class DreamMemorySystem {
       extractorBackend: this.extraction.lastBackend(),
       gateReport,
       injectionDecision,
-      rewrittenQuery
+      rewrittenQuery,
+      failures
     }
   }
 
@@ -420,21 +415,27 @@ export class DreamMemorySystem {
         [],
         2
       )
-      // 冲突消解:对新 item vs existing 逐个 compare,若 SUPERSEDES/CONTRADICTS 则处理旧 item。
+      // 先 embed(必须在冲突消解之前,让 cosine 通道能工作 — 审计修复)
+      const v = this.embedder.embed(item.content)
+      if (v) {
+        item.embedding = v
+        item.embeddingModel = this.embedder.name()
+      }
+      // 冲突消解:对新 item vs existing 逐个 compare,根据 verdict 处理。
       for (const ex of existing) {
         const a = compare(item, ex)
         const action = decide(a)
         if (action === 'supersede_old') {
           ex.transitionStatus(MemoryLifecycleStatus.SUPERSEDED, { actor: 'chat.persist', reason: 'superseded by newer' })
           this.repository.upsert(ex)
+        } else if (action === 'merge_into_existing') {
+          // DUPLICATE:跳过插入(旧记忆已覆盖此内容)
+          return out
+        } else if (action === 'ask_user_or_invalidate_old') {
+          // CONTRADICTS:标记旧记忆为 HYPOTHESIS(待用户确认),新记忆照常插入
+          ex.transitionStatus(MemoryLifecycleStatus.HYPOTHESIS, { actor: 'chat.persist', reason: 'contradicts new memory' })
+          this.repository.upsert(ex)
         }
-        // duplicate / contradicts:Phase 1 暂不合并/不阻塞(contradicts 留给 Phase 3 ask-user)
-      }
-      // embed + store
-      const v = this.embedder.embed(item.content)
-      if (v) {
-        item.embedding = v
-        item.embeddingModel = this.embedder.name()
       }
       this.repository.upsert(item)
       this.retrieval.onIndexChanged(item)
@@ -496,10 +497,17 @@ export class DreamMemorySystem {
   /** Phase 5:撤销连接器授权 → CONNECTOR_REVOKED tombstone(文档 §8.1 删除一致性)。 */
   revokeConnector(account: string, userId: string): { affected: number } {
     this.oauthStore.delete(account)
-    // 把该 account 来源的 connector memory 全部标记 CONNECTOR_REVOKED
-    const all = this.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true })
+    // 把该 account 来源的 connector memory 全部标记 CONNECTOR_REVOKED。
+    // 同时按 userId 和 account 搜索(ingest 时可能用 account 作 userId)。
+    const candidates = [
+      ...this.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true }),
+      ...(userId !== account ? this.repository.list(account, { includeDeleted: true, includeSuppressed: true, includeExpired: true }) : [])
+    ]
+    const seen = new Set<string>()
     let affected = 0
-    for (const it of all) {
+    for (const it of candidates) {
+      if (seen.has(it.id)) continue
+      seen.add(it.id)
       if (it.provenance.source === 'connector' && it.metadata.source_account === account) {
         it.transitionStatus(MemoryLifecycleStatus.CONNECTOR_REVOKED, { actor: 'connector.revoke', reason: `account ${account} revoked` })
         this.repository.upsert(it)

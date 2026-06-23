@@ -127,13 +127,15 @@ export class DreamingScheduler {
   /** 启动后台定时 dreaming(对齐 Python start_dreaming(interval_sec))。 */
   start(intervalMs: number): void {
     if (this.timer) return
-    this.timer = setInterval(() => {
+    const timer = setInterval(() => {
       try {
         this.tick()
       } catch {
         // 后台 tick 失败不致命
       }
     }, intervalMs)
+    timer.unref?.()
+    this.timer = timer
   }
 
   stop(): void {

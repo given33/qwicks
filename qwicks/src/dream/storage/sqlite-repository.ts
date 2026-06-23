@@ -127,8 +127,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
     this.db.exec(SCHEMA)
     try {
       this.migrateV1ToV2()
-    } catch {
-      // 防御性:迁移失败不影响打开(对齐 Python 行为)。
+    } catch (err) {
+      this.logEvent("migration_error", { payload: { error: String(err) } })
     }
   }
 
