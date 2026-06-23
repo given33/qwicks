@@ -58,6 +58,8 @@ import { DreamMemoryStore } from '../dream-store.js'
 import { MemoryControls } from '../controls/api.js'
 import { buildMemorySummary, type MemorySummary } from '../memory_summary/builder.js'
 import { buildMemoryLedger, type BuildLedgerInput, type MemoryLedger } from '../memory_sources/ledger.js'
+import { rewriteQuery, type RewriteResult } from '../query_rewrite/rewriter.js'
+import { generatePulseTopics, buildPulseDigest, type PulseDigest, type PulseResearchFn } from '../pulse/engine.js'
 
 export interface ChatResult {
   reply: string
@@ -73,6 +75,8 @@ export interface ChatResult {
   gateReport: GateReport | null
   /** Phase 2:5 维 SelectiveInjectionRouter 的 query-level "何时用记忆" 决策。 */
   injectionDecision: InjectionDecision | null
+  /** Phase 4:记忆改写后的搜索查询(供 web search / tool 调用使用,doc §3.5)。 */
+  rewrittenQuery: RewriteResult | null
 }
 
 export interface DreamMemorySystemOptions {
@@ -215,7 +219,8 @@ export class DreamMemorySystem {
         twin: null,
         extractorBackend: 'temporary_skip',
         gateReport: null,
-        injectionDecision: null
+        injectionDecision: null,
+        rewrittenQuery: null
       }
     }
 
@@ -233,7 +238,8 @@ export class DreamMemorySystem {
         twin: null,
         extractorBackend: 'opt_out',
         gateReport: null,
-        injectionDecision: null
+        injectionDecision: null,
+        rewrittenQuery: null
       }
     }
 
@@ -296,6 +302,14 @@ export class DreamMemorySystem {
       routedHits = []
     }
 
+    // 5.7) Phase 4: Query Rewrite —— 记忆改写工具调用前的搜索查询(doc §3.5)。
+    // 用当前 user 的 active memory 做槽位填充(diet/location),供后续 web search / tool 调用使用。
+    const rewrittenQuery = rewriteQuery({
+      userId,
+      query: message,
+      memories: this.repository.list(userId, {})
+    })
+
     // 6) build twin (early, for synthesis) — 用 routedHits(已 gate 过)
     let twin = this.twinBuilder.build({
       userId,
@@ -351,7 +365,8 @@ export class DreamMemorySystem {
       twin,
       extractorBackend: this.extraction.lastBackend(),
       gateReport,
-      injectionDecision
+      injectionDecision,
+      rewrittenQuery
     }
   }
 
@@ -428,6 +443,14 @@ export class DreamMemorySystem {
       ...input,
       allUserItems: input.allUserItems ?? this.repository.list(input.userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
     })
+  }
+
+  /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入(默认 no-op 占位)。 */
+  async runPulse(userId: string, opts: { research?: PulseResearchFn; maxTopics?: number } = {}): Promise<PulseDigest> {
+    const memories = this.repository.list(userId, {})
+    const topics = generatePulseTopics(memories, { userId, maxTopics: opts.maxTopics })
+    const research: PulseResearchFn = opts.research ?? (async (query) => ({ query, summary: '(未配置 research 函数)', sources: [], followUps: [] }))
+    return buildPulseDigest({ userId, topics, research })
   }
 
   close(): void {

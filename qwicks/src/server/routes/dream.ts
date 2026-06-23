@@ -110,3 +110,12 @@ export async function dreamPurge(system: DreamMemorySystem | undefined, request:
   const count = dream.controls2.purge(userId)
   return jsonResponse({ purged: count, userId })
 }
+
+/** Phase 4:Pulse 夜间异步研究(可注入 research;无 research 时返回主题占位摘要)。 */
+export async function dreamPulse(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const userId = new URL(request.url).searchParams.get('user_id') ?? 'default'
+  const digest = await dream.runPulse(userId)
+  return jsonResponse({ digest: digest.toDict() })
+}
