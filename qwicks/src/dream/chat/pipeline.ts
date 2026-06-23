@@ -518,6 +518,9 @@ export class DreamMemorySystem {
         item.embeddingModel = this.embedder.name()
       }
       // 冲突消解:对新 item vs existing 逐个 compare,根据 verdict 处理。
+      // P0 修复(报告 §4.11):DUPLICATE 必须跳过整条 draft 的插入,
+      // 不能只 continue 内层循环 —— 否则 upsert(item) 仍会执行,重复记忆照样落库。
+      let skipDraft = false
       for (const ex of existing) {
         const a = compare(item, ex)
         const action = decide(a)
@@ -525,14 +528,21 @@ export class DreamMemorySystem {
           ex.transitionStatus(MemoryLifecycleStatus.SUPERSEDED, { actor: 'chat.persist', reason: 'superseded by newer' })
           this.repository.upsert(ex)
         } else if (action === 'merge_into_existing') {
-          // DUPLICATE:跳过插入此条 draft(旧记忆已覆盖此内容),继续处理下一条
-          continue
+          // DUPLICATE:旧记忆已覆盖此内容 —— 记录 merge 事件,跳过整条 draft 插入。
+          this.repository.logEvent('merge_duplicate', {
+            recordId: ex.id,
+            userId,
+            payload: { draft_content: item.content.slice(0, 120), reason: a.reason, verdict: 'duplicate' }
+          })
+          skipDraft = true
+          break // 无需继续比较其他 existing
         } else if (action === 'ask_user_or_invalidate_old') {
           // CONTRADICTS:标记旧记忆为 HYPOTHESIS(待用户确认),新记忆照常插入
           ex.transitionStatus(MemoryLifecycleStatus.HYPOTHESIS, { actor: 'chat.persist', reason: 'contradicts new memory' })
           this.repository.upsert(ex)
         }
       }
+      if (skipDraft) continue // 跳过外层 draft 的 upsert/push
       this.repository.upsert(item)
       this.retrieval.onIndexChanged(item)
       out.push(item)
