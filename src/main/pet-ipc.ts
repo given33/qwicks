@@ -114,8 +114,6 @@ export function registerPetStateIpc(): void {
       result = { ok: true }
       return next
     })
-    // BUG-2 修复：购买成功记录动作 → itemsOwned 累加 → items-10 成就可达
-    if (result.ok) recordAndBroadcast('buy')
     return result
   })
 
@@ -183,8 +181,6 @@ export function registerPetStateIpc(): void {
   // M9-M11 奖励元宝（钓鱼/农场/小游戏结算用）
   ipcMain.handle('pet:reward', (_e, amount: number) => {
     store.update((state) => ({ ...state, coins: state.coins + Math.max(0, Math.floor(amount)) }))
-    // BUG-13 修复：reward 后用专用 action 检测成就（不动 itemsOwned）
-    recordAndBroadcast('reward')
     return { ok: true }
   })
 
@@ -281,8 +277,7 @@ export function registerPetStateIpc(): void {
     return result
   })
 
-  // P3 打工：得元宝，扣心情（疲劳）。R3: 每日上限 5 次防经济崩塌（B1 修复）
-  const WORK_DAILY_LIMIT = 5
+  // P3 打工：得元宝，扣心情（疲劳）
   ipcMain.handle('pet:work', (_e, jobId: string) => {
     let result: { ok: boolean; reason?: string; coins?: number } = { ok: false, reason: 'invalid' }
     store.update((state) => {
@@ -292,23 +287,13 @@ export function registerPetStateIpc(): void {
         result = { ok: false, reason: check.reason }
         return state
       }
-      // B1 修复：每日打工次数上限
-      const today = new Date().toISOString().slice(0, 10)
-      const workDate = state.workDate ?? today
-      const count = workDate === today ? (state.workCountToday ?? 0) : 0
-      if (count >= WORK_DAILY_LIMIT) {
-        result = { ok: false, reason: `今日打工已达上限（${WORK_DAILY_LIMIT}次）` }
-        return state
-      }
       const reward = workReward(jobId as JobId)
       result = { ok: true, coins: reward.coins }
       void getDiaryStore().append('💼', `打工赚了 ${reward.coins} 元宝`)
       return {
         ...state,
         coins: state.coins + reward.coins,
-        vitals: { ...state.vitals, mood: Math.max(0, state.vitals.mood + reward.moodDelta) },
-        workDate: today,
-        workCountToday: count + 1
+        vitals: { ...state.vitals, mood: Math.max(0, state.vitals.mood + reward.moodDelta) }
       }
     })
     return result
@@ -326,33 +311,5 @@ export function registerPetStateIpc(): void {
   // P0 跨屏寻路：返回所有显示器 bounds（供渲染层建 walkable-graph）
   ipcMain.handle('pet:get-displays', () => {
     return screen.getAllDisplays().map((d) => ({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height }))
-  })
-
-  // BUG-16 修复：行为完成走独立 IPC，不再复用 play（避免刷 playCount/play-10 成就）
-  ipcMain.handle('pet:activity-complete', () => {
-    store.update((state) => {
-      const moodBoost = 3 // 行为完成微量心情（不刷 playCount）
-      return { ...state, vitals: { ...state.vitals, mood: Math.min(100, state.vitals.mood + moodBoost) } }
-    })
-    recordAndBroadcast('activity') // 记录行为次数（activities-20 成就用）
-    return { ok: true }
-  })
-
-  // R4 接入：部位互动矩阵（摸不同部位反应不同，学习 QQ interact 系统）
-  ipcMain.handle('pet:touch-body', (_e, part: string) => {
-    const { bodyReact, deriveInteractionMood, BODY_PARTS } = require('../shared/pet-body-interaction') as typeof import('../shared/pet-body-interaction')
-    if (!BODY_PARTS.some((p) => p.id === part)) return { ok: false }
-    let reaction = bodyReact(part as 'head', 'neutral')
-    store.update((state) => {
-      const mood = deriveInteractionMood(state.vitals)
-      reaction = bodyReact(part as 'head', mood)
-      return {
-        ...state,
-        vitals: { ...state.vitals, mood: Math.max(0, Math.min(100, state.vitals.mood + reaction.moodDelta)) }
-      }
-    })
-    recordAndBroadcast('pet')
-    void getDiaryStore().append('✋', reaction.text)
-    return { ok: true, reaction }
   })
 }
