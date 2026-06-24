@@ -81,6 +81,9 @@ if (releaseAppVersion && !/^\d+\.\d+\.\d+$/.test(releaseAppVersion)) {
 module.exports = {
   appId: 'com.given33.qwicks',
   productName: 'QWicks',
+  // Native modules (better-sqlite3, node-pty, etc.) must live outside the
+  // ASAR archive. Hot-code updates ship JS only and resolve these modules
+  // through NODE_PATH → the bundled app.asar.unpacked/qwicks/node_modules.
   asar: true,
   asarUnpack: [
     '**/qwicks/dist/**/*',
