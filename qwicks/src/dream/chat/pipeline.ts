@@ -23,10 +23,12 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   MemoryItem,
+  MemoryItemDraft,
   MemoryLifecycleStatus,
   MemoryProvenance,
   MemoryScope,
   MemoryType,
+  SensitivityLevel,
   SourceType,
   SuppressionScope,
   TemporalState,
@@ -35,6 +37,8 @@ import {
 } from '../types.js'
 import { DreamConfig } from '../config.js'
 import { SqliteMemoryRepository } from '../storage/sqlite-repository.js'
+import { classifySensitivity } from '../security/sensitivity-classifier.js'
+import { PendingSensitiveStore } from '../storage/pending-sensitive-store.js'
 import { FlatVectorIndex } from '../vectordb/flat-index.js'
 import { HashEmbedder } from '../embeddings/hash-provider.js'
 import { HttpEmbedder } from '../embeddings/http-provider.js'
@@ -187,6 +191,8 @@ export class DreamMemorySystem {
   readonly controls = new DreamControls()
   /** Phase 3:用户控制(list/edit/delete/suppress/opt-out/export/purge/versions)。 */
   readonly controls2: MemoryControls
+  /** Batch B:高敏感待确认草稿存储(物理隔离)。 */
+  private readonly pendingStore: PendingSensitiveStore
   private readonly userId: string
   /** v3(P2-6):可注入的 Pulse research 函数(真实 web search)。 */
   private readonly pulseResearch: PulseResearchFn | undefined
@@ -202,6 +208,7 @@ export class DreamMemorySystem {
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
     this.controls2 = new MemoryControls({ repository: this.repository })
+    this.pendingStore = new PendingSensitiveStore(this.repository)
     // v3(报告 §4.2/§6.2):DreamMemoryStore 注入 controls2 + userId,使 memory_create
     // 工具路径走完整 Dream 语义(SourceRecord + sourceIds + sanitizer + 真实 userId)。
     this.dreamStore = new DreamMemoryStore({
@@ -598,6 +605,31 @@ export class DreamMemorySystem {
     const out: MemoryItem[] = []
     const existing = this.repository.list(userId, {})
     for (const draft of drafts) {
+      // Batch B:高敏感 draft → 物理隔离到 pending_sensitive_draft,不落 memory 表。
+      const classification = classifySensitivity(draft.content)
+      if (classification.sensitivity !== SensitivityLevel.NORMAL && classification.categories.length > 0) {
+        const probeItem = new MemoryItem(newMemoryId(), userId, draft.type, draft.content, draft.scope, [...draft.tags])
+        this.pendingStore.enqueue({
+          userId,
+          draft: new MemoryItemDraft(
+            draft.type,
+            draft.content,
+            [...draft.tags],
+            draft.importance,
+            draft.confidence,
+            draft.scope,
+            new MemoryProvenance(draft.provenance.source, draft.provenance.actor, threadId, turnId, draft.provenance.confidence, draft.provenance.model),
+            { ...draft.metadata },
+            classification.sensitivity,
+            [...classification.categories]
+          ),
+          category: classification.categories[0],
+          fingerprint: probeItem.fingerprint()
+        })
+        // Sensitive drafts are diverted (not in `out`); callers detect via
+        // getPendingStore().list(userId). They never reach repository.upsert.
+        continue
+      }
       // v3:从 content 推断 temporal_state + 时间窗口
       const temporalInfo = detectTemporalFromContent(draft.content)
       const item = new MemoryItem(
@@ -677,6 +709,83 @@ export class DreamMemorySystem {
       out.push(item)
     }
     return out
+  }
+
+  /** Batch B(spec §2.5):暴露 pending store 给 controls(listPending/confirmPending/dismissPending)。 */
+  getPendingStore(): PendingSensitiveStore {
+    return this.pendingStore
+  }
+
+  /**
+   * Batch B:确认一条待确认草稿 → 构造 MemoryItem(带 sensitivity)→ embed → 跑 conflict → 落库。
+   * 确认的敏感事实可能 supersede 已有记忆(对齐 spec §2.5 要点4)。
+   */
+  confirmPending(id: string): MemoryItem | null {
+    const row = this.pendingStore.get(id)
+    if (!row) return null
+    const draft = row.draft
+    const item = new MemoryItem(
+      newMemoryId(),
+      row.userId,
+      draft.type,
+      draft.content,
+      draft.scope,
+      [...draft.tags],
+      draft.importance,
+      draft.confidence,
+      nowIso(),
+      nowIso(),
+      null,
+      new MemoryProvenance(draft.provenance.source, draft.provenance.actor, null, null, draft.provenance.confidence, draft.provenance.model),
+      null,
+      null,
+      [],
+      { ...draft.metadata },
+      MemoryLifecycleStatus.ACTIVE,
+      [],
+      2,
+      [],
+      [],
+      undefined as unknown as TemporalState,
+      null,
+      null,
+      [],
+      [],
+      false,
+      false,
+      false,
+      draft.importance,
+      null,
+      null,
+      draft.sensitivity,
+      true,
+      [...draft.sensitivityCategories]
+    )
+    const v = this.embedder.embed(item.content)
+    if (v) {
+      item.embedding = v
+      item.embeddingModel = this.embedder.name()
+    }
+    for (const ex of this.repository.list(row.userId, {})) {
+      const a = compare(item, ex)
+      const action = decide(a)
+      if (action === 'supersede_old') {
+        ex.transitionStatus(MemoryLifecycleStatus.SUPERSEDED, { actor: 'chat.confirmPending', reason: 'superseded by confirmed sensitive' })
+        this.repository.upsert(ex)
+      }
+    }
+    this.repository.upsert(item)
+    this.retrieval.onIndexChanged(item)
+    this.pendingStore.delete(id)
+    return item
+  }
+
+  /** Batch B:驳回一条待确认草稿 → 写 sticky tombstone + 删行(对齐 spec §2.5 要点2)。 */
+  dismissPending(id: string): boolean {
+    const row = this.pendingStore.get(id)
+    if (!row) return false
+    this.pendingStore.dismiss(row.userId, id, row.fingerprint)
+    return true
   }
 
   /** Phase 3:构建用户的 7 区 Memory Summary。 */
