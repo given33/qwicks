@@ -427,6 +427,12 @@ function updateFeedUrl(channel: GuiUpdateChannel): string {
 // Code (hot) updates live in their own code/ sub-path with a distinct
 // code-latest.json manifest so they never collide with the installer's
 // latest.json at channels/{ch}/latest/latest.json.
+//
+// URL layout:
+//   channels/{channel}/latest/          → installer feed (latest.yml + latest.json + .exe)
+//   channels/{channel}/latest/code/     → code-update feed (code-latest.json + code.zip)
+//
+// The CI workflows deploy to these two directories independently.
 function codeUpdateFeedUrl(channel: GuiUpdateChannel): string {
   return `${updateFeedUrl(channel)}code/`
 }
