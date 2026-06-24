@@ -570,7 +570,11 @@ async function promptWindowCloseAction(window: BrowserWindow): Promise<void> {
       }
       isQuitting = true
       app.quit()
+      return
     }
+    // response === 2 (取消/关闭对话框): preventDefault 已执行，明确 hide 到托盘，
+    // 避免悬空僵尸进程。用户可从托盘右键"退出"真正结束。
+    window.hide()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.warn('[qwicks-gui] failed to handle close-window prompt:', error)
@@ -1731,6 +1735,13 @@ app.on('before-quit', (event) => {
   }
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
+  // 关键修复：给 runtime/pet 停止一个硬超时。若 stopAndWait() 卡住（子进程不
+  // 响应停止），.finally 永不执行，进程卡死成僵尸——锁住 app.asar 无法重装。
+  const forceExitTimer = setTimeout(() => {
+    console.warn('[qwicks-gui] runtime stop timed out, forcing exit to avoid zombie process')
+    managedRuntimesStoppedForQuit = true
+    app.exit(0)
+  }, 4000)
   // BUG 修复：await pet state 落盘后再退出，避免状态丢失
   void Promise.all([
     stopManagedRuntimesForQuit(),
@@ -1740,6 +1751,7 @@ app.on('before-quit', (event) => {
       console.warn('[qwicks-gui] failed to stop runtimes/pet-state:', error)
     })
     .finally(() => {
+      clearTimeout(forceExitTimer)
       managedRuntimesStoppedForQuit = true
       app.quit()
     })

@@ -548,6 +548,8 @@ function normalizeCodeUpdateManifest(raw: unknown, channel: GuiUpdateChannel): C
     ),
     minShellVersion: stringValue(data.minShellVersion) || undefined,
     fullUpdateRequired: data.fullUpdateRequired === true,
+    forceRollback: data.forceRollback === true,
+    rollbackFromVersion: stringValue(data.rollbackFromVersion) || undefined,
     package: {
       name,
       url,
@@ -633,7 +635,11 @@ async function checkCodePackageUpdate(
     return null
   }
 
-  const hasUpdate = isNewerVersion(manifest.version, currentGuiVersion())
+  // 撤包支持：forceRollback 让发布者强制客户端安装服务器指定版本，即便版本号
+  // 更低（isNewerVersion 会判定为"非更新"而忽略）。发布者在 code-latest.json 设
+  // forceRollback:true + 指向旧版 code.zip，客户端即自动回退，用户无感。
+  const hasUpdate =
+    manifest.forceRollback === true || isNewerVersion(manifest.version, currentGuiVersion())
   pendingCodeUpdate = hasUpdate ? manifest : null
   downloaded = Boolean(hasUpdate && downloadedCodePackage?.manifest.version === manifest.version)
   return toCodeGuiInfo(manifest, hasUpdate, manualOnly)

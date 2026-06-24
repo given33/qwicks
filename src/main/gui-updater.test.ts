@@ -273,6 +273,45 @@ describe('checkGuiUpdate feed URL', () => {
     })
     expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
+
+  it('treats a forceRollback manifest as an update even when the version is lower (撤包)', async () => {
+    // Simulate a published rollback: server points code-latest.json at an OLDER
+    // version (0.2.5) than the client's current hot version (0.2.10), but sets
+    // forceRollback:true so the client installs it anyway (ignoring semver).
+    mockedFiles.set(
+      String(join('/tmp/deepseek-gui-updater-test-user-data', 'hot-code', 'active.json')),
+      JSON.stringify({
+        version: '0.2.10',
+        root: '/tmp/deepseek-gui-updater-test-user-data/hot-code/versions/0.2.10-abcdef',
+        installedAt: '2026-06-20T00:00:00.000Z',
+        sha256: 'currentsha'
+      })
+    )
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      kind: 'code',
+      version: '0.2.5',
+      forceRollback: true,
+      rollbackFromVersion: '0.2.10',
+      releaseNotes: '紧急撤包：回退到稳定版本。',
+      package: {
+        name: 'code.zip',
+        url: 'code.zip',
+        size: 12345,
+        sha256: 'rollbacksha'
+      }
+    }), { status: 200 }))
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    const result = await module.checkGuiUpdate('stable')
+    expect(result).toMatchObject({
+      ok: true,
+      kind: 'code',
+      latestVersion: '0.2.5',
+      hasUpdate: true
+    })
+  })
 })
 
 describe('installGuiUpdate', () => {

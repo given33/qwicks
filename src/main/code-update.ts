@@ -11,6 +11,22 @@ const extractZip = require('extract-zip') as typeof import('extract-zip')
 const HOT_CODE_DIR = 'hot-code'
 const ACTIVE_CODE_FILE = 'active.json'
 const DISABLED_CODE_FILE = 'last-disabled.json'
+const HISTORY_FILE = 'history.json'
+const MAX_HISTORY_ENTRIES = 10
+
+export type CodeVersionHistoryEntry = {
+  version: string
+  root: string
+  sha256?: string
+  installedAt: string
+  /** 被替换的原因：正常更新或撤包回退。 */
+  replacedBy?: 'update' | 'rollback'
+  replacedAt?: string
+}
+
+export type CodeVersionHistory = {
+  entries: CodeVersionHistoryEntry[]
+}
 
 export type CodeUpdatePackageFile = {
   name: string
@@ -28,6 +44,10 @@ export type CodeUpdateManifest = {
   releaseDate?: string
   releaseNotes?: string
   minShellVersion?: string
+  /** 发布者设为 true 强制客户端回退到本版本（绕过版本比较，撤包用）。 */
+  forceRollback?: boolean
+  /** 配合 forceRollback：记录从哪个版本回退（用于历史/日志），客户端不强校验。 */
+  rollbackFromVersion?: string
   fullUpdateRequired?: boolean
   package: CodeUpdatePackageFile
 }
@@ -58,6 +78,63 @@ function activeCodePath(): string {
 
 function disabledCodePath(): string {
   return join(hotCodeRootDir(), DISABLED_CODE_FILE)
+}
+
+function historyPath(): string {
+  return join(hotCodeRootDir(), HISTORY_FILE)
+}
+
+/** 读取热更新版本历史（回切点索引）。文件缺失/损坏返回空历史。 */
+export function readCodeVersionHistory(): CodeVersionHistory {
+  try {
+    const raw = JSON.parse(readFileSync(historyPath(), 'utf8')) as unknown
+    if (!raw || typeof raw !== 'object') return { entries: [] }
+    const entries = (raw as CodeVersionHistory).entries
+    if (!Array.isArray(entries)) return { entries: [] }
+    return {
+      entries: entries.filter(
+        (entry): entry is CodeVersionHistoryEntry =>
+          entry && typeof entry === 'object' &&
+          typeof entry.version === 'string' &&
+          typeof entry.root === 'string'
+      )
+    }
+  } catch {
+    return { entries: [] }
+  }
+}
+
+/**
+ * 把被替换的旧 active 版本追加进历史（作为回切点）。超过 MAX_HISTORY_ENTRIES
+ * 条时删最旧的，并清理对应 versions/<id> 目录释放空间。幂等。
+ */
+export async function appendCodeVersionHistory(
+  previous: ActiveCodePackage,
+  reason: 'update' | 'rollback'
+): Promise<void> {
+  const root = hotCodeRootDir()
+  await mkdir(root, { recursive: true })
+  const history = readCodeVersionHistory()
+  const nowIso = new Date().toISOString()
+  const entry: CodeVersionHistoryEntry = {
+    version: previous.version,
+    root: previous.root,
+    ...(previous.sha256 ? { sha256: previous.sha256 } : {}),
+    installedAt: previous.installedAt,
+    replacedBy: reason,
+    replacedAt: nowIso
+  }
+  // 去重：同 version+root 只保留最新一条。
+  const deduped = history.entries.filter(
+    (existing) => !(existing.version === entry.version && existing.root === entry.root)
+  )
+  const next = [entry, ...deduped].slice(0, MAX_HISTORY_ENTRIES)
+  // 清理被裁掉的旧条目对应的目录（释放磁盘）。
+  const removed = deduped.slice(MAX_HISTORY_ENTRIES - 1)
+  for (const stale of removed) {
+    await rm(stale.root, { recursive: true, force: true }).catch(() => {})
+  }
+  await writeFile(historyPath(), `${JSON.stringify({ entries: next }, null, 2)}\n`, 'utf8')
 }
 
 function isPathInside(parent: string, child: string): boolean {
@@ -288,6 +365,18 @@ export async function installCodeUpdatePackage(
     sha256: downloaded.sha256
   }
   await mkdir(dirname(activeCodePath()), { recursive: true })
+  // 撤包支持：覆盖 active.json 前，把当前 active 快照追加进版本历史，作为回切点。
+  // 这样发布者 forceRollback 回退后，磁盘上仍留有被替换版本的索引可再切回。
+  const previousActive = readActiveCodePackageFromDisk()
+  if (previousActive) {
+    await appendCodeVersionHistory(
+      previousActive,
+      downloaded.manifest.forceRollback === true ? 'rollback' : 'update'
+    ).catch((error) => {
+      // 历史记录失败不应阻塞安装（回切点是辅助能力，非关键路径）。
+      console.warn('[qwicks-gui code-update] failed to record version history:', error)
+    })
+  }
   await writeFile(activeCodePath(), `${JSON.stringify(active, null, 2)}\n`, 'utf8')
   return active
 }

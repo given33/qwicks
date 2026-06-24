@@ -571,7 +571,13 @@ async function promptWindowCloseAction(window: BrowserWindow): Promise<void> {
       }
       isQuitting = true
       app.quit()
+      return
     }
+    // response === 2 (取消/关闭对话框): preventDefault 已在 handleMainWindowClose
+    // 执行，窗口不会真正关闭。明确 hide 到托盘，避免窗口处于"关闭被阻止但也不
+    // 可见"的悬空态——这正是僵尸进程（任务管理器有进程、桌面无窗口）的来源。
+    // 用户可从托盘右键"退出"真正结束。
+    window.hide()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.warn('[qwicks-gui] failed to handle close-window prompt:', error)
@@ -1730,12 +1736,21 @@ app.on('before-quit', (event) => {
   if ((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall) return
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
+  // 关键修复：给 runtime 停止一个硬超时。若 QWicks 子进程 stopAndWait() 卡住
+  // （子进程不响应停止），旧逻辑的 .finally 永不执行，app.quit() 不再被调用，
+  // 进程永久卡死成僵尸——锁住 app.asar 导致无法重装。超时后强制退出。
+  const forceExitTimer = setTimeout(() => {
+    console.warn('[qwicks-gui] runtime stop timed out, forcing exit to avoid zombie process')
+    managedRuntimesStoppedForQuit = true
+    app.exit(0)
+  }, 4000)
   void stopManagedRuntimesForQuit()
     .catch((error) => {
       console.warn('[qwicks-gui] failed to stop QWicks runtime:', error)
       managedRuntimesStoppedForQuit = true
     })
     .finally(() => {
+      clearTimeout(forceExitTimer)
       app.quit()
     })
 })
