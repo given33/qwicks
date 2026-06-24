@@ -198,6 +198,11 @@ async function readJsonFile(path: string): Promise<unknown | null> {
     throw error
   }
 
+  // Some editors (and Windows export flows) write a UTF-8 BOM at the start
+  // of config files. JSON.parse rejects it as an unexpected token, so strip
+  // the BOM before parsing. (#mcp-bom)
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
+
   try {
     return JSON.parse(raw) as unknown
   } catch (error) {
