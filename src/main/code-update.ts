@@ -151,7 +151,24 @@ export function resolveHotCodeQWicksRoot(defaultRoot: string): string {
   if (!active) return defaultRoot
   const serveEntry = join(active.root, 'qwicks', 'dist', 'cli', 'serve-entry.js')
   const nodeModules = join(active.root, 'qwicks', 'node_modules')
-  return fileExists(serveEntry) && directoryExists(nodeModules) ? active.root : defaultRoot
+  if (!fileExists(serveEntry) || !directoryExists(nodeModules)) return defaultRoot
+
+  // The node_modules in the hot-code root is a symlink to the bundled
+  // installation. On Windows the junction can silently break (permission
+  // issues, moved install dir, etc.). Verify that a key native module
+  // actually resolves before trusting the symlink.
+  try {
+    const probe = createRequire(join(active.root, 'qwicks', 'package.json'))
+    probe.resolve('better-sqlite3')
+  } catch {
+    console.warn(
+      '[qwicks-gui code-update] hot-code node_modules symlink appears broken;',
+      'falling back to bundled qwicks runtime'
+    )
+    return defaultRoot
+  }
+
+  return active.root
 }
 
 export function isHotCodePath(path: string): boolean {
@@ -192,12 +209,20 @@ async function linkBundledQWicksNodeModules(targetRoot: string): Promise<void> {
   if (!directoryExists(runtimeRoot) || directoryExists(target)) return
 
   const source = bundledQWicksNodeModulesDir()
-  if (!directoryExists(source)) return
+  if (!directoryExists(source)) {
+    console.warn('[qwicks-gui code-update] bundled qwicks/node_modules not found at', source)
+    return
+  }
   try {
     await symlink(source, target, process.platform === 'win32' ? 'junction' : 'dir')
-  } catch {
-    // If the link cannot be created, the active renderer/preload still works;
-    // resolveHotCodeQWicksRoot will keep the runtime on the bundled copy.
+  } catch (error) {
+    console.warn(
+      '[qwicks-gui code-update] failed to link bundled node_modules:',
+      error instanceof Error ? error.message : String(error)
+    )
+    console.warn('[qwicks-gui code-update] source:', source)
+    console.warn('[qwicks-gui code-update] target:', target)
+    console.warn('[qwicks-gui code-update] hot-code qwicks runtime will use NODE_PATH fallback')
   }
 }
 
