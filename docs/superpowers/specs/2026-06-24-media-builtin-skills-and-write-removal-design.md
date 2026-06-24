@@ -1,9 +1,9 @@
-# 内置媒体 Skill 化 + 彻底删除写作功能 — 设计文档
+# 内置媒体 Skill 化 + 删除 Write 工作区外壳 — 设计文档
 
 - 日期: 2026-06-24
 - 范围: 两项独立但相邻的工作
   - **工作 A — 任务5**: 把 4 个生成类媒体工具做成内置 skill，整合语音输入配置，移除媒体专属设置 UI。
-  - **工作 B**: 彻底删除写作功能代码（连同 Plan、SDD 一起删）。
+  - **工作 B**: 删除 Write **工作区外壳**（保留 Plan、SDD 和共享 write 编辑器库）。
 
 ---
 
@@ -24,16 +24,18 @@
    - 发现链：`guiSkillRootsForRuntime()` → `skillCapabilityConfigForRuntime()` → 写入 `<dataDir>/config.json` 的 `capabilities.skills.roots` → 运行时 `discoverSkills()` 扫描这些根目录里的 `skill.json` + `SKILL.md` 包。
    - 扫描根约定在 `src/shared/skill-dirs.ts`：项目级（`.agents/skills` 等）+ 全局级（`~/.qwicks/skills` 等）。
 
-4. **写作功能代码量巨大且与 Plan/SDD 紧耦合**：约 50+ 文件，SDD 招牌功能依赖全部 11 个 write 编辑器模块，Plan 依赖其中 3 个。
+4. **Write 功能分层**：Write 工作区外壳（侧边栏/工作区视图/助手面板等独立 route）与 write 编辑器库是两层。编辑器库被 **Plan**（依赖 WriteMarkdownEditor/WriteRichEditor/store 3 个）和 **SDD**（依赖全部 11 个）深度共享。
 
-### 已确认的用户决策
+### 已确认的用户决策（最终）
 
 | 决策点 | 选择 |
 |---|---|
-| 写作功能依赖处理 | **连 Plan/SDD 一起删**（全部删除，最快最彻底） |
-| 媒体配置归属 | 方案1：媒体做成 skill，保留**一个**精简的统一配置卡片 |
+| **Write 功能处理** | **只删 Write 工作区外壳，保留 Plan + SDD + 共享 write 编辑器库** |
+| 媒体配置归属 | 方案1：媒体做成 skill，保留**一个**统一媒体卡片（5 子区块全字段保留） |
 | 语音输入 | 保留麦克风按钮，配置并入统一卡片 |
 | 内置 skill 实现机制 | **方案A：物化到磁盘**——启动时同步 4 个内置 skill 包到 `<userData>/builtin-skills/`，加入 skill 扫描根 |
+
+> **决策演进**：最初考虑「连 Plan/SDD 一起删」，但摸清 Plan/SDD 与 write 编辑器库紧耦合（SDD 是 write 编辑器的二次封装），全删会损失两个核心功能（合计约 5500 行）。最终决定缩小到只删 Write 工作区外壳——这正是用户唯一要下架的「写作模式」入口。
 
 ---
 
@@ -117,11 +119,11 @@ Skill 包内容（物化到磁盘）
 - `use-settings-gui-update.ts` 中的对应分类
 
 #### 新增的统一卡片
-新文件 `settings-section-media.tsx`，渲染**一个**卡片「媒体能力」，内含 5 个可折叠子区块（图片 / 语音合成 / 音乐 / 视频 / 语音输入），每个子区块保留原有的配置字段（enabled / providerId / protocol / baseUrl / apiKey / model / 各自特有字段）。
+新文件 `settings-section-media.tsx`，渲染**一个**卡片「媒体能力」，内含 5 个可折叠子区块（图片 / 语音合成 / 音乐 / 视频 / 语音输入），每个子区块**保留全部原有配置字段**（enabled / providerId / protocol / baseUrl / apiKey / model / 各自特有字段如 voice/format/defaultSize/defaultResolution 等）。
 
 **配置数据流不变**：仍读 `ctx.qwicks.imageGeneration` / `textToSpeech` / `musicGeneration` / `videoGeneration` / `speechToText`，仍写 `updateQWicks({...})`。只是 UI 从 4 个分散面板合并成 1 个卡片。
 
-在 `SettingsSidebar.tsx` 增加 `media` 分类按钮（图标用媒体/调色板），`SettingsView.tsx` 路由到新卡片。同时移除 `mediaGeneration`/`speechToText`/`imageGeneration` 三个旧分类。
+在 `SettingsSidebar.tsx` 增加 `media` 分类按钮（图标用媒体/调色板），`SettingsView.tsx` 路由到新卡片。同时移除 `mediaGeneration`/`speechToText`/`imageGeneration` 三个旧分类。3 处 `SettingsCategory` 类型定义同步更新。
 
 ### A.4 Skill 设置 UI 适配
 
@@ -142,10 +144,11 @@ Skill 包内容（物化到磁盘）
 ```ts
 export async function ensureBuiltinMediaSkills(userDataDir: string): Promise<void>
 ```
-- 源：打包资源 `resources/builtin-skills/`（electron-builder 配置 `extraResources` 或 `asarUnpack`）。
+- 源：打包资源 `<resourcesPath>/builtin-skills/`（生产）或源码相对路径（开发）。
 - 目标：`<userData>/builtin-skills/<skill-id>/`。
 - 逻辑：遍历 4 个 skill id；若目标不存在或其 `skill.json.version` < 打包版本，则整目录覆盖；否则跳过。失败只记日志、不阻塞启动。
 - 在 `app-main.ts` / `index.ts` 的启动序列里、QWicks 进程启动**之前**调用（因为运行时要读这些根）。
+- 打包方式：electron-builder `extraResources` 把 `resources/builtin-skills/` 复制到 `<appRoot>/resources/builtin-skills/`。比 `asarUnpack` 更简单，skill 包是纯静态 markdown/json。
 
 ### A.7 Skill 根注入
 
@@ -160,87 +163,134 @@ export async function ensureBuiltinMediaSkills(userDataDir: string): Promise<voi
 
 ---
 
-## 三、工作 B：彻底删除写作功能（含 Plan/SDD）
+## 三、工作 B：删除 Write 工作区外壳（保留 Plan/SDD）
 
-### B.1 删除范围
+### B.0 核心原则
 
-按删除顺序（保证每步编译可通过）：
+**只删 Write 工作区外壳**（独立 write route + 文件树 + 工作区视图 + 助手面板 + 横幅 + 专属导出/检索服务），**保留**：
+- 整个 write 编辑器库（`src/renderer/src/write/` 除 `write-render-safety.ts` 外全部）——Plan/SDD 共享
+- Plan 面板 + SDD 编辑器 —— 核心功能
+- `WriteMarkdownEditor` / `WriteRichEditor` / `WriteInlineAgent` / `write-workspace-store` / `WriteMarkdownPreview` 等 —— 被 Plan/SDD 引用
+- `settings-section-write.tsx` —— 编辑器设置页（不是工作区外壳）
+- `write:inline-completion` / `write:generate-infographic` / `write:authorize-prototype` / `write:open-prototype` / `write:inline-completion-debug:*` IPC —— SDD 编辑器调用
+- `write-infographic-service.ts` / `write-inline-completion-service.ts` / `prototype-embed-registry.ts` —— SDD 需要
 
-#### 第 1 步：移除入口与路由
-- `chat-store-types.ts`：`AppRoute` 删 `'write'`；`SettingsRouteSection` 删 `'write'`；`ChatState` 删 `openWrite`/`ensureWriteThreadForWorkspace`/`createWriteThread`/`selectWriteThread`。
-- `Workbench.tsx`：删除 write 路由分支、WriteSidebar/WriteAssistantPanel/WriteWorkspaceView 渲染、openWrite 等 store selector、`route === 'write'` 分支（2518-2532）、write-runtime-banner。
-- `Sidebar.tsx`：删 onWriteOpen 传递、Plan 入口（plan 按钮区）、SDD「新建需求」按钮（169-173）。
+### B.1 删除清单（精确）
 
-#### 第 2 步：删除 store actions
-- `chat-store-navigation-actions.ts`：删 `openWrite`/`ensureWriteThreadForWorkspace`/`createWriteThread`/`selectWriteThread` 实现（148-282）。
-- `chat-store-app-actions.ts`：删 `'openWrite'`（41, 166-167）。
-- `chat-store-thread-actions.ts`：删 write route 分支（581-583）。
-- `chat-store-runtime.ts`：删 `WriteThreadRegistry`/`isWriteThreadId`/`resolveWriteToolFilePath`/`notifyWriteWorkspaceFileRefresh`（390-443）及相关 import。
-- `chat-store-maintenance-actions.ts`：删 `forgetWriteThread`。
+#### 删除的渲染组件（13 个文件）
+| 文件 | 删除理由 |
+|---|---|
+| `components/write/WriteSidebar.tsx` | 仅 Workbench write route 引用 |
+| `components/write/WriteWorkspaceView.tsx` | 仅 Workbench write route 引用 |
+| `components/write/WriteAssistantPanel.tsx` | 仅 Workbench write route 引用 |
+| `components/write/WriteFileTree.tsx` | 仅 WriteSidebar 引用 |
+| `components/write/WriteWorkspaceToolbar.tsx` | 仅 WriteWorkspaceView 引用 |
+| `components/write/WriteWorkspaceStart.tsx` | 仅 WriteWorkspaceDocumentPane 引用 |
+| `components/write/WriteWorkspaceEmptyState.tsx` | 仅 WriteWorkspaceView 引用 |
+| `components/write/WriteWorkspaceDocumentPane.tsx` | 仅 WriteWorkspaceView 引用 |
+| `components/write/WriteImagePreview.tsx` | 仅 WriteWorkspaceDocumentPane 引用 |
+| `components/write/WritePdfViewer.tsx` | 仅 WriteWorkspaceDocumentPane 引用 |
+| `components/write/WriteFontSizeControl.tsx` | 仅 WriteWorkspaceToolbar 引用 |
+| `components/write/WriteMarkdownPreview.tsx` | 仅 WriteWorkspaceDocumentPane + 测试引用（测试要同步处理） |
+| `components/write/use-write-split-scroll-sync.ts` | 仅 WriteWorkspaceView 引用 |
 
-#### 第 3 步：删除 IPC 与主进程服务
-- `register-app-ipc-handlers.ts`：删所有 `write:*` handler（1167-1221）、`speech:transcribe` 之外的媒体无关项保留。
-- `app-ipc-schemas.ts`：删 `writeInlineCompletionPatchSchema` 等所有 write schema（470-523, 1434-1565）。
-- `preload/index.ts`：删所有 `write:*` 桥（165-184）。
-- `qwicks-gui-api.ts`：删 `requestWriteInlineCompletion` 等接口成员（405-432）、类型 import（63-90）。
-- 删除主进程服务文件：`write-infographic-service.ts`(+test)、`write-inline-completion-service.ts`(+test)、`write-retrieval-service.ts`(+test)、`write-export-service.ts`(+test)、`write-pdf-text-service.ts`(+test)。
-- 删除 Plan 运行时工具与 SDD 运行时工具（在 qwicks 内，需探查具体位置）。
+> **注意**：`WriteInlineAgent.tsx` 和 `write-workspace-view-utils.ts` 被 SDD 引用，**保留**。
 
-#### 第 4 步：删除共享契约与类型
-- 删 `src/shared/write-infographic.ts`、`write-inline-completion.ts`、`write-inline-edit.ts`、`write-export.ts`、`write-retrieval.ts`、`write-prototype.ts`(+test)、`write-markdown-resource.ts`、`write-text-file.ts`(+test)、`sdd.ts`、`sdd-trace.ts`、`app-settings-write.ts`(+test)。
-- `app-settings-types.ts`：删 `Write*SettingsV1` 全部类型（1384-1526）、`AppSettingsV1.write` 字段（1592）、patch 中的 `write?`（1612）、`DEFAULT_WRITE_WORKSPACE_ROOT`（65）。
-- `app-settings-normalize.ts`：删 `normalizeWriteSettings` import 与调用。
-- 删 `src/shared/speech-to-text.ts`？**否**——语音输入保留，此文件留。
+#### 删除的渲染库（2 个文件）
+- `src/renderer/src/write/write-render-safety.ts`(+test) —— 仅 WriteWorkspaceView/DocumentPane 引用
 
-#### 第 5 步：删除渲染层组件与库
-- 整目录删：`src/renderer/src/write/`（含 `inline-completion/`、`tiptap/`）。
-- 整目录删：`src/renderer/src/components/write/`。
-- 整目录删：`src/renderer/src/components/plan/`。
-- 整目录删：`src/renderer/src/components/sdd/`。
-- 整目录删：`src/renderer/src/plan/`（plan store/prompts/todo-sync/tool/command）。
-- 整目录删：`src/renderer/src/sdd/`（sdd store/frameworks 等）。
-- 删 `settings-section-write.tsx`(+test)、`settings-debug-log.tsx`、`write-runtime-banner.ts`(+test)。
-- 删 `src/renderer/src/styles/write-editor.css`（并在 `main.tsx:11` 移除 import）。
-- 删 `src/renderer/src/lib/apply-theme.ts` 中的 `applyWriteTypography`。
-- `Workbench.tsx`：删所有 Plan/SDD 相关懒加载 import、handlers、effect（约 700 行 SDD 接线 + plan controller 接线）。
-- `WorkbenchTopBar.tsx`：删 plan 按钮、`rightPanelMode` 中的 `'plan'`/`'sdd-ai'`。
-- `Workbench` 的 `rightPanelMode`：仅保留 `'chat'`（或重构为无需 plan/sdd）。
+#### 删除的运行时横幅（2 个文件）
+- `src/renderer/src/lib/write-runtime-banner.ts`(+test) —— 仅 Workbench write route 引用
 
-#### 第 6 步：清理 i18n
-- `locales/en|zh/settings.json`：删 `write`、`sectionWrite`、`writeInlineCompletion*`、`writeSelectionAssist*`、`writeInfographic*`、`writeQuickAction*`、`writeWorkspaceRoot*`、`writeTypography*`、`writeFont*`、`writeAgentPresets*`、`writeDebugLog*` 等全部 write 键。
-- `locales/en|zh/common.json`：删 `write`、`writeStudio`、`writeSpaces`、`writeWorkspace*`、`writeCreate*`、`writeMode*`、`writeToggleAssistant`、`writeFontSize*`、`writeImage*`、`writePdf*`、`writeExport`、`writeCopyRichText*` 等全部 write 键（grep `^\s*"write` 全量清理）。
-- 同步删除 Plan/SDD 相关 i18n 键（`plan*`、`sdd*`、`newRequirement*`、`requirementAi*` 等，需 grep 确认）。
+#### 删除的主进程服务（3 个 + 各自 test）
+- `src/main/services/write-export-service.ts` —— 仅 WriteWorkspaceView 引用
+- `src/main/services/write-retrieval-service.ts` —— 仅 Workbench sendWritePrompt 引用
+- `src/main/services/write-pdf-text-service.ts` —— 仅 write-retrieval-service 引用（删除后成孤儿）
 
-#### 第 7 步：测试更新
-- 删所有 write/plan/sdd 相关测试文件。
-- 更新用到 `defaultWriteSettings` 的测试 fixture（`qwicks-runtime.test.ts`、`runtime-client.test.ts`、`app-settings.test.ts`）——从 `AppSettingsV1` 构造里移除 `write` 字段。
-- 更新 spotlight 计数测试（侧边栏项变化）。
+#### 删除的共享契约（1 个）
+- `src/shared/write-export.ts` —— 删除前先移除 3 处 `WriteExportFormat` 未用 import（write-workspace-view-utils/WriteWorkspaceToolbar/WriteWorkspaceView）
 
-### B.2 不删除的（容易误删的通用项）
-- `file:write-workspace` IPC + `writeWorkspaceFile`（通用文件保存）。
-- `qwicks:config:write`（配置文件写入）。
-- `terminal:write`。
-- `workspace-write` sandbox 枚举。
-- `writeBrowserStorageItem`（通用 localStorage helper）。
-- qwicks 内 `'write'`/`'write_file'` 内置工具名（文件写入工具）。
-- `speech-to-text.ts`、`speech-to-text-service.ts`、`use-voice-dictation.ts`（语音输入保留）。
-- `prototype-embed-registry.ts`——若仅 SDD 用且 SDD 删除后无人引用，则一并删；需探查确认。
+#### 删除的 IPC（3 个 handler + preload + schema + api member）
+- `write:export` / `write:copy-rich-text` —— 仅 WriteWorkspaceView 调用
+- `write:retrieve-context` —— 仅 Workbench sendWritePrompt 调用
+- 对应 preload 桥（`src/preload/index.ts:165-172`）、`app-ipc-schemas.ts` 中 `writeExportPayloadSchema`/`writeRichClipboardPayloadSchema`/`writeRetrievalPayloadSchema`、`qwicks-gui-api.ts` 中 `exportWriteDocument`/`copyWriteDocumentAsRichText`/`retrieveWriteContext` 成员及类型 import
+
+### B.2 修改的文件（store actions + route）
+
+#### 类型
+- `chat-store-types.ts`：`AppRoute` 删 `'write'`；`SettingsRouteSection` 删 `'write'`；`ChatState` 删 `openWrite`/`ensureWriteThreadForWorkspace`/`createWriteThread`/`selectWriteThread`（231-235）
+
+#### Store actions
+- `chat-store-navigation-actions.ts`：删 `openWrite`/`ensureWriteThreadForWorkspace`/`createWriteThread`/`selectWriteThread` 实现（148-282）、`wasWriteRoute` 分支（504-506）、write-thread-registry import（60）
+- `chat-store-app-actions.ts`：删 `'openWrite'`（41, 166-167）
+- `chat-store-thread-actions.ts`：删 `route==='write'` 分支（581-584）
+
+#### Workbench.tsx（行级精确）
+**删除 import**：`:56` WriteWorkspaceView、`:57` WriteAssistantPanel、`:58` WriteSidebar、`:111` write-runtime-banner、`:23` WriteRetrievalContext、`:62` composeWritePrompt、`:63` resolveWriteAgentPreset
+**保留 import**（SDD 用）：`:64` useWriteWorkspaceStore、`:65` isWriteThreadId、`:74` PENDING_INFOGRAPHIC_PROTOCOL
+**删除 selectors**：`:356-358` openWrite/ensureWriteThreadForWorkspace/createWriteThread、`:416-418` 对应 selector
+**保留 state**（SDD 助手面板用）：`:479-512` writeAssistantOpen/writeAssistantModel 等
+**删除函数**：`sendWritePrompt`(1173-1239)、`openWriteMode`(2121-2124)、`startNewWriteAssistantConversation`(2168-2174)、`pickWriteAssistantWorkspace`(2176-2193)、`writeRuntimeBannerMessage`(2216-2220)
+**修改分支**：sidebarView(2147-2156) 删 write arm；closeRightPanel(2158-2166) 删 write 块；selectedComposerModel(960-969) 删 `route==='write' ||`；activeComposerWorkspace(1009-1010) 删 write 分支；handleSendAsync(1901) 改为仅 chat；handleSendAsync(1976-1979) 删 write 分支
+**删除 render JSX**：右面板 write 分支(2250-2287，保留 sdd-ai 分支)、侧边栏 write 分支(2434-2442 收缩为 Sidebar)、主区 write route(2518-2532)
+
+#### write-thread-registry（可选深度清理）
+`write-thread-registry.ts`（`isWriteThreadId`/`WriteThreadRegistry` 等）是 Write 线程持久化机制，**无** Plan/SDD 依赖，可整文件删除——但牵涉 5 个 store 文件 + Workbench + 3 个测试的 mock。作为可选深度清理项；若要最小改动可只删 4 个 actions + route 分支，保留 registry（不影响功能，只是留少量死代码）。**本次执行：完整删除 registry，保证干净。**
+
+涉及：`chat-store-runtime.ts:29-31,390-443,741,1199`、`chat-store-maintenance-actions.ts:76-85,634`、`chat-store-navigation-actions.ts:51-60`、`chat-store-thread-actions.ts:65-74`、`chat-store.ts:71-80`、`Workbench.tsx:65,847`、测试 `chat-store-navigation-actions.test.ts:73`/`chat-store-side-actions.test.ts:156-160`/`chat-store-thread-actions.test.ts:232`
+
+### B.3 i18n 清理（仅工作区相关键）
+
+删除 `locales/{en,zh}/common.json` 中**仅工作区使用**的键：
+- `writeWorkspace*`、`writeMode*`、`writeToggleAssistant`、`writeFontSize*`、`writeImage*`、`writePdf*`、`writeExport*`、`writeCopyRichText*`、`writeCreate*`、`writeSpaces`、`writeStudio`、`writeModeRich`、`writeUnsupportedFileType`、`writeLargeFile*`、`writeSaveFile`、`writeNoFileOpen`、`writeChooseFile*`、`writeEmpty*`、`writeStart*`、`writeUntitledDraft` 等
+
+删除 `locales/{en,zh}/settings.json` 中**仅工作区使用**的键：
+- `writeWorkspaceRoot*` 等
+
+**保留**编辑器/设置相关键（settings-section-write.tsx 仍用）：`writeInlineCompletion*`、`writeSelectionAssist*`、`writeInfographic*`、`writeQuickAction*`、`writeTypography*`、`writeFont*`、`writeAgentPresets*`、`writeDebugLog*`、`sectionWrite`、`write`(设置导航标签)
+
+### B.4 不删除的（关键保留项，避免误删）
+- `WriteInlineAgent.tsx`（SDD）、`write-workspace-view-utils.ts`（SDD）、`WriteMarkdownEditor.tsx`（Plan/SDD）、`WriteRichEditor`、`WriteMarkdownPreview` 的依赖
+- `inline-edit.ts`、`write-file-watch.ts`、`quick-actions.ts`、`infographic-pending.ts`、`agent-presets.ts`（SDD + 编辑器设置）
+- `write-infographic-service.ts`、`write-inline-completion-service.ts`、`prototype-embed-registry.ts`
+- `write:inline-completion`/`write:generate-infographic`/`write:authorize-prototype`/`write:open-prototype`/`write:inline-completion-debug:*` IPC
+- `write-workspace-store` 全家（共享编辑器 store）
+- `quoted-selection.ts`、`selected-image.ts`、`recent-edits.ts` 等（共享编辑器/chat 库）
+- `settings-section-write.tsx`（编辑器设置页）
+- 通用项：`file:write-workspace`、`qwicks:config:write`、`terminal:write`、`writeBrowserStorageItem`、qwicks 内 `'write'` 文件写入工具、语音输入相关文件
+- Plan 面板 + SDD 编辑器 + 所有 plan/sdd 目录代码
+
+### B.5 测试同步
+- 删除被删组件/服务/lib 的对应 test
+- 处理 `quoted-selection.test.ts:10,12` 对 `WriteMarkdownPreview` 的 import（测试文件保留，移除该 import 或改 stub）
+- 更新 store 测试中 openWrite 等 mock
+- 更新 spotlight 计数测试（侧边栏 write 入口消失）
 
 ---
 
-## 四、实施顺序（两工作合并）
+## 四、实施顺序（两工作合并，先 B 后 A）
 
-为降低风险，**先做工作 B（删写作）再做工作 A（媒体 skill 化）**，因为删写作会大改 Workbench/Settings/Sidebar，媒体改动也在这些文件，先稳定基础再叠加。
+先做工作 B（删 Write 外壳）再做工作 A（媒体 skill 化），因为两者都改 Workbench/Settings/Sidebar，先稳定基础。
 
-1. **工作 B-1~B-7**：删除写作/Plan/SDD，每步 typecheck + test，逐步提交。
-2. **工作 A-1**：新增 4 个内置 skill 包资源（`resources/builtin-skills/`）。
-3. **工作 A-2**：新增 `builtin-skills-service.ts` + 启动同步。
-4. **工作 A-3**：`skillCapabilityConfigForRuntime` 注入内置根。
-5. **工作 A-4**：新增统一媒体配置卡片 `settings-section-media.tsx`。
-6. **工作 A-5**：移除旧媒体设置面板与分类。
-7. **工作 A-6**：skill UI 适配内置标签。
-8. **工作 A-7**：i18n 补充（媒体卡片新文案 + skill 触发词）。
-9. 全量 typecheck + test + 启动验证。
+### 工作 B（删 Write 外壳）
+1. **B-1**：删 13 个外壳组件 + `write-render-safety` + `write-runtime-banner`
+2. **B-2**：删 Workbench 中 write route 全部接线（import/selector/函数/分支/render）
+3. **B-3**：删 store actions + route 类型 + write-thread-registry（含相关 store 文件清理 + 测试）
+4. **B-4**：删 3 个主进程服务 + 3 个 IPC handler + preload + schema + api member + `write-export.ts`
+5. **B-5**：处理 `quoted-selection.test.ts` import + 更新各 mock 测试 + spotlight 计数
+6. **B-6**：清理 i18n 工作区键
+7. **B-7**：typecheck + test，提交
+
+### 工作 A（媒体 skill 化）
+1. **A-1**：新增 4 个内置 skill 包资源（`resources/builtin-skills/`）
+2. **A-2**：新增 `builtin-skills-service.ts` + 启动同步（app-main/index）
+3. **A-3**：electron-builder `extraResources` 配置打包
+4. **A-4**：`skillCapabilityConfigForRuntime` 注入内置根
+5. **A-5**：新增统一媒体配置卡片 `settings-section-media.tsx`（5 子区块全字段）
+6. **A-6**：移除旧媒体设置面板 + 分类（3 处 SettingsCategory 同步）
+7. **A-7**：skill UI 适配内置标签（`GuiSkillSummary.builtin` + 列表渲染）
+8. **A-8**：i18n 补充（媒体卡片文案 + skill 触发词）
+9. **A-9**：typecheck + test，提交
 
 ---
 
@@ -249,16 +299,17 @@ export async function ensureBuiltinMediaSkills(userDataDir: string): Promise<voi
 - **单元测试**：
   - `ensureBuiltinMediaSkills`：版本比对、覆盖、幂等。
   - `skillCapabilityConfigForRuntime`：内置根被加入且不受 disabledDirs 影响。
-  - 删除后 `AppSettingsV1` 不再含 `write`，normalize 不报错。
 - **集成/快照**：
   - 设置面板分类数变化后的 spotlight 计数。
-  - skill 列表显示 4 个内置 skill。
+  - skill 列表显示 4 个内置 skill + 内置标签。
 - **手动验证**：
   - 启动后 `<userData>/builtin-skills/` 出现 4 个目录。
   - skill 设置页显示 4 个内置 skill 且带「内置」标签、无禁用开关。
-  - 统一媒体卡片 5 个子区块可独立配置。
+  - 统一媒体卡片 5 个子区块可独立配置、全字段可见。
   - 麦克风按钮正常工作。
-  - 写作功能、Plan、SDD 完全消失（无入口、无残留报错）。
+  - **Write 工作区入口完全消失**（无 write route、无侧边栏 write 项、typecheck 无残留引用报错）。
+  - **Plan 面板正常打开**（`/plan` 命令、编辑器可用）。
+  - **SDD 编辑器正常打开**（侧边栏「新建需求」、富文本编辑可用）。
   - typecheck 通过；`npm run test:ci` 通过。
 
 ---
@@ -267,20 +318,18 @@ export async function ensureBuiltinMediaSkills(userDataDir: string): Promise<voi
 
 | 风险 | 缓解 |
 |---|---|
-| 删写作牵连面大，遗漏引用导致编译失败 | 分 7 步，每步 typecheck；用 explore agent 全量 grep 复核 |
-| Plan/SDD 在 qwicks 运行时也有工具注册 | 第 3 步探查 qwicks 内 plan/sdd 工具并一并移除 |
-| 内置 skill 同步失败导致媒体不可用 | 同步失败只记日志不阻塞；工具 provider 仍独立工作（skill 只是说明书） |
-| 用户已有 write 设置残留 | 字段直接删，无迁移负担（write 是本地编辑器，无云端数据） |
-| i18n 键遗漏导致界面英文 key 泄漏 | 每个 locale 文件 grep `write`/`plan`/`sdd` 全量清理 |
+| 删外壳误伤 Plan/SDD 共享模块 | 已精确摸清每个文件的 importers；保留清单明确；每步 typecheck 验证 |
+| `quoted-selection.test.ts` 引用被删的 WriteMarkdownPreview | B-5 显式处理该 import |
+| write-thread-registry 牵涉多 store 文件 | B-3 按行号精确编辑，每步 typecheck；必要时用 explore agent 复核 |
+| 内置 skill 同步失败导致媒体不可用 | 同步失败只记日志不阻塞；工具 provider 仍独立工作 |
+| i18n 键误删（删了编辑器还在用的键） | 只删工作区键，编辑器/设置键明确保留；grep 每个键确认无其他引用再删 |
+| 3 处 SettingsCategory 类型不同步 | A-6 显式同步 3 处 |
 
 ---
 
-## 七、已探查确认的具体落点（实现时遵循）
+## 七、已探查确认的具体落点
 
-1. **qwicks 运行时 Plan 工具**：`qwicks/src/adapters/tool/create-plan-tool.ts` 存在；`onPlanWritten` 回调在 `runtime-factory.ts:577`。删除时移除该工具文件、注册点、回调、以及 `gui-plan.ts` / `ports/tool-host.ts` / `contracts/turns.ts` / `loop/agent-loop.ts` 中对 plan 的引用。SDD 在 qwicks 内**无独立工具**（SDD 是纯渲染层 + 共享文件约定），故无需在 qwicks 删 sdd 工具。
-
-2. **`prototype-embed-registry.ts`**：删除 SDD 后引用方仅剩 `app-main.ts:324` 的 webContents 安全守卫 `isAuthorizedPrototypeFileUrl(src)`。该守卫的作用是放行 SDD 原型 HTML 的 file:// URL。SDD 删除后不再有授权原型文件，守卫退化为「永不放行 file://」——这与 `isAllowedDevPreviewUrl` 单独工作时等价（dev preview 仍放行）。**决策：整文件删除 `prototype-embed-registry.ts`，移除 `app-main.ts:45` import 与 `:324` 调用、`index.ts:46` import、`register-app-ipc-handlers.ts:162` import + `write:authorize-prototype`/`write:open-prototype` handler（1203-1208）。**
-
-3. **`RightPanelMode`** 完整取值（`WorkbenchTopBar.tsx:25-32`）：`'todo' | 'changes' | 'browser' | 'file' | 'plan' | 'sdd-ai' | null`。删除后缩减为 `'todo' | 'changes' | 'browser' | 'file' | null`。同时移除 `planPanelEnabled` prop（`:37,:53,:75`）与 items 数组中的 plan 项（`:75`）。
-
-4. **内置 skill 打包**：用 electron-builder `extraResources` 把 `resources/builtin-skills/` 复制到 `<appRoot>/resources/builtin-skills/`，运行时从 `process.resourcesPath`（生产）或源码相对路径（开发）读取。比 `asarUnpack` 更简单，因为 skill 包是纯静态 markdown/json。
+1. **4 个生成工具在运行时已存在**，skill 化只加说明书。
+2. **`RightPanelMode`**（`WorkbenchTopBar.tsx:25-32`）：`'todo'|'changes'|'browser'|'file'|'plan'|'sdd-ai'|null`。本次**不删 plan/sdd-ai**（Plan/SDD 保留），无需改此类型。
+3. **qwicks 运行时无 write 工作区专属工具**（Plan 工具 `create-plan-tool.ts` 保留）。工作 B 不碰 qwicks 运行时。
+4. **内置 skill 打包**：electron-builder `extraResources`。
