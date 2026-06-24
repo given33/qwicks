@@ -124,6 +124,10 @@ export interface DreamBeforeTurnResult {
   gateReport: GateReport | null
   injectionDecision: InjectionDecision | null
   rewrittenQuery: RewriteResult | null
+  /** 3.2(工业级):被 gate 降权的记忆 id(供 SSE memory_sources_ready)。 */
+  downrankedMemoryIds: string[]
+  /** 3.2:被 suppression 过滤的记忆 id。 */
+  suppressedMemoryIds: string[]
   failures: string[]
 }
 
@@ -276,7 +280,8 @@ export class DreamMemorySystem {
       decay,
       reinforcement,
       temporalDreamer,
-      topOfMindBalancer
+      topOfMindBalancer,
+      repository: this.repository
     })
 
     // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)
@@ -681,7 +686,7 @@ export class DreamMemorySystem {
   }): Promise<DreamBeforeTurnResult> {
     const userId = input.userId
     if (input.temporary || this.controls.isOptedOut(userId) || this.controls2.isOptedOut(userId)) {
-      return { memories: [], routedHits: [], statusHints: emptyStatusHints(), gateReport: null, injectionDecision: null, rewrittenQuery: null, failures: [] }
+      return { memories: [], routedHits: [], statusHints: emptyStatusHints(), gateReport: null, injectionDecision: null, rewrittenQuery: null, downrankedMemoryIds: [], suppressedMemoryIds: [], failures: [] }
     }
     const failures: string[] = []
     // 2.1(工业级):按用户设置过滤候选来源(saved memories / chat history / connectors 开关)。
@@ -731,6 +736,19 @@ export class DreamMemorySystem {
       rewrittenQuery.rewritten.toLowerCase() !== input.prompt.toLowerCase() &&
       rewrittenQuery.appliedMemories.length > 0
 
+    // 3.2(工业级):从 gateReport 提取降权/抑制的真实 memory id(供 SSE)。
+    const downrankedMemoryIds = gateReport
+      ? gateReport.decisions.filter((d) => d.finalDecision === 'demote').map((d) => d.memoryId)
+      : []
+    // suppressed = gate 标记 suppress 的 + 被 filterSuppressedWithExplicitAsk 过滤的
+    const gateSuppressed = gateReport
+      ? gateReport.decisions.filter((d) => d.finalDecision === 'suppress').map((d) => d.memoryId)
+      : []
+    const allHitsIds = new Set(hits.map((h) => h.item.id))
+    const routedIds = new Set(routedHits.map((h) => h.item.id))
+    const filterSuppressedIds = hits.filter((h) => !routedIds.has(h.item.id) && !gateSuppressed.includes(h.item.id)).map((h) => h.item.id)
+    const suppressedMemoryIds = [...new Set([...gateSuppressed, ...filterSuppressedIds])].filter((id) => allHitsIds.has(id))
+
     return {
       memories,
       routedHits,
@@ -742,6 +760,8 @@ export class DreamMemorySystem {
       },
       gateReport,
       injectionDecision,
+      downrankedMemoryIds,
+      suppressedMemoryIds,
       rewrittenQuery,
       failures
     }
@@ -843,6 +863,13 @@ export class DreamMemorySystem {
       } catch { /* fail-open: 谱系缺失不阻断摄入 */ }
       const drafts = gmail.extractDrafts(full, account)
       for (const d of drafts) {
+        // 3.3(工业级):connector ingest 必须走 sanitizer(PII/injection/secret 过滤)
+        try {
+          const san = sanitizeForMemory(d.content, { source: d.provenance.source })
+          if (san.decision === 'reject') continue
+          if (san.findings.some((f) => f.kind.startsWith('injection_'))) continue
+          if (san.decision === 'redact') d.content = san.sanitized
+        } catch { /* fail-open: sanitizer 失败不阻断 */ }
         this.persistDrafts([d], account, null, null, gmailSourceId)
         ingested += 1
       }
@@ -873,6 +900,13 @@ export class DreamMemorySystem {
       } catch { /* fail-open */ }
       const drafts = drive.extractDrafts({ fileId: f.id, fileName: f.name, content }, account)
       for (const d of drafts) {
+        // 3.3(工业级):connector ingest 必须走 sanitizer
+        try {
+          const san = sanitizeForMemory(d.content, { source: d.provenance.source })
+          if (san.decision === 'reject') continue
+          if (san.findings.some((f) => f.kind.startsWith('injection_'))) continue
+          if (san.decision === 'redact') d.content = san.sanitized
+        } catch { /* fail-open */ }
         this.persistDrafts([d], account, null, null, driveSourceId)
         ingested += 1
       }
@@ -880,27 +914,62 @@ export class DreamMemorySystem {
     return { ingested }
   }
 
-  /** Phase 5:撤销连接器授权 → CONNECTOR_REVOKED tombstone(文档 §8.1 删除一致性)。 */
-  revokeConnector(account: string, userId: string): { affected: number } {
-    this.oauthStore.delete(account)
-    // 把该 account 来源的 connector memory 全部标记 CONNECTOR_REVOKED。
-    // 同时按 userId 和 account 搜索(ingest 时可能用 account 作 userId)。
+  /**
+   * Phase 5:撤销连接器授权 → CONNECTOR_REVOKED tombstone(文档 §8.1 删除一致性)。
+   * 3.3(工业级):使用 source_record + memory_source_link 做精确级联,
+   * 同时清理 source_record 行(标 deleted)。
+   * @param opts.preview - 只返回受影响列表,不删除(3.4 revoke preview)。
+   */
+  revokeConnector(account: string, userId: string, opts: { preview?: boolean } = {}): { affected: number; affectedMemoryIds?: string[]; affectedSourceIds?: string[] } {
+    // 3.4:preview 模式不删除,只返回受影响列表
+    const sources = this.controls2.listSources(userId, { includeDeleted: true })
+      .concat(userId !== account ? this.controls2.listSources(account, { includeDeleted: true }) : [])
+      .filter((s) => s.sourceType === SourceType.GMAIL || s.sourceType === SourceType.DRIVE)
+
+    const affectedSourceIds: string[] = []
+    const affectedMemoryIds: string[] = []
+    for (const src of sources) {
+      // 匹配 account(externalRef 或 title 含 account,或 metadata)
+      const isMatch = src.externalRef?.includes(account) || src.title?.includes(account) || src.userId === account
+      if (!isMatch) continue
+      affectedSourceIds.push(src.id)
+      // 用 memory_source_link 精确查派生
+      const derived = this.controls2.memoriesDerivedFromSource(src.userId, src.id)
+      affectedMemoryIds.push(...derived.map((m) => m.id))
+    }
+
+    // 也匹配旧的 metadata.source_account 方式(向后兼容)
     const candidates = [
       ...this.repository.list(userId, { includeDeleted: true, includeSuppressed: true, includeExpired: true }),
       ...(userId !== account ? this.repository.list(account, { includeDeleted: true, includeSuppressed: true, includeExpired: true }) : [])
     ]
-    const seen = new Set<string>()
-    let affected = 0
+    const seen = new Set(affectedMemoryIds)
     for (const it of candidates) {
       if (seen.has(it.id)) continue
-      seen.add(it.id)
       if (it.provenance.source === 'connector' && it.metadata.source_account === account) {
-        it.transitionStatus(MemoryLifecycleStatus.CONNECTOR_REVOKED, { actor: 'connector.revoke', reason: `account ${account} revoked` })
-        this.repository.upsert(it)
-        affected += 1
+        affectedMemoryIds.push(it.id)
+        seen.add(it.id)
       }
     }
-    return { affected }
+
+    if (opts.preview) {
+      return { affected: affectedMemoryIds.length, affectedMemoryIds, affectedSourceIds }
+    }
+
+    // 实际撤销:删 token + 标 CONNECTOR_REVOKED + 清理 source_record
+    this.oauthStore.delete(account)
+    for (const mid of affectedMemoryIds) {
+      const m = this.repository.get(mid)
+      if (m && m.status !== MemoryLifecycleStatus.DELETED) {
+        m.transitionStatus(MemoryLifecycleStatus.CONNECTOR_REVOKED, { actor: 'connector.revoke', reason: `account ${account} revoked` })
+        this.repository.upsert(m)
+      }
+    }
+    for (const sid of affectedSourceIds) {
+      this.controls2.deleteSource(sid, { hard: false })
+    }
+    this.repository.logEvent('connector_revoked', { userId, payload: { account, memoryCount: affectedMemoryIds.length, sourceCount: affectedSourceIds.length } })
+    return { affected: affectedMemoryIds.length }
   }
 
   /** Phase 4:运行一轮 Pulse(夜间异步研究)。research 函数可注入。

@@ -154,6 +154,23 @@ CREATE TABLE IF NOT EXISTS user_memory_settings (
     connectors_enabled INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL
 );
+
+-- 3.1(工业级 报告 §5.3):durable dream job queue(可恢复后台 dreaming)
+CREATE TABLE IF NOT EXISTS dream_job (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    payload TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    locked_at TEXT,
+    last_error TEXT,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_dreamjob_status ON dream_job(status, due_at);
+CREATE INDEX IF NOT EXISTS ix_dreamjob_user ON dream_job(user_id);
 `
 
 interface MemoryRow {
@@ -911,6 +928,105 @@ export class SqliteMemoryRepository implements MemoryRepository {
       )
       .run({ user_id: userId, ...merged })
     this.logEvent('memory_settings_changed', { userId, payload: merged })
+  }
+
+  // ----------------------------------------------------------------
+  // 3.1(工业级 报告 §5.3):durable dream job queue
+  // ----------------------------------------------------------------
+
+  /** 入队一个 dream job(幂等:同 type+userId+pending 状态只保留一个)。 */
+  enqueueDreamJob(job: { type: string; userId: string; payload?: unknown; dueAt?: string }): string {
+    const id = `job_${this.newId().slice(4)}_${job.type}`
+    const now = this.now()
+    // 幂等:同 type+user 已有 pending/due 的 job → 更新 due_at,不重复入队
+    const existing = this.db
+      .prepare(/* sql */ `SELECT id FROM dream_job WHERE type=? AND user_id=? AND status IN ('pending','retrying') LIMIT 1`)
+      .get(job.type, job.userId) as { id: string } | undefined
+    if (existing) {
+      this.db.prepare(/* sql */ `UPDATE dream_job SET due_at=? WHERE id=?`).run(job.dueAt ?? now, existing.id)
+      return existing.id
+    }
+    this.db
+      .prepare(
+        /* sql */ `INSERT INTO dream_job (id, type, user_id, payload, status, attempts, created_at, due_at) VALUES (?,?,?,?, 'pending', 0, ?, ?)`
+      )
+      .run(id, job.type, job.userId, job.payload ? JSON.stringify(job.payload) : null, now, job.dueAt ?? now)
+    return id
+  }
+
+  /** 取出到期的 pending/retrying jobs(加锁,limit 条)。 */
+  claimDueDreamJobs(limit: number = 5): Array<{ id: string; type: string; userId: string; payload: unknown; attempts: number }> {
+    const now = this.now()
+    const rows = this.db
+      .prepare(
+        /* sql */ `SELECT * FROM dream_job WHERE status IN ('pending','retrying') AND due_at <= ? ORDER BY due_at ASC LIMIT ?`
+      )
+      .all(now, limit) as Array<{
+        id: string; type: string; user_id: string; payload: string | null; attempts: number
+      }>
+    const claimed: Array<{ id: string; type: string; userId: string; payload: unknown; attempts: number }> = []
+    for (const row of rows) {
+      this.db
+        .prepare(/* sql */ `UPDATE dream_job SET status='running', locked_at=?, attempts=attempts+1 WHERE id=?`)
+        .run(now, row.id)
+      let payload: unknown = null
+      if (row.payload) {
+        try { payload = JSON.parse(row.payload) } catch { payload = null }
+      }
+      claimed.push({ id: row.id, type: row.type, userId: row.user_id, payload, attempts: row.attempts + 1 })
+    }
+    return claimed
+  }
+
+  /** 标记 job 完成。 */
+  completeDreamJob(jobId: string): void {
+    this.db.prepare(/* sql */ `UPDATE dream_job SET status='completed', completed_at=? WHERE id=?`).run(this.now(), jobId)
+  }
+
+  /** 标记 job 失败,安排 retry(backoff)或 dead-letter。 */
+  failDreamJob(jobId: string, error: string, opts: { maxRetries?: number; baseDelayMs?: number } = {}): void {
+    const maxRetries = opts.maxRetries ?? 3
+    const baseDelayMs = opts.baseDelayMs ?? 60_000
+    const row = this.db.prepare(/* sql */ `SELECT attempts FROM dream_job WHERE id=?`).get(jobId) as { attempts: number } | undefined
+    if (!row) return
+    if (row.attempts >= maxRetries) {
+      // dead letter
+      this.db.prepare(/* sql */ `UPDATE dream_job SET status='dead', last_error=? WHERE id=?`).run(error, jobId)
+      this.logEvent('dream_job_dead', { payload: { jobId, error, attempts: row.attempts } })
+    } else {
+      // retry with exponential backoff
+      const delayMs = baseDelayMs * Math.pow(2, row.attempts - 1)
+      const dueAt = new Date(Date.now() + delayMs).toISOString()
+      this.db.prepare(/* sql */ `UPDATE dream_job SET status='retrying', last_error=?, due_at=? WHERE id=?`).run(error, dueAt, jobId)
+    }
+  }
+
+  /** 查询 dream job 统计(observability)。 */
+  dreamJobStats(userId?: string): { pending: number; running: number; retrying: number; dead: number; completed: number; lastCompletedAt: string | null } {
+    const where = userId ? `WHERE user_id=?` : ``
+    const params = userId ? [userId] : []
+    const counts = this.db
+      .prepare(
+        /* sql */ `SELECT
+          SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) as running,
+          SUM(CASE WHEN status='retrying' THEN 1 ELSE 0 END) as retrying,
+          SUM(CASE WHEN status='dead' THEN 1 ELSE 0 END) as dead,
+          SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed
+        FROM dream_job ${where}`
+      )
+      .get(...params) as { pending: number; running: number; retrying: number; dead: number; completed: number } | undefined
+    const lastCompleted = this.db
+      .prepare(/* sql */ `SELECT completed_at FROM dream_job ${where} AND status='completed' ORDER BY completed_at DESC LIMIT 1`.replace('WHERE  AND', 'WHERE'))
+      .get(...params) as { completed_at: string } | undefined
+    return {
+      pending: counts?.pending ?? 0,
+      running: counts?.running ?? 0,
+      retrying: counts?.retrying ?? 0,
+      dead: counts?.dead ?? 0,
+      completed: counts?.completed ?? 0,
+      lastCompletedAt: lastCompleted?.completed_at ?? null
+    }
   }
 
   close(): void {

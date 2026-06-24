@@ -92,6 +92,8 @@ export interface DreamingSchedulerOptions {
   temporalDreamer?: TemporalDreamer
   /** v3:可选的 top-of-mind 平衡器。 */
   topOfMindBalancer?: TopOfMindBalancer
+  /** 3.1(工业级):持久化 dream_job 队列(可选;提供则 markDirty 入队 + tick 从队列处理)。 */
+  repository?: import('../storage/repository.js').MemoryRepository
 }
 
 export interface DreamingTickResult {
@@ -107,9 +109,18 @@ export class DreamingScheduler {
 
   constructor(private readonly opts: DreamingSchedulerOptions) {}
 
-  /** chat 写新 memory 后调用,标记该 user 需要 dreaming。 */
+  /** chat 写新 memory 后调用,标记该 user 需要 dreaming。
+   *  3.1(工业级):同时入队 dream_job(持久化,重启不丢)。 */
   markDirty(userId: string): void {
     this.dirty.add(userId)
+    // 3.1:持久化入队(幂等)
+    if (this.opts.repository) {
+      try {
+        this.opts.repository.enqueueDreamJob({ type: 'dream_refresh', userId })
+      } catch {
+        // 入队失败不阻断热路径(in-memory dirty 仍有效)
+      }
+    }
   }
 
   isDirty(userId: string): boolean {

@@ -455,7 +455,7 @@ export type AgentLoopOptions = {
   /** Phase 6 审计修复:如果 dreamSystem 存在,retrieveMemories 走语义 5 通道检索而非 n-gram。 */
   dreamSystem?: {
     retrieve(query: string, userId: string, topK: number): Promise<Array<{ item: { id: string; content: string; scope: string }; score: number }>>
-    beforeTurn?(input: { userId: string; prompt: string; threadId?: string | null; turnId?: string | null; temporary?: boolean; isSafetyContext?: boolean; contextBudgetTokens?: number }): Promise<{ memories: Array<{ id: string; content: string; scope: string }>; statusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }; rewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null; failures: string[] }>
+    beforeTurn?(input: { userId: string; prompt: string; threadId?: string | null; turnId?: string | null; temporary?: boolean; isSafetyContext?: boolean; contextBudgetTokens?: number }): Promise<{ memories: Array<{ id: string; content: string; scope: string }>; statusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }; rewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null; downrankedMemoryIds?: string[]; suppressedMemoryIds?: string[]; failures: string[] }>
     afterTurn?(input: { userId: string; userPrompt: string; assistantReply: string; threadId?: string | null; turnId?: string | null; temporary?: boolean }): Promise<{ newMemories: unknown[]; sourceId: string | null; failures: string[]; dreamingTriggered: boolean }>
   }
   tokenEconomy?: TokenEconomyConfig
@@ -521,6 +521,9 @@ export class AgentLoop {
   private readonly opts: AgentLoopOptions
   private lastDreamStatusHints: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean } | null = null
   private lastDreamRewrittenQuery: { rewritten: string; appliedMemories: Array<{ memoryId: string; slot: string; extractedValue: string }> } | null = null
+  /** 3.2(工业级):缓存 downranked/suppressed id 供 SSE memory_sources_ready。 */
+  private lastDreamDownrankedIds: string[] = []
+  private lastDreamSuppressedIds: string[] = []
   /** 1.1(工业级):缓存当前 turn 的 memoryMode,供 secondary tool context 检查。 */
   private lastMemoryMode: 'normal' | 'temporary' | 'off' = 'normal'
   private readonly autoModelRoutes = new Map<string, AutoModelRouteSelection>()
@@ -1215,6 +1218,7 @@ export class AgentLoop {
       }
       // v3(CHIEF P0-1 报告二轮 §4.3):推送 memory_sources_ready 事件,
       // 让 renderer 在 assistant bubble 旁显示来源图标 + used/downranked/suppressed 面板。
+      // 3.2(工业级):用真实的 gate 降权/抑制 id(非硬编码空数组)。
       if (memories.length > 0 || this.lastDreamStatusHints.memorySourcesUsed.length > 0) {
         try {
           await this.opts.events.record({
@@ -1222,8 +1226,8 @@ export class AgentLoop {
             threadId,
             turnId,
             usedMemoryIds: memories.map((m) => m.id),
-            downrankedMemoryIds: [],
-            suppressedMemoryIds: [],
+            downrankedMemoryIds: this.lastDreamDownrankedIds,
+            suppressedMemoryIds: this.lastDreamSuppressedIds,
             sourceIds: this.lastDreamStatusHints.memorySourcesUsed
           })
         } catch {
@@ -2674,6 +2678,9 @@ export class AgentLoop {
         if (this.opts.memoryStore) this.opts.memoryStore.setLastInjected(memories.map((m) => m.id))
         this.lastDreamStatusHints = result.statusHints
         this.lastDreamRewrittenQuery = result.rewrittenQuery
+        // 3.2(工业级):缓存降权/抑制 id 供 memory_sources_ready SSE 事件
+        this.lastDreamDownrankedIds = result.downrankedMemoryIds ?? []
+        this.lastDreamSuppressedIds = result.suppressedMemoryIds ?? []
         return memories
       } catch { /* fail-open */ }
     } else if (this.opts.dreamSystem?.retrieve) {

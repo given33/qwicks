@@ -119,6 +119,13 @@ export interface MemoryRepository {
   // ---- 2.1(工业级):用户记忆设置(持久化双开关) ----
   getMemorySettings(userId: string): { savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }
   setMemorySettings(userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>): void
+
+  // ---- 3.1(工业级):durable dream job queue ----
+  enqueueDreamJob(job: { type: string; userId: string; payload?: unknown; dueAt?: string }): string
+  claimDueDreamJobs(limit?: number): Array<{ id: string; type: string; userId: string; payload: unknown; attempts: number }>
+  completeDreamJob(jobId: string): void
+  failDreamJob(jobId: string, error: string, opts?: { maxRetries?: number; baseDelayMs?: number }): void
+  dreamJobStats(userId?: string): { pending: number; running: number; retrying: number; dead: number; completed: number; lastCompletedAt: string | null }
 }
 
 /** 内部辅助:直接执行裸 SQL(仅供测试/迁移使用)。 */
