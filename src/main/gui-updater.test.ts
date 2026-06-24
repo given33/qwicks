@@ -296,7 +296,8 @@ describe('installGuiUpdate', () => {
 
     finishCleanup()
     await expect(installing).resolves.toEqual({ ok: true })
-    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    // isSilent=true avoids the NSIS "app still running" dialog deadlock.
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
   })
 
   it('reuses the same cleanup when the native updater emits before-quit-for-update', async () => {
@@ -320,7 +321,7 @@ describe('installGuiUpdate', () => {
 
     finishCleanup()
     await expect(installing).resolves.toEqual({ ok: true })
-    expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
   })
 })
 

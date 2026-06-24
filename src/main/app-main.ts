@@ -1721,6 +1721,14 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   isQuitting = true
   stopRuntimeWatchdog()
+  // 更新安装触发的退出：runtime 已在 installGuiUpdate 里停止，
+  // 立即放行，否则 preventDefault 会阻止 app 退出，导致 electron-updater
+  // 的安装器（will-quit 钩子）不启动 → "点重启安装没反应"。
+  // 标记由 gui-updater 在 installGuiUpdate 时写入 process（避免静态 import 循环）。
+  if ((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall) {
+    void getPetStateStore().stop().catch(() => {})
+    return
+  }
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
   // BUG 修复：await pet state 落盘后再退出，避免状态丢失

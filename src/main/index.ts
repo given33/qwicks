@@ -1726,6 +1726,8 @@ app.on('before-quit', (event) => {
   stopRuntimeWatchdog()
   // M4: flush 宠物状态到盘（防丢）
   void getPetStateStore().stop().catch(() => {})
+  // 更新安装触发的退出：runtime 已停止，立即放行（见 gui-updater installGuiUpdate）。
+  if ((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall) return
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
   void stopManagedRuntimesForQuit()

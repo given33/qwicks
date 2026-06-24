@@ -1066,6 +1066,8 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
       }
       emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
       await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
+      // 标记"为更新退出"（app-main 的 before-quit 据此放行，runtime 已停止）。
+      ;(process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall = true
       await installCodeUpdatePackage(downloadedCodePackage)
       app.relaunch()
       app.exit(0)
@@ -1082,6 +1084,10 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
     }
     emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
     await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
+    // 标记"为更新退出"（app-main 的 before-quit 据此放行，runtime 已停止），
+    // 否则 before-quit 的 preventDefault 会阻止 app 真正退出，
+    // electron-updater 的 will-quit 安装钩子不触发 → 安装器不启动。
+    ;(process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall = true
     // Bug fix:用静默模式安装(isSilent=true)避免 NSIS UI 弹出"软件已打开"对话框。
     // 非静默模式下 NSIS 会检测 app 进程,如果 runtime 关闭有竞态(file lock),
     // 就会卡在"请关闭软件"对话框 → 用户关闭软件 → 安装也停止 → 死锁。

@@ -144,7 +144,7 @@ jobs:
             $notes = $manualNotes
           } else {
             $subject = git log -1 --pretty=%s
-            $notes = "Update: $subject"
+            $notes = "更新：$subject"
           }
           Set-Content -Encoding utf8 -Path dist/release-notes.md -Value $notes
 
