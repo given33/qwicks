@@ -102,7 +102,8 @@ async function hideMacosDockIfRunningAsElectron(): Promise<void> {
   if (process.platform !== 'darwin') return
   if (!process.versions.electron) return
   try {
-    const electron = (await import(/* @vite-ignore */ 'electron')) as {
+    const electronModuleName: string = 'electron'
+    const electron = (await import(/* @vite-ignore */ electronModuleName)) as {
       app?: { dock?: { hide?: () => void } }
     }
     electron.app?.dock?.hide?.()
