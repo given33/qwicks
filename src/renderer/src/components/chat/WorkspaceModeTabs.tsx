@@ -3,15 +3,12 @@ import { Code2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 type Props = {
-  activeView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow'
+  activeView: 'chat' | 'claw' | 'schedule' | 'workflow'
   onCodeOpen: () => void
-  /** Kept for call-site compatibility; the write tab was removed (task 4). */
-  onWriteOpen?: () => void
 }
 
 /**
- * Code/Write 切换。写作功能已下架（任务4），仅保留 Code 入口；
- * props 保留 onWriteOpen 以避免大面积调用方改动，但不再渲染 write tab。
+ * Code/Write 切换。写作工作区已下架，仅保留 Code 入口。
  */
 export function WorkspaceModeTabs({
   activeView,

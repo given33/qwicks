@@ -38,7 +38,6 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
   | 'setComposerModel'
   | 'loadComposerModels'
   | 'setRoute'
-  | 'openWrite'
   | 'openSettings'
   | 'openPlugins'
   | 'openClaw'
@@ -162,10 +161,6 @@ export function createAppActions(options: CreateAppActionsOptions): Pick<
     },
 
     setRoute: (route) => set({ route }),
-
-    openWrite: async () => {
-      set({ route: 'write' })
-    },
 
     openSettings: (section: SettingsRouteSection = 'general') =>
       set((state) => ({

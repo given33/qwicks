@@ -70,7 +70,6 @@ function buildHarness(overrides?: {
     currentTurnUserId: null,
     error: null,
     loadComposerModels,
-    openWrite: vi.fn(async () => undefined),
     probeRuntime,
     refreshThreads,
     route: 'chat',

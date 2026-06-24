@@ -34,7 +34,7 @@ import {
 type Props = {
   threads: NormalizedThread[]
   activeThreadId: string | null
-  activeView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow'
+  activeView: 'chat' | 'claw' | 'schedule' | 'workflow'
   connectPhoneSidebarOpen: boolean
   pluginsActive: boolean
   runtimeReady: boolean
@@ -56,7 +56,6 @@ type Props = {
   onFocusModeChange: (enabled: boolean) => void
   onToggleConnectPhone: () => void
   onCodeOpen: () => void
-  onWriteOpen: () => void
   onScheduleOpen: () => void
   onWorkflowOpen: () => void
 }
@@ -86,7 +85,6 @@ export function Sidebar({
   onFocusModeChange,
   onToggleConnectPhone,
   onCodeOpen,
-  onWriteOpen,
   onScheduleOpen,
   onWorkflowOpen
 }: Props): ReactElement {
@@ -152,7 +150,6 @@ export function Sidebar({
         <WorkspaceModeTabs
           activeView={activeView}
           onCodeOpen={onCodeOpen}
-          onWriteOpen={onWriteOpen}
         />
 
         {activeView !== 'claw' && activeView !== 'schedule' && activeView !== 'workflow' ? (
@@ -253,7 +250,7 @@ export function Sidebar({
       ) : (
       <SidebarProjectsSection
         threads={threads}
-        activeView={activeView === 'write' ? 'write' : 'chat'}
+        activeView="chat"
         activeThreadId={activeThreadId}
         runtimeReady={runtimeReady}
         searchQuery={threadSearch}

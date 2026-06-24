@@ -47,7 +47,6 @@ import { DESKTOP_COMMANDS } from '../../shared/qwicks-gui-api'
 import { GUI_UPDATE_CHANNELS } from '../../shared/gui-update'
 import { WINDOW_CLOSE_ACTIONS } from '../../shared/app-settings'
 import { KEYBOARD_SHORTCUT_COMMANDS } from '../../shared/keyboard-shortcuts'
-import { WRITE_EXPORT_FORMATS } from '../../shared/write-export'
 import { WRITE_INFOGRAPHIC_MAX_TEXT_CHARS } from '../../shared/write-infographic'
 import { SPEECH_TRANSCRIPTION_MAX_BASE64_CHARS, SPEECH_TRANSCRIPTION_MAX_DURATION_MS } from '../../shared/speech-to-text'
 import {
@@ -1428,33 +1427,6 @@ export const workspaceFileWatchPayloadSchema = z
   .object({
     path: trimmedString(MAX_PATH_LENGTH),
     workspaceRoot: trimmedString(MAX_PATH_LENGTH)
-  })
-  .strict()
-
-export const writeRetrievalPayloadSchema = z
-  .object({
-    workspaceRoot: defaultPathSchema,
-    currentFilePath: defaultPathSchema,
-    query: z.string().trim().min(1).max(MAX_CHANNEL_TEXT_LENGTH),
-    maxSnippets: z.number().int().min(1).max(8).optional(),
-    includeCurrentFile: z.boolean().optional()
-  })
-  .strict()
-
-export const writeExportPayloadSchema = z
-  .object({
-    path: trimmedString(MAX_PATH_LENGTH),
-    workspaceRoot: optionalTrimmedString(MAX_PATH_LENGTH),
-    format: z.enum(WRITE_EXPORT_FORMATS),
-    content: z.string().max(MAX_BODY_BYTES)
-  })
-  .strict()
-
-export const writeRichClipboardPayloadSchema = z
-  .object({
-    path: trimmedString(MAX_PATH_LENGTH),
-    workspaceRoot: optionalTrimmedString(MAX_PATH_LENGTH),
-    content: z.string().max(MAX_BODY_BYTES)
   })
   .strict()
 

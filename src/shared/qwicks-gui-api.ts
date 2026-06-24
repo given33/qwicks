@@ -79,16 +79,6 @@ import type {
   UiPluginRuntimeFigures
 } from './ui-plugin'
 import type {
-  WriteRetrievalRequest,
-  WriteRetrievalResult
-} from './write-retrieval'
-import type {
-  WriteExportPayload,
-  WriteExportResult,
-  WriteRichClipboardPayload,
-  WriteRichClipboardResult
-} from './write-export'
-import type {
   TerminalCreatePayload,
   TerminalCreateResult,
   TerminalDataPayload,
@@ -405,9 +395,6 @@ export type QWicksGuiApi = {
   requestWriteInlineCompletion: (
     payload: WriteInlineCompletionRequest
   ) => Promise<WriteInlineCompletionResult>
-  retrieveWriteContext: (
-    payload: WriteRetrievalRequest
-  ) => Promise<WriteRetrievalResult>
   generateWriteInfographic: (
     payload: WriteInfographicRequest
   ) => Promise<WriteInfographicResult>
@@ -426,10 +413,6 @@ export type QWicksGuiApi = {
   ) => Promise<SpeechTranscriptionResult>
   listWriteInlineCompletionDebugEntries: () => Promise<WriteInlineCompletionDebugEntry[]>
   clearWriteInlineCompletionDebugEntries: () => Promise<boolean>
-  exportWriteDocument: (payload: WriteExportPayload) => Promise<WriteExportResult>
-  copyWriteDocumentAsRichText: (
-    payload: WriteRichClipboardPayload
-  ) => Promise<WriteRichClipboardResult>
   startSse: (threadId: string, sinceSeq: number, streamId?: string) => Promise<{ streamId: string }>
   stopSse: (streamId: string) => Promise<boolean>
   onSseEvent: (handler: (payload: SseEventPayload) => void) => () => void

@@ -41,7 +41,7 @@ import { readThreadWorktreeRegistry, type ThreadWorktreeRecord } from '../../lib
 
 type SidebarProjectsSectionProps = {
   threads: NormalizedThread[]
-  activeView: 'chat' | 'write' | 'claw'
+  activeView: 'chat' | 'claw'
   activeThreadId: string | null
   runtimeReady: boolean
   searchQuery: string
@@ -786,7 +786,7 @@ export function SidebarProjectsSection({
                         key={thread.id}
                         thread={thread}
                         worktreeRecord={worktreeRecordForSidebarThread(thread, threadWorktrees)}
-                        active={(activeView === 'chat' || activeView === 'write') && activeThreadId === thread.id}
+                        active={activeView === 'chat' && activeThreadId === thread.id}
                         deleting={deletingThreadIds[thread.id] === true}
                         locale={locale}
                         showRunning={

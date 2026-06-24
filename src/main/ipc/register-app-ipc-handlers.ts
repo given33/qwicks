@@ -82,12 +82,9 @@ import {
   workspaceFileWatchPayloadSchema,
   workspaceFileWritePayloadSchema,
   speechTranscribePayloadSchema,
-  writeExportPayloadSchema,
-  writeRichClipboardPayloadSchema,
   writeInfographicPayloadSchema,
   writeInlineCompletionPayloadSchema,
   writePrototypeFilePayloadSchema,
-  writeRetrievalPayloadSchema,
   workspaceRootSchema,
   legacySessionImportPayloadSchema
 } from './app-ipc-schemas'
@@ -157,7 +154,6 @@ import {
   listWriteInlineCompletionDebugEntries,
   requestWriteInlineCompletion
 } from '../services/write-inline-completion-service'
-import { retrieveWriteContext } from '../services/write-retrieval-service'
 import { requestWriteInfographic } from '../services/write-infographic-service'
 import { authorizePrototypePath } from '../services/prototype-embed-registry'
 import { requestSpeechTranscription } from '../services/speech-to-text-service'
@@ -165,7 +161,6 @@ import {
   getComputerUsePermissions,
   requestComputerUsePermission
 } from '../services/computer-use-permissions'
-import { copyWriteDocumentAsRichText, exportWriteDocument } from '../services/write-export-service'
 import { listGuiSkillRoots, listGuiSkills } from '../services/skill-service'
 
 type GuiUpdaterModule = typeof import('../gui-updater')
@@ -1164,36 +1159,12 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   ipcMain.handle('file:unwatch-workspace', async (_, watchId: unknown) =>
     disposeWorkspaceFileWatch(parseIpcPayload('file:unwatch-workspace', streamIdSchema, watchId))
   )
-  ipcMain.handle('write:export', async (_, payload: unknown) =>
-    exportWriteDocument(
-      parseIpcPayload('write:export', writeExportPayloadSchema, payload),
-      { parentWindow: getMainWindow() }
-    )
-  )
-  ipcMain.handle('write:copy-rich-text', async (_, payload: unknown) =>
-    copyWriteDocumentAsRichText(
-      parseIpcPayload('write:copy-rich-text', writeRichClipboardPayloadSchema, payload)
-    )
-  )
   ipcMain.handle('write:inline-completion', async (_, payload: unknown) =>
     requestWriteInlineCompletion(
       await store.load(),
       parseIpcPayload('write:inline-completion', writeInlineCompletionPayloadSchema, payload)
     )
   )
-  ipcMain.handle('write:retrieve-context', async (_, payload: unknown) => {
-    try {
-      const context = await retrieveWriteContext(
-        parseIpcPayload('write:retrieve-context', writeRetrievalPayloadSchema, payload)
-      )
-      return { ok: true as const, context }
-    } catch (error) {
-      return {
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error)
-      }
-    }
-  })
   ipcMain.handle('write:generate-infographic', async (_, payload: unknown) =>
     requestWriteInfographic(
       await store.load(),

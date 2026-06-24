@@ -96,7 +96,7 @@ export type SettingsRouteSection =
   | 'easterEgg'
   | 'claw'
   | 'updates'
-export type AppRoute = 'chat' | 'write' | 'settings' | 'plugins' | 'claw' | 'schedule' | 'workflow'
+export type AppRoute = 'chat' | 'settings' | 'plugins' | 'claw' | 'schedule' | 'workflow'
 export type PluginHostRoute = 'chat' | 'claw'
 
 /**
@@ -228,11 +228,7 @@ export type ChatState = {
   setComposerModel: (modelId: string, providerId?: string) => void
   loadComposerModels: () => Promise<void>
   setRoute: (r: AppRoute) => void
-  openWrite: () => Promise<void>
   openCode: () => Promise<void>
-  ensureWriteThreadForWorkspace: (workspaceRoot?: string) => Promise<string | null>
-  createWriteThread: (workspaceRoot?: string) => Promise<string | null>
-  selectWriteThread: (threadId: string, workspaceRoot?: string) => Promise<void>
   openSettings: (section?: SettingsRouteSection) => void
   openPlugins: (host?: PluginHostRoute) => void
   openClaw: () => void

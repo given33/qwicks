@@ -20,7 +20,6 @@ import {
   type KeyboardShortcutCommandId
 } from '@shared/keyboard-shortcuts'
 import type { DesktopCommand, ModelProviderModelGroup, SkillListItem } from '@shared/qwicks-gui-api'
-import type { WriteRetrievalContext } from '@shared/write-retrieval'
 import type { ClipboardImageReadResult, WorkspaceFileTarget } from '@shared/workspace-file'
 import type { AttachmentReference, ChatBlock, NormalizedThread, UserFileReference } from '../agent/types'
 import type { CoreRuntimeInfoJson, CoreRuntimeSkillJson } from '../agent/qwicks-contract'
@@ -53,14 +52,9 @@ import {
 } from './chat/FloatingComposerModelPicker'
 import { SideConversationPanel } from './chat/SideConversationPanel'
 import { SessionHeader } from './SessionHeader'
-import { WriteWorkspaceView } from './write/WriteWorkspaceView'
-import { WriteAssistantPanel } from './write/WriteAssistantPanel'
-import { WriteSidebar } from './write/WriteSidebar'
 import { SddAssistantPanel } from './sdd/SddAssistantPanel'
 import { SddDraftEditorView } from './sdd/SddDraftEditorView'
 import { SidebarTitlebarToggleButton } from './sidebar/SidebarPrimitives'
-import { composeWritePrompt } from '../write/quoted-selection'
-import { resolveWriteAgentPreset } from '../write/agent-presets'
 import { useWriteWorkspaceStore } from '../write/write-workspace-store'
 import { isWriteThreadId } from '../write/write-thread-registry'
 import { buildSddDraftId, createSddDraft, forgetRememberedSddDraft, useSddDraftStore } from '../sdd/sdd-draft-store'
@@ -108,7 +102,6 @@ import {
   type ComposerFileContextEntry
 } from '../lib/composer-file-references'
 import { filesUnderDirectory, loadWorkspaceFileIndex } from '../lib/workspace-file-index'
-import { resolveWriteRuntimeBannerMessage } from '../lib/write-runtime-banner'
 import { shouldSuppressRuntimeErrorBanner } from '../lib/runtime-banner-visibility'
 
 const ChangeInspector = lazy(() =>
@@ -353,9 +346,6 @@ export function Workbench(): ReactElement {
     runtimeConnection,
     setRoute,
     openCode,
-    openWrite,
-    ensureWriteThreadForWorkspace,
-    createWriteThread,
     openSettings,
     openPlugins,
     openClaw,
@@ -413,9 +403,6 @@ export function Workbench(): ReactElement {
       runtimeConnection: s.runtimeConnection,
       setRoute: s.setRoute,
       openCode: s.openCode,
-      openWrite: s.openWrite,
-      ensureWriteThreadForWorkspace: s.ensureWriteThreadForWorkspace,
-      createWriteThread: s.createWriteThread,
       openSettings: s.openSettings,
       openPlugins: s.openPlugins,
       openClaw: s.openClaw,
@@ -476,8 +463,6 @@ export function Workbench(): ReactElement {
   const [focusModeEnabled, setFocusModeEnabled] = useState(readFocusModePreference)
   const [runtimeLogPath, setRuntimeLogPath] = useState('')
   const [planPanelOverlayPreferred, setPlanPanelOverlayPreferred] = useState(false)
-  const writeAssistantOpen = useWriteWorkspaceStore((s) => s.assistantOpen)
-  const setWriteAssistantOpen = useWriteWorkspaceStore((s) => s.setAssistantOpen)
   const writeAssistantModel = useWriteWorkspaceStore((s) => s.assistantModel)
   const writeAssistantProviderId = useWriteWorkspaceStore((s) => s.assistantProviderId)
   const setWriteAssistantModel = useWriteWorkspaceStore((s) => s.setAssistantModel)
@@ -605,8 +590,7 @@ export function Workbench(): ReactElement {
     latestAutoOpenDevPreviewUrl,
     latestDevPreviewUrl,
     route,
-    workspaceRoot,
-    writeAssistantOpen
+    workspaceRoot
   })
   const titleForSddDraft = useCallback((draft: SddDraft): string => {
     const snapshot = useSddDraftStore.getState()
@@ -959,10 +943,10 @@ export function Workbench(): ReactElement {
 
   const selectedComposerModel = route === 'claw'
     ? activeClawChannel?.model ?? 'auto'
-    : route === 'write' || rightPanelMode === 'sdd-ai'
+    : rightPanelMode === 'sdd-ai'
       ? writeAssistantModel
     : composerModel
-  const selectedComposerProviderId = route === 'write' || rightPanelMode === 'sdd-ai'
+  const selectedComposerProviderId = rightPanelMode === 'sdd-ai'
     ? resolvedWriteAssistantProviderId
     : route === 'chat'
       ? composerProviderId
@@ -1006,8 +990,6 @@ export function Workbench(): ReactElement {
   const activeComposerWorkspace = (): string | undefined => {
     const sddDraft = useSddDraftStore.getState().activeDraft
     if (rightPanelMode === 'sdd-ai' && sddDraft?.workspaceRoot) return sddDraft.workspaceRoot
-    const writeWorkspace = useWriteWorkspaceStore.getState().workspaceRoot
-    if (route === 'write' && writeWorkspace.trim()) return writeWorkspace
     return threads.find((thread) => thread.id === activeThreadId)?.workspace || workspaceRoot || undefined
   }
 
@@ -1168,74 +1150,6 @@ export function Workbench(): ReactElement {
       return
     }
     await handlePickAttachments([clipboardImageToFile(image)], { localFilePaths: [image.localFilePath] })
-  }
-
-  const sendWritePrompt = (value: string): void => {
-    const v = value.trim()
-    const attachments = composerAttachments
-    const attachmentIds = attachments.map((attachment) => attachment.id)
-    if (!v && attachmentIds.length === 0) return
-    if (attachmentIds.length > 0 && !attachmentUploadEnabled) {
-      setAttachmentUploadError(t('composerAttachmentModelUnsupported'))
-      return
-    }
-    const writeState = useWriteWorkspaceStore.getState()
-    const writeWorkspaceRoot = writeState.workspaceRoot || workspaceRoot
-    setInput('')
-    void (async () => {
-      const threadId = await ensureWriteThreadForWorkspace(writeWorkspaceRoot)
-      if (!threadId) {
-        setInput(v)
-        return
-      }
-      const retrievalQuery = [
-        ...writeState.quotedSelections.map((selection) => selection.text),
-        v
-      ].join('\n\n').trim()
-      let retrieval: WriteRetrievalContext | null = null
-      if (retrievalQuery && typeof window.qwicksGui?.retrieveWriteContext === 'function') {
-        try {
-          const result = await window.qwicksGui.retrieveWriteContext({
-            workspaceRoot: writeWorkspaceRoot,
-            currentFilePath: writeState.activeFilePath ?? undefined,
-            query: retrievalQuery,
-            maxSnippets: 4,
-            includeCurrentFile: true
-          })
-          if (result.ok) retrieval = result.context
-        } catch (error) {
-          void window.qwicksGui?.logError?.('write-retrieval', 'Failed to retrieve write context', {
-            message: error instanceof Error ? error.message : String(error)
-          })
-        }
-      }
-      const messageText = v || t('composerImageOnlyPrompt')
-      const activeAgentPreset = writeState.agentPresets.find(
-        (preset) => preset.id === writeState.assistantAgentPresetId
-      )
-      const agentPersona = activeAgentPreset ? resolveWriteAgentPreset(activeAgentPreset).persona : ''
-      const prompt = composeWritePrompt(messageText, writeState.quotedSelections, {
-        workspaceRoot: writeWorkspaceRoot,
-        activeFilePath: writeState.activeFilePath,
-        retrieval,
-        ...(agentPersona ? { agentPersona } : {})
-      })
-      const model = writeState.assistantModel.trim()
-      const providerId =
-        writeState.assistantProviderId.trim() || providerIdForComposerModel(composerModelGroups, model)
-      const reasoningEffort = composerReasoningEffortRequestValue(composerReasoningEffort)
-      const sent = await sendMessage(prompt, mode === 'plan' ? 'plan' : 'agent', {
-        ...(!v && attachmentIds.length > 0 ? { displayText: t('composerImageOnlyDisplay') } : {}),
-        ...(model ? { model } : {}),
-        ...(providerId ? { providerId } : {}),
-        ...(reasoningEffort ? { reasoningEffort } : {}),
-        ...(attachmentIds.length ? { attachmentIds, attachments } : {})
-      })
-      if (sent) {
-        useWriteWorkspaceStore.getState().clearQuotedSelections()
-        if (attachmentIds.length > 0) clearComposerAttachments()
-      }
-    })()
   }
 
   const createSddAssistantThreadForDraft = async (draft: SddDraft): Promise<string | null> => {
@@ -1898,7 +1812,7 @@ export function Workbench(): ReactElement {
 
   const handleSendAsync = async (): Promise<void> => {
     const v = input.trim()
-    const attachments = route === 'chat' || route === 'write' ? composerAttachments : []
+    const attachments = route === 'chat' ? composerAttachments : []
     const attachmentIds = attachments.map((attachment) => attachment.id)
     const fileReferences = route === 'chat' ? composerFileReferences : []
     const userFileReferences = composerReferencesToUserFileReferences(fileReferences)
@@ -1971,10 +1885,6 @@ export function Workbench(): ReactElement {
         ...(attachmentIds.length ? { attachmentIds, attachments } : {}),
         ...(userFileReferences.length ? { fileReferences: userFileReferences } : {})
       })
-      return
-    }
-    if (route === 'write') {
-      sendWritePrompt(v)
       return
     }
     if (route === 'claw') {
@@ -2118,11 +2028,6 @@ export function Workbench(): ReactElement {
     void openCode()
   }
 
-  const openWriteMode = (): void => {
-    setConnectPhoneSidebarOpen(false)
-    void openWrite()
-  }
-
   const openPluginsView = (): void => {
     setConnectPhoneSidebarOpen(false)
     openPlugins(sidebarView === 'claw' ? 'claw' : 'chat')
@@ -2144,52 +2049,19 @@ export function Workbench(): ReactElement {
     setConnectPhoneSidebarOpen((open) => !open)
   }
 
-  const sidebarView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow' =
+  const sidebarView: 'chat' | 'claw' | 'schedule' | 'workflow' =
     route === 'claw' || (route === 'plugins' && pluginHostRoute === 'claw')
       ? 'claw'
       : route === 'schedule'
         ? 'schedule'
       : route === 'workflow'
         ? 'workflow'
-      : route === 'write'
-        ? 'write'
         : 'chat'
 
   const closeRightPanel = (): void => {
-    if (route === 'write') {
-      setWriteAssistantOpen(false)
-      return
-    }
     if (rightPanelMode === 'file') setOpenFilePreviewTargets([])
     setRightPanelMode(null)
     setFilePreviewTarget(null)
-  }
-
-  const startNewWriteAssistantConversation = (): void => {
-    const writeState = useWriteWorkspaceStore.getState()
-    const writeWorkspaceRoot = writeState.workspaceRoot || workspaceRoot
-    setInput('')
-    writeState.clearQuotedSelections()
-    void createWriteThread(writeWorkspaceRoot)
-  }
-
-  const pickWriteAssistantWorkspace = async (): Promise<void> => {
-    try {
-      const writeState = useWriteWorkspaceStore.getState()
-      writeState.setFileError(null)
-      if (typeof window.qwicksGui?.pickWorkspaceDirectory !== 'function') {
-        throw new Error('workspace:pick-directory unavailable')
-      }
-      const picked = await window.qwicksGui.pickWorkspaceDirectory(
-        writeState.workspaceRoot || writeState.defaultWorkspaceRoot || workspaceRoot || undefined
-      )
-      if (!picked.canceled && picked.path) {
-        await useWriteWorkspaceStore.getState().addWriteWorkspace(picked.path)
-        if (runtimeConnection === 'ready') void ensureWriteThreadForWorkspace(picked.path)
-      }
-    } catch (error) {
-      useWriteWorkspaceStore.getState().setFileError(formatWorkspacePickerError(error))
-    }
   }
 
   const renderRuntimeBanner = (message: string, detail?: string | null): ReactElement => (
@@ -2213,11 +2085,6 @@ export function Workbench(): ReactElement {
   const runtimeErrorSuppressed = shouldSuppressRuntimeErrorBanner(runtimeStatus)
   const visibleRuntimeError = runtimeErrorSuppressed ? null : error
   const visibleRuntimeErrorDetail = runtimeErrorSuppressed ? null : runtimeErrorDetail
-  const writeRuntimeBannerMessage = resolveWriteRuntimeBannerMessage({
-    runtimeConnection,
-    error: visibleRuntimeError,
-    runtimeActionNeedsConnection: t('runtimeActionNeedsConnection')
-  })
   const rightPanelDockedVisible = rightPanelVisible && !planPanelInOverlay
   const fileTreeSidePanelOffset = fileTreeSidePanelOpen ? FILE_TREE_SIDEBAR_WIDTH + 24 : 0
 
@@ -2247,45 +2114,7 @@ export function Workbench(): ReactElement {
         />
         <div className="h-full min-h-0 shrink-0" style={{ width: rightSidebarWidth }}>
           <Suspense fallback={<div className="h-full w-full bg-ds-sidebar" />}>
-            {route === 'write' && writeAssistantOpen ? (
-              <WriteAssistantPanel
-                input={input}
-                setInput={setInput}
-                mode={mode}
-                setMode={setMode}
-                busy={busy}
-                runtimeConnection={runtimeConnection}
-                activeThreadId={activeThreadId}
-                blocks={blocks}
-                liveReasoning={liveReasoning}
-                liveAssistant={liveAssistant}
-                composerModel={writeAssistantModel}
-                composerProviderId={resolvedWriteAssistantProviderId}
-                composerPickList={writeAssistantPickList}
-                composerModelGroups={composerModelGroups}
-                composerReasoningEffort={composerReasoningEffort}
-                setComposerModel={setWriteAssistantModel}
-                setComposerReasoningEffort={setComposerReasoningEffort}
-                queuedMessages={queuedMessages}
-                removeQueuedMessage={removeQueuedMessage}
-                attachments={composerAttachments}
-                attachmentUploadEnabled={attachmentUploadEnabled}
-                attachmentUploadBusy={attachmentUploadBusy}
-                attachmentUploadError={attachmentUploadError}
-                onPickAttachments={(files) => void handlePickAttachments(files)}
-                onPasteClipboardImage={(options) => void handlePasteClipboardImage(options)}
-                onRemoveAttachment={removeComposerAttachment}
-                onSend={handleSend}
-                onInterrupt={(options) => void interrupt(options)}
-                onRetryConnection={() => void probeRuntime('user', { restart: true })}
-                onOpenSettings={() => openSettings('agents')}
-                onConfigureProviders={() => openSettings('providers')}
-                onNewConversation={startNewWriteAssistantConversation}
-                onPickWorkspace={() => void pickWriteAssistantWorkspace()}
-                onCollapse={closeRightPanel}
-                className="h-full max-h-full w-full"
-              />
-            ) : rightPanelMode === 'sdd-ai' && activeSddDraft ? (
+            {rightPanelMode === 'sdd-ai' && activeSddDraft ? (
               <SddAssistantPanel
                 draft={activeSddDraft}
                 input={input}
@@ -2431,16 +2260,6 @@ export function Workbench(): ReactElement {
       {!leftSidebarCollapsed ? (
         <>
           <div className="min-h-0 shrink-0" style={{ width: leftSidebarWidth }}>
-            {route === 'write' ? (
-              <WriteSidebar
-                activeView="write"
-                connectPhoneSidebarOpen={connectPhoneSidebarOpen}
-                onCodeOpen={openCodeMode}
-                onWriteOpen={openWriteMode}
-                onOpenSettings={(section) => openSettings(section)}
-                onToggleConnectPhone={toggleConnectPhone}
-              />
-            ) : (
             <Sidebar
               threads={codeThreads}
               activeThreadId={activeThreadId}
@@ -2466,11 +2285,9 @@ export function Workbench(): ReactElement {
               onFocusModeChange={updateFocusMode}
               onToggleConnectPhone={toggleConnectPhone}
               onCodeOpen={openCodeMode}
-              onWriteOpen={openWriteMode}
               onScheduleOpen={openScheduleView}
               onWorkflowOpen={openWorkflowView}
             />
-            )}
           </div>
           <div
             role="separator"
@@ -2515,21 +2332,6 @@ export function Workbench(): ReactElement {
               onOpenThread={openThread}
             />
           </Suspense>
-        ) : route === 'write' ? (
-          <>
-            {writeRuntimeBannerMessage ? renderRuntimeBanner(writeRuntimeBannerMessage, visibleRuntimeErrorDetail) : null}
-            <div className="flex min-h-0 flex-1">
-              <WriteWorkspaceView
-                leftSidebarCollapsed={leftSidebarCollapsed}
-                onToggleLeftSidebar={toggleLeftSidebar}
-                input={input}
-                setInput={setInput}
-                onSubmitPrompt={sendWritePrompt}
-                onOpenAgentSettings={() => openSettings('write')}
-              />
-              {renderRightPanel()}
-            </div>
-          </>
         ) : (
           <>
         {/* Runtime errors now surface in-conversation and above the composer

@@ -199,7 +199,7 @@ describe('chat-store-thread-actions queued messages', () => {
     )
   })
 
-  it('applies an override provider before sending from the write route', async () => {
+  it('applies an override provider before sending', async () => {
     const provider = {
       connect: vi.fn(async () => undefined),
       sendUserMessage: vi.fn(async () => ({
@@ -227,9 +227,7 @@ describe('chat-store-thread-actions queued messages', () => {
       }
     })
     const { actions, state } = buildHarness()
-    state.route = 'write'
     state.busy = false
-    state.ensureWriteThreadForWorkspace = vi.fn(async () => 'thr_existing') as never
 
     await expect(actions.sendMessage('make a prototype', 'agent', {
       model: 'MiniMax-M3',

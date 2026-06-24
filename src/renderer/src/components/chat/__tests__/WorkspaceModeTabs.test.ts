@@ -4,17 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../../i18n'
 import { WorkspaceModeTabs } from '../WorkspaceModeTabs'
 
-// 写作功能已下架（任务4）：WorkspaceModeTabs 现在只渲染 Code tab。
+// 写作工作区已下架：WorkspaceModeTabs 现在只渲染 Code tab。
 describe('WorkspaceModeTabs', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
   })
 
-  function props(activeView: 'chat' | 'write' = 'chat') {
+  function props(activeView: 'chat' | 'claw' | 'schedule' | 'workflow' = 'chat') {
     return {
       activeView,
-      onCodeOpen: vi.fn(),
-      onWriteOpen: vi.fn()
+      onCodeOpen: vi.fn()
     }
   }
 

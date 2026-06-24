@@ -19,14 +19,14 @@ describe('isChatAttachmentUploadEnabled', () => {
     })).toBe(true)
   })
 
-  it('enables composer attachments in Write mode assistants when the selected model can read images', () => {
+  it('disables composer attachments in the removed Write route even when the model can read images', () => {
     expect(isChatAttachmentUploadEnabled({
       runtimeConnection: 'ready',
       route: 'write',
       mode: 'agent',
       attachmentStoreAvailable: true,
       modelSupportsImageInput: true
-    })).toBe(true)
+    })).toBe(false)
   })
 
   it('disables composer attachments outside ready supported modes', () => {

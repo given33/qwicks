@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import type { WriteExportFormat } from '@shared/write-export'
 import type { WritePreviewMode, WriteSaveStatus } from '../../write/write-workspace-store'
 import { parseWriteMarkdown } from '../../write/tiptap/markdown-manager'
 
@@ -22,8 +21,6 @@ export const INLINE_AGENT_MAX_WIDTH = 340
 export const INLINE_AGENT_GAP = 8
 export const WRITE_EXPORT_NOTICE_MS = 3_600
 export const INLINE_EDIT_RECENT_CONTEXT_CHARS = 180
-export const WRITE_EXPORT_FORMATS: WriteExportFormat[] = ['html', 'pdf', 'doc', 'docx']
-export const WRITE_RICH_CLIPBOARD_ACTION = 'clipboard'
 
 export type WriteNotice = {
   tone: 'success' | 'error'
@@ -145,11 +142,4 @@ export function toolbarMenuButtonClass(active = false): string {
       ? 'bg-accent/10 text-accent'
       : 'hover:bg-white/70 hover:text-ds-ink dark:hover:bg-white/8'
   }`
-}
-
-export function exportFormatLabel(format: WriteExportFormat, t: (key: string) => string): string {
-  if (format === 'html') return t('writeExportHtml')
-  if (format === 'pdf') return t('writeExportPdf')
-  if (format === 'doc') return t('writeExportDoc')
-  return t('writeExportDocx')
 }

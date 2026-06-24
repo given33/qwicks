@@ -46,16 +46,11 @@ import {
   threadBelongsToWorkspace
 } from './chat-store-runtime-helpers'
 import {
-  WRITE_ASSISTANT_THREAD_TITLE,
-  activeWriteThreadForWorkspace,
-  forgetWriteThread,
   hydrateWriteThreadRegistry,
   isWriteThreadId,
-  markWriteThread,
   pruneWriteThreadRegistry,
   readWriteThreadRegistry,
   saveWriteThreadRegistry,
-  writeThreadBelongsToWorkspace,
   writeWorkspaceForThreadId
 } from '../write/write-thread-registry'
 import {
@@ -80,7 +75,6 @@ import {
   isCodeThread,
   latestThread,
   looksLikeActiveTurnError,
-  readActiveWriteWorkspace,
   readWriteWorkspaceRoots,
   rememberPendingClawFeishuMirror,
   runtimeErrorDetail,
@@ -105,7 +99,7 @@ let trayActionUnsubscribe: (() => void) | null = null
 
 export function createNavigationActions(
   { set, get, sseAbortRef }: StoreActionContext
-): Pick<ChatState, 'openCode' | 'openWrite' | 'ensureWriteThreadForWorkspace' | 'createWriteThread' | 'selectWriteThread' | 'probeRuntime' | 'boot' | 'chooseWorkspace' | 'selectWorkspaceRoot' | 'clearWorkspace' | 'deleteWorkspace' | 'refreshThreads' | 'setThreadSearch' | 'setShowArchivedThreads'> {
+): Pick<ChatState, 'openCode' | 'probeRuntime' | 'boot' | 'chooseWorkspace' | 'selectWorkspaceRoot' | 'clearWorkspace' | 'deleteWorkspace' | 'refreshThreads' | 'setThreadSearch' | 'setShowArchivedThreads'> {
   return {
   openCode: async () => {
     const state = get()
@@ -143,144 +137,6 @@ export function createNavigationActions(
       watchTurnCompletion: nextWatch
     })
     syncTurnCompletionPoll(set, get)
-  },
-
-  openWrite: async () => {
-    const state = get()
-    const selectedWorkspace = await readActiveWriteWorkspace(state.workspaceRoot)
-    const writeWorkspaceRoots = await readWriteWorkspaceRoots()
-    const registry = hydrateWriteThreadRegistry(
-      state.threads,
-      selectedWorkspace ? [selectedWorkspace, ...writeWorkspaceRoots] : writeWorkspaceRoots,
-      pruneWriteThreadRegistry(state.threads, readWriteThreadRegistry())
-    )
-    saveWriteThreadRegistry(registry)
-    const activeThread = state.activeThreadId
-      ? state.threads.find((thread) => thread.id === state.activeThreadId) ?? null
-      : null
-    if (
-      activeThread &&
-      activeThread.archived !== true &&
-      selectedWorkspace &&
-      writeThreadBelongsToWorkspace(activeThread, selectedWorkspace, registry)
-    ) {
-      set({ route: 'write' })
-      return
-    }
-
-    const target = activeWriteThreadForWorkspace(
-      selectedWorkspace,
-      state.threads.filter((thread) => thread.archived !== true),
-      registry
-    )
-
-    set({ route: 'write' })
-    if (target && state.runtimeConnection === 'ready') {
-      await get().selectThread(target.id)
-      return
-    }
-
-    sseAbortRef.current?.abort()
-    sseAbortRef.current = null
-    clearBusyWatchdog()
-    const nextWatch = { ...state.watchTurnCompletion }
-    if (state.activeThreadId && state.busy) {
-      nextWatch[state.activeThreadId] = true
-      watchTurnCompletionNotification(state.activeThreadId)
-    }
-    set({
-      ...clearedThreadSelection(),
-      route: 'write',
-      watchTurnCompletion: nextWatch
-    })
-    syncTurnCompletionPoll(set, get)
-  },
-
-  ensureWriteThreadForWorkspace: async (workspaceRoot) => {
-    const state = get()
-    const targetWorkspace = normalizeWorkspaceRoot(workspaceRoot) || (await readActiveWriteWorkspace(state.workspaceRoot))
-    if (!targetWorkspace) {
-      set({ error: i18n.t('common:workspaceRequiredToCreateThread') })
-      return null
-    }
-    if (state.runtimeConnection !== 'ready') {
-      set({ error: i18n.t('common:runtimeActionNeedsConnection') })
-      return null
-    }
-
-    const registry = hydrateWriteThreadRegistry(
-      state.threads,
-      [targetWorkspace],
-      pruneWriteThreadRegistry(state.threads, readWriteThreadRegistry())
-    )
-    saveWriteThreadRegistry(registry)
-    const activeThread = state.activeThreadId
-      ? state.threads.find((thread) => thread.id === state.activeThreadId) ?? null
-      : null
-    if (activeThread && writeThreadBelongsToWorkspace(activeThread, targetWorkspace, registry)) {
-      set({ route: 'write', error: null })
-      return activeThread.id
-    }
-
-    const existing = activeWriteThreadForWorkspace(targetWorkspace, state.threads, registry)
-    if (existing) {
-      set({ route: 'write' })
-      await get().selectThread(existing.id)
-      return existing.id
-    }
-
-    return get().createWriteThread(targetWorkspace)
-  },
-
-  createWriteThread: async (workspaceRoot) => {
-    const targetWorkspace = normalizeWorkspaceRoot(workspaceRoot) || (await readActiveWriteWorkspace(get().workspaceRoot))
-    if (!targetWorkspace) {
-      set({ error: i18n.t('common:workspaceRequiredToCreateThread') })
-      return null
-    }
-    if (get().runtimeConnection !== 'ready') {
-      set({ error: i18n.t('common:runtimeActionNeedsConnection') })
-      return null
-    }
-    try {
-      const p = getProvider()
-      const thread = await p.createThread({
-        workspace: targetWorkspace,
-        title: WRITE_ASSISTANT_THREAD_TITLE,
-        mode: 'agent'
-      })
-      saveWriteThreadRegistry(markWriteThread(targetWorkspace, thread.id))
-      set((s) => ({
-        route: 'write',
-        threads: s.threads.some((item) => item.id === thread.id) ? s.threads : [thread, ...s.threads],
-        error: null
-      }))
-      await get().refreshThreads()
-      await get().selectThread(thread.id)
-      return thread.id
-    } catch (e) {
-      set({
-        error: formatRuntimeError(e),
-        ...(shouldOpenSettingsForError(e)
-          ? { route: 'settings' as const, settingsSection: 'agents' as const }
-          : {})
-      })
-      return null
-    }
-  },
-
-  selectWriteThread: async (threadId, workspaceRoot) => {
-    const targetId = threadId.trim()
-    if (!targetId) return
-    const thread = get().threads.find((item) => item.id === targetId)
-    const targetWorkspace = normalizeWorkspaceRoot(workspaceRoot) ||
-      normalizeWorkspaceRoot(thread?.workspace) ||
-      (await readActiveWriteWorkspace(get().workspaceRoot))
-    if (targetWorkspace) {
-      saveWriteThreadRegistry(markWriteThread(targetWorkspace, targetId))
-    }
-    set({ route: 'write' })
-    await get().selectThread(targetId)
   },
 
   probeRuntime: async (mode = 'user', options) => {
@@ -477,7 +333,6 @@ export function createNavigationActions(
 
   chooseWorkspace: async ({ createThreadAfter = false, selectThreadAfter = true } = {}) => {
     try {
-      const wasWriteRoute = get().route === 'write'
       if (typeof window.qwicksGui === 'undefined' || typeof window.qwicksGui.pickWorkspaceDirectory !== 'function') {
         throw new Error(i18n.t('common:workspacePickerUnavailable'))
       }
@@ -501,10 +356,6 @@ export function createNavigationActions(
       await get().refreshThreads()
       if (workspaceRoot) {
         if (!selectThreadAfter) return workspaceRoot
-        if (wasWriteRoute) {
-          await get().openWrite()
-          return workspaceRoot
-        }
         const workspaceThreads = get().threads
           .filter((thread) => isCodeThread(thread, get().clawChannels))
           .filter((thread) => threadBelongsToWorkspace(thread, workspaceRoot))

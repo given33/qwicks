@@ -162,14 +162,8 @@ const api = {
     ipcRenderer.on('file:workspace-changed', wrapped)
     return () => ipcRenderer.removeListener('file:workspace-changed', wrapped)
   },
-  exportWriteDocument: (payload) =>
-    ipcRenderer.invoke('write:export', payload),
-  copyWriteDocumentAsRichText: (payload) =>
-    ipcRenderer.invoke('write:copy-rich-text', payload),
   requestWriteInlineCompletion: (payload) =>
     ipcRenderer.invoke('write:inline-completion', payload),
-  retrieveWriteContext: (payload) =>
-    ipcRenderer.invoke('write:retrieve-context', payload),
   generateWriteInfographic: (payload) =>
     ipcRenderer.invoke('write:generate-infographic', payload),
   authorizeWritePrototype: (payload) =>
