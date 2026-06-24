@@ -110,6 +110,60 @@ export function pickActivity(
   return eligible[eligible.length - 1] ?? null
 }
 
+// ===== 情绪态驱动行为池（Round 2 新玩法，学习 QQ 5 大情绪态）=====
+
+export type ActivityMood = 'happy' | 'neutral' | 'sad' | 'sick'
+
+/** 行为 id → 适合的情绪态集合。sad 时只做安静行为，happy 时偏好活泼行为。 */
+const ACTIVITY_MOOD_MAP: Record<string, ActivityMood[]> = {
+  // happy 偏好：活泼/兴奋类
+  dance: ['happy'], jump: ['happy'], spin: ['happy'], sing: ['happy', 'neutral'],
+  clap: ['happy', 'neutral'], 'slide-step': ['happy', 'neutral'], roll: ['happy', 'neutral'],
+  hum: ['happy', 'neutral'],
+  // neutral 通用：日常行为
+  read: ['neutral', 'happy'], 'surf-web': ['neutral', 'happy'], 'look-around': ['neutral'],
+  stretch: ['neutral'], whistle: ['neutral', 'happy'], 'leg-cross': ['neutral'],
+  'clean-window': ['neutral'], 'water-flowers': ['neutral'],
+  'wave-hi': ['neutral', 'happy'], 'wave-bye': ['neutral'], nod: ['neutral'],
+  'study-together': ['neutral'], mirror: ['neutral', 'happy'], groom: ['neutral', 'happy'],
+  'sunbathe': ['neutral', 'happy'], 'snack-time': ['neutral', 'happy'], 'count-stars': ['neutral', 'happy'],
+  // sad/sick 偏好：安静/低能量
+  'sleep-nap': ['sad', 'sick', 'neutral'], daze: ['sad', 'neutral'], 'lie-down': ['sad', 'sick'],
+  sigh: ['sad'], daydream: ['sad', 'neutral'], yawn: ['sad', 'sick', 'neutral'],
+  'count-sheep': ['sad', 'sick'], 'think-hard': ['neutral', 'sad'],
+  // sick 专属
+  'look-outside': ['neutral', 'sad'],
+  // 通用
+  'draw': ['neutral', 'happy'], diary: ['neutral'], blocks: ['neutral', 'happy'],
+  'yarn-ball': ['happy', 'neutral'], peek: ['neutral'], surprised: ['neutral'],
+  'shake-head': ['sad', 'neutral'], pray: ['neutral', 'sad'], 'stretch-legs': ['neutral'],
+  hide: ['neutral', 'sad'], tease: ['happy'], 'blow-kiss': ['happy', 'neutral']
+}
+
+/** 根据情绪态过滤行为池再按权重选择。让宠物"看心情做事"。 */
+export function pickActivityByMood(
+  stage: ActivityStageFilter,
+  mood: ActivityMood,
+  random: () => number = Math.random
+): PetActivity | null {
+  if (stage === 'egg') return null
+  const eligible = PET_ACTIVITIES.filter((a) => {
+    // 阶段过滤（egg 已在函数开头 return null，此处 stage 只能是 kid/adult）
+    if (a.minStage === 'adult' && stage !== 'adult') return false
+    // 情绪过滤：没映射的默认 neutral 通用
+    const moods = ACTIVITY_MOOD_MAP[a.id] ?? ['neutral']
+    return moods.includes(mood)
+  })
+  if (eligible.length === 0) return pickActivity(stage, random) // 兜底
+  const totalWeight = eligible.reduce((sum, a) => sum + a.weight, 0)
+  let r = random() * totalWeight
+  for (const a of eligible) {
+    r -= a.weight
+    if (r <= 0) return a
+  }
+  return eligible[eligible.length - 1] ?? null
+}
+
 /** 校验行为库完整性（每项必有 pose/expBoost/logText）。测试用。 */
 export function validateActivities(): string[] {
   const errors: string[] = []

@@ -48,6 +48,11 @@ describe('tickVitals', () => {
     const next = tickVitals(v, 0) // 0 时间，只重算 mood
     expect(next.mood).toBeCloseTo(100, 0)
   })
+  // BUG-7 回归：脏数据 >100 应被 clamp
+  it('clamps dirty input >100 to [0,100]', () => {
+    const next = tickVitals({ hunger: 120, cleanliness: 50, health: 50, mood: 50 }, HOUR)
+    expect(next.hunger).toBeLessThanOrEqual(100)
+  })
 })
 
 describe('deriveStatus', () => {
@@ -124,6 +129,25 @@ describe('applySignIn', () => {
     const state = { ...defaultPetState(0), lastSignInDate: '2026-06-23' }
     const r = applySignIn(state, '2026-06-24')
     expect(r.awarded).toBe(true)
+  })
+
+  // R3: 连续签到递增奖励
+  it('consecutive sign-in gives increasing reward', () => {
+    let state = defaultPetState(0)
+    const r1 = applySignIn(state, '2026-06-23')
+    expect(r1.reward).toBe(30) // streak 1
+    const r2 = applySignIn(r1.state, '2026-06-24')
+    expect(r2.reward).toBe(35) // streak 2
+    const r3 = applySignIn(r2.state, '2026-06-25')
+    expect(r3.reward).toBe(40) // streak 3
+  })
+
+  it('broken streak resets to base reward', () => {
+    const state = { ...defaultPetState(0), lastSignInDate: '2026-06-20', signInStreakDays: 5 }
+    // 跳了一天（6-20 → 6-22），streak 断
+    const r = applySignIn(state, '2026-06-22')
+    expect(r.reward).toBe(30) // 重置回 base
+    expect(r.state.signInStreakDays).toBe(1)
   })
 })
 

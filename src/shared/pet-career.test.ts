@@ -1,80 +1,121 @@
 import { describe, expect, it } from 'vitest'
 import {
   canEnroll, canWork, completeEducation, defaultCareer, EDUCATION_LEVELS,
-  educationName, highestEligibleJob, JOBS, workReward
+  educationName, highestEligibleJob, JOBS, workReward, statName, JOB_CATEGORY_NAMES
 } from './pet-career'
+import type { CareerState } from './pet-career'
 
-describe('education system', () => {
-  it('7 levels from kindergarten to phd', () => {
-    expect(EDUCATION_LEVELS).toHaveLength(7)
-    expect(EDUCATION_LEVELS[0].id).toBe('kindergarten')
-    expect(EDUCATION_LEVELS[6].id).toBe('phd')
+describe('education system (2026 China)', () => {
+  it('has 9 levels incl vocational track', () => {
+    expect(EDUCATION_LEVELS).toHaveLength(9)
+    const ids = EDUCATION_LEVELS.map((e) => e.id)
+    expect(ids).toContain('vocational')  // 职高分流
+    expect(ids).toContain('associate')   // 大专
   })
 
-  it('can enroll kindergarten with no prereq', () => {
-    expect(canEnroll(defaultCareer(), 'kindergarten').ok).toBe(true)
+  it('9-year compulsory: kindergarten→middle chain', () => {
+    let c = defaultCareer()
+    expect(canEnroll(c, 'kindergarten').ok).toBe(true)
+    c = completeEducation(c, 'kindergarten')
+    expect(canEnroll(c, 'primary').ok).toBe(true)
+    c = completeEducation(c, 'primary')
+    expect(canEnroll(c, 'middle').ok).toBe(true)
   })
 
-  it('cannot skip levels', () => {
-    expect(canEnroll(defaultCareer(), 'college').ok).toBe(false)
+  it('streaming: after middle can go high OR vocational', () => {
+    const afterMiddle: CareerState = { ...defaultCareer(), education: 'middle', stats: { intelligence: 40, charm: 10, strength: 20 } }
+    expect(canEnroll(afterMiddle, 'high').ok).toBe(true)       // 普高需智力30
+    expect(canEnroll(afterMiddle, 'vocational').ok).toBe(true) // 职高无门槛
   })
 
-  it('complete education boosts stats and sets level', () => {
+  it('college requires high (not vocational)', () => {
+    const fromVoc: CareerState = { ...defaultCareer(), education: 'vocational', stats: { intelligence: 60, charm: 20, strength: 30 } }
+    expect(canEnroll(fromVoc, 'college').ok).toBe(false) // 大学需普高
+    expect(canEnroll(fromVoc, 'associate').ok).toBe(true) // 大专接职高
+  })
+
+  it('phd chain: master→phd with high intelligence', () => {
+    const master: CareerState = { ...defaultCareer(), education: 'master', stats: { intelligence: 150, charm: 50, strength: 30 } }
+    expect(canEnroll(master, 'phd').ok).toBe(true)
+  })
+
+  it('education boosts 3 stats', () => {
     const after = completeEducation(defaultCareer(), 'kindergarten')
     expect(after.stats.intelligence).toBeGreaterThan(0)
-    expect(after.education).toBe('kindergarten')
-    expect(canEnroll(after, 'primary').ok).toBe(true)
-  })
-
-  it('phd requires high intelligence', () => {
-    expect(canEnroll({ ...defaultCareer(), education: 'master' as const }, 'phd').ok).toBe(false)
-    const smart = { ...defaultCareer(), education: 'master' as const, stats: { intelligence: 150, charm: 50, strength: 30 } }
-    expect(canEnroll(smart, 'phd').ok).toBe(true)
+    expect(after.stats.charm).toBeGreaterThan(0)
+    expect(after.stats.strength).toBeGreaterThan(0)
   })
 })
 
-describe('job system', () => {
-  it('8 jobs with increasing salary', () => {
-    expect(JOBS).toHaveLength(8)
-    expect(JOBS[0].salary).toBeLessThan(JOBS[7].salary)
+describe('job system (2026 China, 35 jobs)', () => {
+  it('has 30+ jobs across 10 categories', () => {
+    expect(JOBS.length).toBeGreaterThanOrEqual(30)
+    const cats = new Set(JOBS.map((j) => j.category))
+    expect(cats.size).toBe(10)
   })
 
-  it('cleaner has no requirement', () => {
-    expect(canWork(defaultCareer(), 'cleaner').ok).toBe(true)
+  it('covers 2026 new-economy jobs', () => {
+    const ids = JOBS.map((j) => j.id)
+    expect(ids).toContain('delivery')      // 外卖
+    expect(ids).toContain('ride-hailing')  // 网约车
+    expect(ids).toContain('ai-engineer')   // AI工程师
+    expect(ids).toContain('streamer')      // 主播
+    expect(ids).toContain('civil-servant') // 公务员
   })
 
-  it('ceo requires master + high stats', () => {
-    expect(canWork(defaultCareer(), 'ceo').ok).toBe(false)
-    const elite = {
-      education: 'master' as const,
-      stats: { intelligence: 200, charm: 100, strength: 50 },
-      currentJob: null
-    }
-    expect(canWork(elite, 'ceo').ok).toBe(true)
+  it('blue-collar high-strength jobs pay well without degree', () => {
+    const strong: CareerState = { stats: { intelligence: 10, charm: 10, strength: 30 }, education: 'middle', currentJob: null }
+    expect(canWork(strong, 'delivery').ok).toBe(true)
+    expect(workReward('delivery').coins).toBeGreaterThan(workReward('factory').coins)
   })
 
-  it('workReward gives coins and fatigue', () => {
-    const r = workReward('ceo')
-    expect(r.coins).toBe(250)
-    expect(r.moodDelta).toBeLessThan(0)
+  it('tech jobs need college+ and high intelligence', () => {
+    const noDegree: CareerState = { stats: { intelligence: 120, charm: 30, strength: 30 }, education: 'middle', currentJob: null }
+    expect(canWork(noDegree, 'programmer').ok).toBe(false)
+    const grad: CareerState = { ...noDegree, education: 'college' }
+    expect(canWork(grad, 'programmer').ok).toBe(true)
+    expect(canWork(grad, 'ai-engineer').ok).toBe(false) // 需硕士
   })
 
-  it('highestEligibleJob returns best available', () => {
-    expect(highestEligibleJob(defaultCareer())).toBe('cleaner')
-    const grad = {
-      education: 'college' as const,
-      stats: { intelligence: 100, charm: 50, strength: 30 },
-      currentJob: null
-    }
-    expect(['engineer', 'teacher']).toContain(highestEligibleJob(grad))
+  it('creative jobs unlocked by charm (no degree barrier)', () => {
+    const charming: CareerState = { stats: { intelligence: 40, charm: 65, strength: 20 }, education: 'middle', currentJob: null }
+    expect(canWork(charming, 'streamer').ok).toBe(true)
+  })
+
+  it('vocational track unlocks skill jobs', () => {
+    const voc: CareerState = { stats: { intelligence: 30, charm: 25, strength: 20 }, education: 'vocational', currentJob: null }
+    expect(canWork(voc, 'chef').ok).toBe(true)
+    expect(canWork(voc, 'programmer').ok).toBe(false)
+  })
+
+  it('elite jobs (ceo/professor/scientist) are top-tier', () => {
+    const top = workReward('ceo').coins
+    expect(top).toBeGreaterThan(workReward('programmer').coins)
+    expect(workReward('scientist').coins).toBeGreaterThan(workReward('doctor').coins)
+  })
+
+  it('highestEligibleJob scales with progression', () => {
+    // defaultCareer 只能做零门槛工作（factory 22 > waiter 20 > ...）
+    const starter = highestEligibleJob(defaultCareer())
+    const starterDef = JOBS.find((j) => j.id === starter)
+    expect(starterDef!.salary).toBeLessThanOrEqual(25)
+    const grad: CareerState = { stats: { intelligence: 110, charm: 40, strength: 30 }, education: 'college', currentJob: null }
+    const best = highestEligibleJob(grad)
+    const bestDef = JOBS.find((j) => j.id === best)
+    expect(bestDef!.salary).toBeGreaterThanOrEqual(100)
   })
 })
 
-describe('educationName', () => {
-  it('null → 未入学', () => {
+describe('helpers', () => {
+  it('educationName / statName', () => {
     expect(educationName(null)).toBe('未入学')
+    expect(educationName('phd')).toBe('博士研究生')
+    expect(statName('intelligence')).toBe('智力')
+    expect(statName('charm')).toBe('魅力')
+    expect(statName('strength')).toBe('体力')
   })
-  it('known level → 中文名', () => {
-    expect(educationName('phd')).toBe('博士')
+
+  it('JOB_CATEGORY_NAMES has all 10', () => {
+    expect(Object.keys(JOB_CATEGORY_NAMES).length).toBe(10)
   })
 })

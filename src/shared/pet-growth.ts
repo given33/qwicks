@@ -47,13 +47,15 @@ export function defaultGrowth(now: number): PetGrowth {
  * 推进蛋孵化进度。elapsedMs 为经过墙钟时间。返回更新后的 growth。
  * growthSpeed 倍率：>1 加速（调试），默认 1。
  */
-export function tickEgg(growth: PetGrowth, elapsedMs: number, growthSpeed = 1): PetGrowth {
+export function tickEgg(growth: PetGrowth, elapsedMs: number, growthSpeed = 1, now = Date.now()): PetGrowth {
   if (growth.stage !== 'egg') return growth
-  const progressPerMs = 100 / (EGG_HATCH_DURATION_MS / growthSpeed)
+  // BUG-23 修复：growthSpeed=0 防除零
+  const safeSpeed = growthSpeed > 0 ? growthSpeed : 1
+  const progressPerMs = 100 / (EGG_HATCH_DURATION_MS / safeSpeed)
   const eggProgress = Math.min(100, (growth.eggProgress ?? 0) + progressPerMs * elapsedMs)
   if (eggProgress >= 100) {
-    // 孵化完成 → 幼年（性别在 defaultGrowth 已定，这里保留）
-    return { ...growth, stage: 'kid', stageEnteredAt: Date.now(), eggProgress: 100, level: 0, exp: 0 }
+    // BUG-1 修复：用传入 now 而非 Date.now()
+    return { ...growth, stage: 'kid', stageEnteredAt: now, eggProgress: 100, level: 0, exp: 0 }
   }
   return { ...growth, eggProgress }
 }
