@@ -1221,6 +1221,16 @@ export async function dispatchQWicksRuntimeEvent(
     case 'usage':
       if (event.usage) sink.onUsage?.(usageFromCore(event.usage))
       return
+    case 'model_retry':
+      sink.onModelRetry?.({
+        threadId: event.threadId,
+        turnId: event.turnId,
+        attempt: event.attempt ?? 0,
+        maxAttempts: event.maxAttempts ?? 0,
+        reason: event.reason ?? '',
+        createdAt: event.timestamp
+      })
+      return
     case 'turn_completed':
     case 'turn_aborted':
       sink.onTurnComplete()

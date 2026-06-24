@@ -324,6 +324,16 @@ export type RuntimeErrorEventPayload = {
   severity?: RuntimeErrorSeverity
 }
 
+/** 模型连接重试事件载荷。 */
+export type ModelRetryEventPayload = {
+  threadId?: string
+  turnId?: string
+  attempt: number
+  maxAttempts: number
+  reason: string
+  createdAt?: string
+}
+
 export type CompactionEventPayload = {
   itemId: string
   summary: string
@@ -405,6 +415,8 @@ export type ThreadEventSink = {
   onUserInputStatus(ev: UserInputStatusPayload): void
   onRuntimeStatus?(ev: RuntimeStatusEventPayload): void
   onRuntimeError?(ev: RuntimeErrorEventPayload): void
+  /** 模型连接重试:覆盖模型 live block 显示"正在重连(第 x/5 次)"。 */
+  onModelRetry?(ev: ModelRetryEventPayload): void
   /** v3(差距1):记忆状态提示,带 threadId/turnId 以便绑定到对应 assistant message。 */
   onMemoryStatus?(ev: { threadId: string; turnId: string; remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }): void
   /** v3(差距1):Memory Sources 就绪,带 threadId/turnId。 */

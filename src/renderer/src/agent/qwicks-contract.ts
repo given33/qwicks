@@ -638,6 +638,10 @@ export type CoreRuntimeEventJson = {
   downrankedMemoryIds?: string[]
   suppressedMemoryIds?: string[]
   sourceIds?: string[]
+  // 模型连接重试事件(model_retry):让 GUI 在模型输出区覆盖显示重连进度。
+  attempt?: number
+  maxAttempts?: number
+  reason?: string
 }
 
 export type RuntimeErrorJson = {
