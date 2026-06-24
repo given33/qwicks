@@ -1,7 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
-import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, RefreshCw, ServerCog, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
+import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Plug, RefreshCw, ServerCog, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 
 export function SettingsSidebar({
   category,
@@ -89,6 +89,24 @@ export function SettingsSidebar({
         >
           <Bot className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
           {t('agents')}
+        </button>
+        <button
+          type="button"
+          data-cursor-spotlight-target
+          className={catCls('skills')}
+          onClick={() => setCategory('skills')}
+        >
+          <Sparkles className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
+          {t('skill')}
+        </button>
+        <button
+          type="button"
+          data-cursor-spotlight-target
+          className={catCls('mcp')}
+          onClick={() => setCategory('mcp')}
+        >
+          <Plug className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
+          {t('mcp')}
         </button>
         <button
           type="button"

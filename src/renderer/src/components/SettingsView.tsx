@@ -68,7 +68,7 @@ import {
   WriteSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type InlineNotice = {
@@ -229,6 +229,16 @@ export function SettingsView(): ReactElement {
   useEffect(() => {
     if (typeof window.qwicksGui?.getLogPath !== 'function') return
     void window.qwicksGui.getLogPath().then((p) => setLogPath(p)).catch(() => undefined)
+  }, [category])
+
+  // Skills/MCP 是独立的侧边栏分类（任务6），但渲染同一个 AgentsSettingsSection。
+  // 进入时自动滚动到对应子区，让用户直接看到 skill / MCP 配置。
+  useEffect(() => {
+    if (category === 'skills') {
+      skillSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } else if (category === 'mcp') {
+      mcpSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }, [category])
 
   const loadWriteDebugEntries = useCallback(async (): Promise<void> => {
@@ -1028,7 +1038,7 @@ export function SettingsView(): ReactElement {
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'speechToText' ? <SpeechToTextSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'agents' || category === 'permissions' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
+          {category === 'agents' || category === 'permissions' || category === 'skills' || category === 'mcp' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'memory' ? <MemorySettingsSection ctx={settingsSectionContext} /> : null}
