@@ -298,7 +298,8 @@ export class DreamMemorySystem {
       decay,
       temporalDreamer,
       topOfMindBalancer,
-      repository: this.repository
+      repository: this.repository,
+      pendingStore: this.pendingStore
     })
 
     // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)

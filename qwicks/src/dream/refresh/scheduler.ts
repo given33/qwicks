@@ -76,6 +76,8 @@ export interface DreamingSchedulerOptions {
   topOfMindBalancer?: TopOfMindBalancer
   /** 3.1(工业级):持久化 dream_job 队列(可选;提供则 markDirty 入队 + tick 从队列处理)。 */
   repository?: import('../storage/repository.js').MemoryRepository
+  /** Batch B(spec §2.5 要点6):可选的高敏感待确认 store —— tick 时清理 30 天未确认草稿。 */
+  pendingStore?: import('../storage/pending-sensitive-store.js').PendingSensitiveStore
 }
 
 export interface DreamingTickResult {
@@ -133,6 +135,14 @@ export class DreamingScheduler {
    * 返回 DreamingTickResult(ran=true 表示实际跑了)。
    */
   tick(opts: { userId?: string } = {}): DreamingTickResult {
+    // Batch B(spec §2.5 要点6):清理 30 天未确认的待确认草稿(纯老化,不留 tombstone)。
+    if (this.opts.pendingStore) {
+      try {
+        this.opts.pendingStore.purgeStale(30)
+      } catch {
+        // fail-open: 清理失败不影响 dreaming 主循环。
+      }
+    }
     if (opts.userId) {
       if (!this.dirty.has(opts.userId)) return { ran: false }
       this.opts.decay.apply({ userId: opts.userId })
