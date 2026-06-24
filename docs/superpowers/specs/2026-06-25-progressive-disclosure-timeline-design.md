@@ -37,10 +37,15 @@
 | `read` | `FileText` | read, read_file, ls, list, cat | 读取了 N 个文件 |
 | `edit` | `FileEdit` | edit, edit_file, patch | 修改了 N 个文件 |
 | `write` | `FilePlus` | write, write_file, create | 写入了 N 个文件 |
-| `web` | `Globe` | web_search, web_fetch, fetch（含 sources） | 搜索了 N 个网页 |
+| `web` | `Globe` | **按来源判定**：任何工具块只要有 `meta.sources`（网页链接）就归此类，不看 toolName | 搜索了 N 个网页 |
 | `other` | `Wrench` | 其余所有 | 调用了 N 次工具（复用现有 groupUsedTool） |
 
 映射表集中一处，`other` 兜底，新工具不会漏。
+
+> **`web` 类判定规则**：优先看 `meta.sources` 是否非空——有网页来源就归 `web`（即便 toolName 是 fetch/search 等）。这样 L3 展开能直接看到具体网页链接。只有 toolName 命中 web_search/web_fetch 但无 sources 时也归 `web`（例如运行中还没返回来源）。
+
+### 时长精度
+**所有类型单步时长统一用整数秒**（如「12s」「3s」），不带小数。`toolDurationMs` 计算后用 `Math.round(ms / 1000)` 取整显示。
 
 ### 2.2 分组算法（改造 `groupProcessSections`）
 
@@ -178,7 +183,7 @@ execSuccess:   成功                        / Success
 
 ---
 
-## 十二、待实现时确认的细节
+## 十二、已确认的细节
 
-- L3 单步时长精度（运行中显示「12s」整数秒 / 还是「1.2s」带小数）—— 终端类用整数秒更自然，其他类可带 1 位小数。
-- `web` 类的判定：仅当 `meta.toolName` 命中 web_search/web_fetch，或任何有 `meta.sources` 的工具都算？倾向前者（显式 toolName）。
+- **时长精度**：所有类型单步时长统一用整数秒（`Math.round(ms / 1000)`），不带小数。
+- **`web` 类判定**：看 `meta.sources` 是否非空——有网页来源就归 `web` 类（不看 toolName）；toolName 命中 web_search/web_fetch 但暂无 sources 的（运行中）也归 `web`。L3 展开展示具体网页链接。
