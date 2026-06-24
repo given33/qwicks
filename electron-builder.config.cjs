@@ -81,9 +81,12 @@ if (releaseAppVersion && !/^\d+\.\d+\.\d+$/.test(releaseAppVersion)) {
 module.exports = {
   appId: 'com.given33.qwicks',
   productName: 'QWicks',
-  // Native modules (better-sqlite3, node-pty, etc.) must live outside the
-  // ASAR archive. Hot-code updates ship JS only and resolve these modules
-  // through NODE_PATH → the bundled app.asar.unpacked/qwicks/node_modules.
+  // Native modules (better-sqlite3, node-pty, etc.) are unpacked by the
+  // asarUnpack patterns below. Some land in app.asar.unpacked/qwicks/node_modules/
+  // (the qwicks-scoped pattern '**/qwicks/node_modules/**/*'), others are
+  // hoisted to app.asar.unpacked/node_modules/ (the per-module patterns like
+  // '**/node_modules/better-sqlite3/**/*'). The main process injects BOTH
+  // paths into NODE_PATH when spawning the qwicks child process.
   asar: true,
   asarUnpack: [
     '**/qwicks/dist/**/*',

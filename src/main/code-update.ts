@@ -156,10 +156,19 @@ export function resolveHotCodeQWicksRoot(defaultRoot: string): string {
   // The node_modules in the hot-code root is a symlink to the bundled
   // installation. On Windows the junction can silently break (permission
   // issues, moved install dir, etc.). Verify that a key native module
-  // actually resolves before trusting the symlink.
+  // is accessible through the symlink before trusting it.
+  //
+  // createRequire resolves relative to the importing file's physical
+  // directory tree, so it won't walk into symlinked directories above
+  // the junction point. Instead, probe the bundled app.asar.unpacked
+  // directly — it must contain every native module the qwicks runtime
+  // needs (better-sqlite3, node-pty, etc.).
   try {
-    const probe = createRequire(join(active.root, 'qwicks', 'package.json'))
-    probe.resolve('better-sqlite3')
+    const unpackedRoot = app.isPackaged
+      ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
+      : app.getAppPath()
+    const bundledRequire = createRequire(join(unpackedRoot, 'qwicks', 'package.json'))
+    bundledRequire.resolve('better-sqlite3')
   } catch {
     console.warn(
       '[qwicks-gui code-update] hot-code node_modules symlink appears broken;',

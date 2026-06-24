@@ -248,12 +248,16 @@ function appRoot(): string {
  * inside the installer (ASAR-unpacked). Native modules like better-sqlite3
  * are always present here and must be resolvable by hot-code versions that
  * only ship JS. We add this to NODE_PATH when spawning the qwicks runtime.
+ *
+ * Some native modules (better-sqlite3, node-pty, etc.) are hoisted to the
+ * root app.asar.unpacked/node_modules/ by electron-builder asarUnpack
+ * patterns, so we return both the qwicks-scoped and the root-level paths.
  */
-function bundledQWicksNodeModulesPath(): string {
+function bundledQWicksNodeModulesPaths(): string[] {
   const base = app.isPackaged
     ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
     : app.getAppPath()
-  return join(base, 'qwicks', 'node_modules')
+  return [join(base, 'qwicks', 'node_modules'), join(base, 'node_modules')]
 }
 
 function resolveNodeScriptCommand(command: string): string {
@@ -357,11 +361,14 @@ async function startQWicksChildOnce(
   // Ensure the bundled node_modules (which contains native addons like
   // better-sqlite3) is always on NODE_PATH so hot-code versions that only
   // ship JS can still import native modules.
-  const bundledModules = bundledQWicksNodeModulesPath()
-  if (existsSync(bundledModules)) {
+  const bundledModules = bundledQWicksNodeModulesPaths()
+    .filter((p) => existsSync(p))
+  if (bundledModules.length > 0) {
     const sep = process.platform === 'win32' ? ';' : ':'
     const prev = childEnv.NODE_PATH?.trim()
-    childEnv.NODE_PATH = prev ? `${bundledModules}${sep}${prev}` : bundledModules
+    childEnv.NODE_PATH = prev
+      ? `${bundledModules.join(sep)}${sep}${prev}`
+      : bundledModules.join(sep)
   }
   if (!runAsElectron) childEnv.ELECTRON_RUN_AS_NODE = '1'
   else delete childEnv.ELECTRON_RUN_AS_NODE
