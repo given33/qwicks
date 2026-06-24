@@ -280,6 +280,7 @@ export async function createQWicksServeRuntime(
     : undefined
   const memoryStore = memory?.store
   const dreamSystem = memory?.dreamSystem
+  const memoryMigrationError = memory?.migrationError
   const imageGenProviders = buildImageGenToolProviders(options.capabilities?.imageGen, {
     attachmentStore,
     nowIso
@@ -639,7 +640,7 @@ export async function createQWicksServeRuntime(
         ? await attachmentStore.diagnostics()
         : { enabled: false, rootDir: '', count: 0, totalBytes: 0 },
       memory: memoryStore
-        ? await memoryStore.diagnostics()
+        ? { ...(await memoryStore.diagnostics()), ...(memoryMigrationError ? { migrationError: memoryMigrationError } : {}) }
         : { enabled: false, rootDir: '', activeCount: 0, tombstoneCount: 0, lastInjectedIds: [] },
       imageGen: imageGenProviders.diagnostics,
       speechGen: speechGenProviders.diagnostics,
