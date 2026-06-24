@@ -97,13 +97,18 @@ jobs:
           if ($manual) {
             $version = $manual
           } else {
-            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-            $parts = $pkg.version.Split('.')
+            # Code (hot) updates use a separate minor segment (0.2.x) so their
+            # version numbers never collide with installer releases (0.1.x).
+            # The client compares code vs shell versions with semver: any hot
+            # update 0.2.n is newer than any shell 0.1.n, and the two series
+            # advance independently off the same commit count.
+            $major = 0
+            $codeMinor = 2
             $patch = (git rev-list --count HEAD).Trim()
             if ($patch -notmatch '^\d+$') {
               throw "Could not compute a monotonic patch version from git history."
             }
-            $version = "$($parts[0]).$($parts[1]).$patch"
+            $version = "$major.$codeMinor.$patch"
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Version must be x.y.z, got: $version"
