@@ -802,7 +802,30 @@ export function buildMemoryStore(
     // v3(P2-1 报告 §4.8):若提供 modelClient,注入 LLM chat 适配器,使
     // LlmExtractor/LlmSynthesizer 在真实 runtime 用真实模型而非 heuristic。
     const chat = modelClient ? adaptModelClientToDreamChat(modelClient) : undefined
-    const dreamSystem = new DreamMemorySystem({ dataDir: legacyRootDir, ...(chat ? { chat } : {}) })
+    // 5(差距5):注入真实 pulseResearch —— 用 modelClient 的 chat 做研究摘要。
+    // 不再用 disabled fallback;生产运行下 runPulse() 会用真实 LLM 生成 digest。
+    const pulseResearch = chat ? async (query: string) => {
+      try {
+        const result = await chat({
+          system: 'You are a research assistant. Given a topic, provide a concise summary with 3 key insights and 2 follow-up questions. Respond in JSON: {"summary": "...", "followUps": ["q1", "q2"]}',
+          user: query
+        })
+        const parsed = JSON.parse(result.text || '{}')
+        return {
+          query,
+          summary: parsed.summary || result.text.slice(0, 500),
+          sources: [],
+          followUps: Array.isArray(parsed.followUps) ? parsed.followUps : []
+        }
+      } catch {
+        return { query, summary: '(research failed)', sources: [], followUps: [] }
+      }
+    } : undefined
+    const dreamSystem = new DreamMemorySystem({
+      dataDir: legacyRootDir,
+      ...(chat ? { chat } : {}),
+      ...(pulseResearch ? { pulseResearch } : {})
+    })
     const store = dreamSystem.dreamStore
     return {
       store,

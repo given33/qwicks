@@ -289,6 +289,54 @@ export class DreamMemorySystem {
       .add(new JudiciousDemoteGate(-0.1))
       .add(new FreshnessBoostGate(-0.2, 0.1))
       .add(new UserCorrectionGate(-0.3))
+
+    // 4(差距4):启动 durable dream_job worker —— 周期性 claim due jobs 并执行。
+    // 启动时恢复 crash 前的 running jobs(重置为 retrying)。
+    this.startDreamJobWorker()
+  }
+
+  /**
+   * 4(差距4):durable dream_job 后台 worker。
+   * - 启动时:把遗留的 'running' jobs 重置为 'retrying'(crash 恢复)
+   * - 定时:claim due jobs → 执行 scheduler.tick → complete/fail
+   * - interval:5 分钟(生产可配置);unref 确保不阻止进程退出
+   */
+  private dreamJobTimer: ReturnType<typeof setInterval> | null = null
+  private startDreamJobWorker(): void {
+    // 恢复 crash 前的 running jobs
+    try {
+      this.repository.rawExec(
+        `UPDATE dream_job SET status='retrying', last_error='recovered_from_crash' WHERE status='running'`
+      )
+    } catch { /* dream_job 表可能不存在(极老 DB) */ }
+
+    // 定时执行 due jobs
+    const intervalMs = 5 * 60 * 1000 // 5 分钟
+    this.dreamJobTimer = setInterval(() => {
+      void this.runDreamJobCycle()
+    }, intervalMs)
+    this.dreamJobTimer.unref?.()
+
+    // 启动后立即跑一轮(catch up 期间积累的 due jobs)
+    void this.runDreamJobCycle()
+  }
+
+  /** 执行一轮 dream_job:claim → tick → complete/fail。 */
+  private async runDreamJobCycle(): Promise<void> {
+    try {
+      const jobs = this.repository.claimDueDreamJobs(5)
+      for (const job of jobs) {
+        try {
+          // 执行 dreaming(该 user 的 decay + temporal + top-of-mind)
+          this.scheduler.tick({ userId: job.userId })
+          this.repository.completeDreamJob(job.id)
+        } catch (err) {
+          this.repository.failDreamJob(job.id, String(err), { maxRetries: 3, baseDelayMs: 60_000 })
+        }
+      }
+    } catch {
+      // worker cycle 失败不致命(下次 cycle 会重试)
+    }
   }
 
   /** 记录用户纠错(panel "这条记忆不该出现" / console.correct),后续 gate 主动 demote。 */
@@ -995,6 +1043,7 @@ export class DreamMemorySystem {
   }
 
   close(): void {
+    if (this.dreamJobTimer) { clearInterval(this.dreamJobTimer); this.dreamJobTimer = null }
     this.scheduler.stop()
     try {
       this.vectorDb.save()

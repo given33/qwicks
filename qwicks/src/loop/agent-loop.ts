@@ -691,7 +691,8 @@ export class AgentLoop {
               assistantReply,
               threadId,
               turnId,
-              memoryMode: turn.memoryMode
+              memoryMode: turn.memoryMode,
+              userId: threadId
             })
           }
         } catch {
@@ -1104,7 +1105,8 @@ export class AgentLoop {
       workspace: thread?.workspace ?? '',
       threadId,
       turnId,
-      memoryMode: turn?.memoryMode
+      memoryMode: turn?.memoryMode,
+      userId: threadId
     })
     const planTurnActive = effectiveMode === 'plan' || Boolean(activePlanContext)
     const activeGoalInstruction = planTurnActive
@@ -2663,6 +2665,8 @@ export class AgentLoop {
     threadId?: string | null
     turnId?: string | null
     memoryMode?: 'normal' | 'temporary' | 'off'
+    /** 6(差距6):真实用户身份(workspace path 或 deviceId,替代硬编码 default)。 */
+    userId?: string
   }) {
     // P0-5(报告 §6.3/§15):temporary/off 模式完全不读记忆。
     this.lastMemoryMode = input.memoryMode ?? 'normal'
@@ -2671,7 +2675,7 @@ export class AgentLoop {
     if (this.opts.dreamSystem?.beforeTurn) {
       try {
         const result = await this.opts.dreamSystem.beforeTurn({
-          userId: 'default', prompt: input.prompt,
+          userId: input.userId ?? 'default', prompt: input.prompt,
           threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
         })
         const memories = result.memories
@@ -2711,12 +2715,14 @@ export class AgentLoop {
     threadId?: string | null
     turnId?: string | null
     memoryMode?: 'normal' | 'temporary' | 'off'
+    /** 6(差距6):真实用户身份。 */
+    userId?: string
   }): Promise<void> {
     if (input.memoryMode === 'temporary' || input.memoryMode === 'off') return
     if (!this.opts.dreamSystem?.afterTurn) return
     try {
       await this.opts.dreamSystem.afterTurn({
-        userId: 'default', userPrompt: input.userPrompt, assistantReply: input.assistantReply,
+        userId: input.userId ?? 'default', userPrompt: input.userPrompt, assistantReply: input.assistantReply,
         threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
       })
     } catch (err) {
