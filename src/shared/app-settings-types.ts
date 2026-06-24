@@ -228,6 +228,8 @@ export type QWicksRuntimeSettingsV1 = {
   modelProfiles: Record<string, ModelProviderModelProfileV1>
   /** Whether long-term memory is enabled in the QWicks runtime. */
   memoryEnabled: boolean
+  /** Long-term memory backend. `file` (default) keeps the legacy JSON store; `dream` switches to the Dream memory system. */
+  memoryBackend: QWicksMemoryBackend
   /** Host computer-use (screenshot + mouse/keyboard control) settings. */
   computerUse: QWicksComputerUseSettingsV1
   /** First-party design-quality linter applied to frontend output. */
@@ -355,6 +357,9 @@ export type QWicksMcpSearchSettingsV1 = {
 }
 
 export type QWicksStorageBackend = 'hybrid' | 'file'
+
+/** Which long-term memory backend the QWicks runtime uses. `file` = legacy JSON-per-record FileMemoryStore; `dream` = Dream memory system (SQLite + lifecycle + embeddings). */
+export type QWicksMemoryBackend = 'file' | 'dream'
 
 export type QWicksStorageSettingsV1 = {
   backend: QWicksStorageBackend
