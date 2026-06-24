@@ -19,15 +19,9 @@
 
 ### 可重试 vs 不可重试
 
-重试只对**临时性**错误有意义。鉴权/配置类错误重试也是同样结果,应直接报错:
+**所有错误都重试**,不区分错误类型。无论网络错误、限流、服务端故障,还是鉴权失败、配置错误,都先尝试 5 次重连。只有 5 次全失败才向用户报错,并在折叠的详情里说明具体原因。
 
-| 错误类型 | 是否重试 | 原因 |
-|---------|---------|------|
-| 网络错误(fetch failed / ECONNREFUSED / timeout) | ✅ 重试 | 临时性 |
-| 429 限流 | ✅ 重试 | 退避后可能恢复 |
-| 5xx 服务端错误 | ✅ 重试 | 服务端临时故障 |
-| 401 / 403 鉴权失败 | ❌ 不重试 | 重试同结果,直接报错 |
-| 404 配置错误(Base URL 错) | ❌ 不重试 | 直接报错并提示检查配置 |
+理由:用户希望"只要没反应就重试",不希望在中间状态被打断。鉴权/配置类错误即使重试也是同样结果,但让用户看到"已尝试5次"比立刻报错更符合预期,且详情里会提示具体原因(如"请检查 Base URL"或"请检查 API Key")。
 
 ### 重试参数
 
@@ -41,7 +35,7 @@
 
 ### 触发时机
 
-- **从"正在思考"切换到"正在重连"的时机**:不是靠 GUI 定时器猜测,而是**由运行时驱动**。运行时在发起模型请求后,若 fetch 抛出可重试错误或超时(运行时侧已有请求超时),立即进入重试循环并发送首个 `model_retry` 事件。GUI 收到该事件即覆盖气泡。
+- **从"正在思考"切换到"正在重连"的时机**:不是靠 GUI 定时器猜测,而是**由运行时驱动**。运行时在发起模型请求后,若 fetch 抛出任何错误(网络错误或任何 HTTP 状态码)或超时(运行时侧已有请求超时),立即进入重试循环并发送首个 `model_retry` 事件。GUI 收到该事件即覆盖气泡。
 - 换言之,GUI 不自行判断"模型没回复多久了",而是**被动响应**运行时的 `model_retry` 事件。这避免了 GUI 和运行时各自计时导致的不一致。
 
 ```
@@ -83,21 +77,23 @@
 - 纯文字,灰色(`#999` 附近)
 - **无背景色、无边框、无图标**(低调,不突兀)
 - 居中显示
-- 文案包含具体原因,例如:"模型连接失败(已重试 5 次):HTTP 404,请检查 Base URL 配置"
+- 概括文案例如:"模型连接失败(已重试 5 次)"
+- **可折叠展开具体原因**:默认只显示概括,点击/悬停展开详情,例如:"HTTP 404 — 请检查 Base URL 配置" 或 "fetch failed — 网络连接异常"
 
 ### 错误文案来源
 
-复用现有的 `src/renderer/src/lib/format-runtime-error.ts` 错误分类(已有 `runtimeMissingApiKey` / `runtimeAuthRequired` / `runtimeFetchFailed` / `runtimePortConflict` 等映射),失败时显示对应的人类可读原因 + i18n 中英文文案。
+复用现有的 `src/renderer/src/lib/format-runtime-error.ts` 错误分类(已有 `runtimeMissingApiKey` / `runtimeAuthRequired` / `runtimeFetchFailed` / `runtimePortConflict` 等映射):
+- **概括行**(`summary`):简短的人类可读原因 + i18n
+- **折叠详情**(`detail`):具体的 HTTP 状态码、错误体、建议操作(如"请检查 Base URL"或"请检查 API Key")
 
 ## 实现架构
 
 ### 双层改动:运行时 + GUI
 
 **QWicks 运行时**(`qwicks/src/adapters/model/compat-model-client.ts`):
-- `postChatCompletion` 捕获可重试错误后,执行指数退避重试循环(最多 5 次)
+- `postChatCompletion` 捕获任何错误(网络/HTTP 任何状态码)后,执行指数退避重试循环(最多 5 次)
 - 每次重试前,通过运行时事件流发送一个 `model_retry` 事件,载荷:`{ attempt, maxAttempts, reason }`
-- 5 次全失败后,发送最终的 `error` 事件(现有机制不变)
-- 不可重试错误(401/403/404)直接发 `error` 事件,不重试
+- 5 次全失败后,发送最终的 `error` 事件(含完整的错误分类信息:HTTP 状态码、错误体、建议操作)
 
 **GUI 渲染进程**(`src/renderer/src/store/chat-store-runtime.ts`):
 - 新增处理 `model_retry` 事件的逻辑:把当前模型回复 live block 的内容覆盖为"正在重连(第 x/5 次)"
@@ -131,6 +127,6 @@ GUI 渲染进程:
 
 ## 测试策略
 
-- **运行时单元测试**:`compat-model-client` 的重试循环 —— 模拟可重试/不可重试错误,验证重试次数、退避间隔、`model_retry` 事件发送
+- **运行时单元测试**:`compat-model-client` 的重试循环 —— 模拟各类错误(网络错误、429、5xx、401、403、404),验证都触发 5 次重试、退避间隔、`model_retry` 事件发送、5 次后发送最终 `error` 事件
 - **GUI store 测试**:`chat-store-runtime` 处理 `model_retry` 事件 —— 验证 live block 覆盖、计时器归零、5 次失败后错误显示
 - **手动验证**:断开网络/配错 Base URL,观察重连进度显示和最终错误提示
