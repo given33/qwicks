@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS memory (
     topic TEXT,
     last_used_at TEXT,
     sensitivity TEXT NOT NULL DEFAULT 'normal',
-    shareable INTEGER NOT NULL DEFAULT 1
+    shareable INTEGER NOT NULL DEFAULT 1,
+    -- Batch B:sensitivity_categories(PII/敏感度分类标签,JSON string[])。
+    -- 也必须在 addV3ColumnsIfMissing 里补(老库 ALTER);全新库由本 CREATE 提供。
+    sensitivity_categories TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS ix_memory_user ON memory(user_id);
 CREATE INDEX IF NOT EXISTS ix_memory_type ON memory(type);
@@ -627,6 +630,24 @@ export class SqliteMemoryRepository implements MemoryRepository {
       // memory_source_link 表可能不存在(极老 DB)→ 静默跳过
     }
     return { backfilled }
+  }
+
+  /**
+   * Batch B(spec §2.5):该用户是否已有某指纹的 memory?(供 pending 双向去重用)。
+   * fingerprint 是 sha256(user+type+content+sorted tags),非存储列,故在 list 上算。
+   */
+  hasFingerprint(userId: string, fingerprint: string): boolean {
+    return this.list(userId).some((item) => item.fingerprint() === fingerprint)
+  }
+
+  /** Batch B:运行任意 SELECT,返回行数组。 */
+  rawQuery<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T[] {
+    return this.db.prepare(sql).all(...params) as T[]
+  }
+
+  /** Batch B:运行任意 SELECT,返回首行或 null。 */
+  rawQueryOne<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T | null {
+    return (this.db.prepare(sql).get(...params) as T) ?? null
   }
 
   /**
