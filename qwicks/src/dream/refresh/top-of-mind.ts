@@ -43,7 +43,9 @@ export function topOfMindScore(
 ): number {
   const now = opts.now ?? new Date()
   const halfLifeDays = opts.halfLifeDays ?? 60
-  const rec = recencyScore(item.updatedAt, halfLifeDays, now)
+  // B5:recency 读 lastUsedAt ?? createdAt(详见 assess 注释);updatedAt 被每次 upsert
+  // 刷新,不能用来判断"近期活跃"。
+  const rec = recencyScore(item.lastUsedAt ?? item.createdAt, halfLifeDays, now)
   let usage = 0.5
   if (item.lastUsedAt) {
     const usedDate = new Date(item.lastUsedAt)

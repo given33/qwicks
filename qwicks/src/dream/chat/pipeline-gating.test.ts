@@ -93,4 +93,23 @@ describe('DreamMemorySystem chat pipeline — Phase 2 gating wired in', () => {
     }
     sys.close()
   })
+
+  it('B8: connector ingest is refused in production when OAuth uses the default key', async () => {
+    // 默认构造(无 DREAM_OAUTH_KEY)→ isUsingDefaultKey() true。模拟生产环境。
+    const prevProd = process.env.DREAM_OAUTH_PRODUCTION
+    const prevNode = process.env.NODE_ENV
+    process.env.DREAM_OAUTH_PRODUCTION = 'true'
+    try {
+      const sys = makeSystem({ dir })
+      await expect(sys.ingestGmail('alice@example.com')).rejects.toThrow(/default key/i)
+      await expect(sys.ingestDrive('alice@example.com')).rejects.toThrow(/default key/i)
+      expect(() => sys.revokeConnector('alice@example.com', 'alice')).toThrow(/default key/i)
+      sys.close()
+    } finally {
+      if (prevProd === undefined) delete process.env.DREAM_OAUTH_PRODUCTION
+      else process.env.DREAM_OAUTH_PRODUCTION = prevProd
+      if (prevNode === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = prevNode
+    }
+  })
 })

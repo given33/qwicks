@@ -7,7 +7,7 @@ function mk(id: string, type: MemoryType, content: string, importance = 0.5): Me
   return new MemoryItem(id, 'alice', type, content, MemoryScope.USER, [], importance, 0.7, '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z', null, new MemoryProvenance())
 }
 function hit(item: MemoryItem, score = 0.8): RetrievalHit {
-  return { item, score, vectorScore: 0.8, recencyScore: 0.5, importanceScore: item.importance, bm25Score: 0, exactScore: 0, source: 'vector' }
+  return { item, score, baseScore: score, vectorScore: 0.8, recencyScore: 0.5, importanceScore: item.importance, bm25Score: 0, exactScore: 0, source: 'vector' }
 }
 
 describe('HeuristicSynthesizer', () => {

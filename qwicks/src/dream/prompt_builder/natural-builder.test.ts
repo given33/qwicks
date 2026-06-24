@@ -8,6 +8,7 @@ function mkHit(id: string, content: string, score: number, metadata: Record<stri
   return {
     item: new MemoryItem(id, 'alice', MemoryType.FACT, content, MemoryScope.USER, [], 0.5, 0.7, '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z', null, new MemoryProvenance(), null, null, [], metadata),
     score,
+    baseScore: score,
     vectorScore: score,
     recencyScore: 0.5,
     importanceScore: 0.5,

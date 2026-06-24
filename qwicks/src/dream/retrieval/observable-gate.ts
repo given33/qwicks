@@ -115,7 +115,12 @@ export class FreshnessBoostGate implements Gate {
     const md = item.metadata ?? {}
     const out = baseDecision(input.candidate)
     out.source = this.name
-    const isSuperseded = md.explicit_correction === true && (input.allUserItems ?? []).some((it) => it.status === Status.SUPERSEDED)
+    // B7 修复:supersede 判定必须基于**候选自身**的状态,而不是"任意 corrected 候选 +
+    // 全用户池里任意一条是 SUPERSEDED"。旧逻辑在错误的候选上误开火(任意 corrected
+    // 候选,只要池里存在某条无关 supersede,就被降权);而真正的 superseded 旧值根本
+    // 不会进检索候选(状态被 RETRIEVAL_EXCLUDED_STATUSES 排除)。这里改为只降权候选
+    // 自身就是 SUPERSEDED 的(旁路 includeSuppressed/其它路径混进来时仍应降权)。
+    const isSuperseded = item.status === Status.SUPERSEDED
     if (isSuperseded) {
       out.demote = this.demoteValue
       out.scoreAfter = out.scoreBefore + this.demoteValue
@@ -173,6 +178,15 @@ export class UserCorrectionGate implements Gate {
 export class ObservableGate {
   private readonly gates: Gate[] = []
   private readonly corrections: UserCorrection[] = []
+  /**
+   * B13 修复:corrections 数组上限。旧版无限 push → 长跑进程内存泄漏。
+   * 超限时按 FIFO(数组头=最旧)丢弃,保留最近的。默认 1000。
+   */
+  private readonly maxCorrections: number
+
+  constructor(opts: { maxCorrections?: number } = {}) {
+    this.maxCorrections = opts.maxCorrections ?? 1000
+  }
 
   add(gate: Gate): this {
     this.gates.push(gate)
@@ -181,6 +195,11 @@ export class ObservableGate {
 
   recordCorrection(correction: UserCorrection): void {
     this.corrections.push(correction)
+    // B13:超上限丢最旧(FIFO)。shift 是 O(n),但 corrections 量级(<千)可接受;
+    // 若未来量大可改环形缓冲。
+    while (this.corrections.length > this.maxCorrections) {
+      this.corrections.shift()
+    }
   }
 
   getCorrections(userId?: string): UserCorrection[] {

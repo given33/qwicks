@@ -68,7 +68,12 @@ describe('migrateLegacyMemory', () => {
   })
 
   it('is idempotent — running twice does not duplicate', async () => {
-    await seedFileStore(fileDir, [makeRecord({ id: 'mem_1' }), makeRecord({ id: 'mem_2' })])
+    // NOTE: 去重按 fingerprint(userId+type+content+tags)。两条种子必须内容不同,
+    // 否则第一次迁移就会因指纹相同合并成 1 条(旧测试用相同默认内容 → 真实跑会失败)。
+    await seedFileStore(fileDir, [
+      makeRecord({ id: 'mem_1', content: 'prefers concise answers' }),
+      makeRecord({ id: 'mem_2', content: 'works on project X' })
+    ])
 
     await migrateLegacyMemory({ fileDir, repository: repo, userId: 'default' })
     const report2 = await migrateLegacyMemory({ fileDir, repository: repo, userId: 'default' })

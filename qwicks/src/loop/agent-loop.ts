@@ -1115,7 +1115,10 @@ export class AgentLoop {
       workspace: thread?.workspace ?? '',
       threadId,
       turnId,
-      memoryMode: turn?.memoryMode
+      memoryMode: turn?.memoryMode,
+      // B16:用稳定的记忆身份(this.memoryUserId),不再让方法内退化为硬编码 'default',
+      // 否则所有用户的记忆都被读写到 'default' 桶里(身份缺口)。
+      userId: this.memoryUserId
     })
     const planTurnActive = effectiveMode === 'plan' || Boolean(activePlanContext)
     const activeGoalInstruction = planTurnActive

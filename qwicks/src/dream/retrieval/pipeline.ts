@@ -65,6 +65,11 @@ export interface RetrievalQuery {
 export interface RetrievalHit {
   item: MemoryItem
   score: number
+  /**
+   * B15:不含 topOfMind/corrected boost 的基础分(5 通道加权和)。用于过滤零相关命中
+   * (boost 只能放大相关性,不能凭空召回)。下游 InjectionRouter 可能依赖此字段。
+   */
+  baseScore: number
   vectorScore: number
   recencyScore: number
   importanceScore: number
@@ -153,36 +158,56 @@ export class RetrievalPipeline {
     const queryTokens = tokenize(query.query)
     const hits: RetrievalHit[] = []
 
+    // B6:BM25 长度归一化需要语料全局平均文档长度。先对所有候选(类型/scope/tag/
+    // recency 过滤后)分词,算一次 avgdl。用未过 min_recency 的集合更稳,但为保持
+    // 与候选循环一致,这里用循环内相同的过滤口径。为避免两次分词,先预算所有候选
+    // 的 docTokens,再算 avgdl,再复用。
+    // 注:这里只对会进入评分的候选(type/scope/tag 过滤后)计长度,符合 BM25 语义
+    // (文档集合 = 当前检索的候选集)。
+    const prefiltered: Array<{ item: MemoryItem; docTokens: string[] }> = []
     for (const item of candidates) {
-      // 类型/scope/tag 过滤
       if (query.types && !query.types.includes(item.type)) continue
       if (query.scopes && !query.scopes.includes(item.scope)) continue
       if (query.tags && !query.tags.every((t) => item.tags.includes(t))) continue
+      prefiltered.push({ item, docTokens: tokenize(`${item.content} ${item.tags.join(' ')}`) })
+    }
+    const corpusAvgdl =
+      prefiltered.length > 0
+        ? prefiltered.reduce((s, p) => s + p.docTokens.length, 0) / prefiltered.length
+        : 1
 
+    for (const { item, docTokens } of prefiltered) {
       // min_recency 硬过滤(对齐 Python)
-      const recency = recencyScore(item.updatedAt, halfLifeDays, this.now())
+      // B5:recency 改读 lastUsedAt ?? createdAt(见 assess 同理);updatedAt 每次都刷新,
+      // 用它会把刚 suppress/edit 的旧记忆顶成最新。
+      const recency = recencyScore(item.lastUsedAt ?? item.createdAt, halfLifeDays, this.now())
       if (this.minRecency > 0 && recency < this.minRecency) continue
 
       const vectorScore = qvec ? this.cosineWithStored(item, qvec) : 0
-      const docTokens = tokenize(`${item.content} ${item.tags.join(' ')}`)
-      const bm25 = bm25Score(queryTokens, docTokens)
+      const bm25 = bm25Score(queryTokens, docTokens, corpusAvgdl)
       const exact = exactScore(queryTokens, docTokens)
       const importance = Math.max(0, Math.min(1, item.importance)) * item.confidence
 
       // v3(P2-5 报告 §11):top-of-mind / user-corrected 加权提升。
       // top-of-mind 记忆是 dreaming 判定的高优先级,应在检索中优先注入。
       // user-corrected 记忆是用户人工纠正过的,可信度更高。
-      const topOfMindBoost = item.isTopOfMind ? 0.12 : 0
-      const correctedBoost = item.userCorrected ? 0.06 : 0
-
-      const score =
+      // B15 修复:boost 只能**放大已有的相关性**,不能凭空召回零相关记忆。旧版
+      // topOfMindBoost(+0.12) 加法叠加在混合分上,minScore 默认 0 → 任何 top-of-mind
+      // 记忆即使零语义相关也会因 +0.12 > 0 被召回(过度注入隐患)。改为:只有当至少一个
+      // **相关性通道**(vector/bm25/exact)> 0 时才应用 boost,并据此过滤零相关命中。
+      // 注意:不能用含 importance 的总分做门控 —— importance 是内在属性(默认 0.5),
+      // 会让每条记忆的总分恒 > 0,门控失效。recency 也是查询无关的时效信号,同样排除。
+      const hasRelevance = vectorScore > 0 || bm25 > 0 || exact > 0
+      const baseScore =
         this.weights.vector * vectorScore +
         this.weights.bm25 * bm25 +
         this.weights.exact * exact +
         this.weights.recency * recency +
-        this.weights.importance * importance +
-        topOfMindBoost +
-        correctedBoost
+        this.weights.importance * importance
+      const topOfMindBoost = item.isTopOfMind && hasRelevance ? 0.12 : 0
+      const correctedBoost = item.userCorrected && hasRelevance ? 0.06 : 0
+
+      const score = baseScore + topOfMindBoost + correctedBoost
 
       const source: RetrievalHit['source'] =
         vectorScore > 0 && (bm25 > 0 || exact > 0)
@@ -198,6 +223,7 @@ export class RetrievalPipeline {
       hits.push({
         item,
         score,
+        baseScore,
         vectorScore,
         recencyScore: recency,
         importanceScore: importance,
@@ -207,9 +233,29 @@ export class RetrievalPipeline {
       })
     }
 
+    // B15:filter 仍按 minScore(默认 0,允许 importance/recency 驱动的召回 —— 这是
+    // 既有契约,如 "what do you know about my skills" 靠 importance 召回相关记忆)。
+    // B15 的修复点在** boost 门控**(上面 hasRelevance):零相关的 top-of-mind/corrected
+    // 记忆不再因 +0.12 凭空被 boost 到 minScore 之上。即 boost 只能放大相关性,不创造召回。
     const filtered = hits.filter((h) => h.score >= minScore)
-    filtered.sort((a, b) => b.score - a.score || b.item.updatedAt.localeCompare(a.item.updatedAt))
-    return filtered.slice(0, topK)
+    filtered.sort((a, b) => b.score - a.score || (b.item.lastUsedAt ?? b.item.createdAt).localeCompare(a.item.lastUsedAt ?? a.item.createdAt))
+    const injected = filtered.slice(0, topK)
+
+    // B2+B3+B5(合并写侧):对最终注入集做一次批量强化 —— 刷新 last_used_at + 封顶提升
+    // importance(+ 可选 salience)。一次 round-trip,不写 event、不同步 source_link、
+    // 不碰 updated_at(保护 B5 的时效语义)。只强化真正被注入的(baseScore>0 由 B15 filter
+    // 保证;此处再以防 minScore=0 时混入零相关命中)。
+    if (injected.length > 0) {
+      try {
+        this.opts.repository.reinforceUsed(
+          injected.map((h) => h.item.id),
+          { boost: 0.05 }
+        )
+      } catch {
+        // 强化失败不阻断检索(对齐 spec fail-open)
+      }
+    }
+    return injected
   }
 
   // ----------------------------------------------------------------
@@ -322,14 +368,24 @@ export function tokenize(text: string): string[] {
   return out
 }
 
-/** BM25 简化版(无 IDF,因为单查询无法算全局 IDF;用饱和的词频)。 */
-export function bm25Score(queryTokens: string[], docTokens: string[]): number {
+/**
+ * BM25 简化版(无 IDF,因为单查询无法算全局 IDF;用饱和的词频)。
+ *
+ * B6 修复:长度归一化必须用**语料全局平均文档长度**(avgdl),不是当前文档长度。
+ * 旧实现 `avgdl = docTokens.length` → `b*(docTokens.length/avgdl)` 恒等于 b,
+ * 长度项退化为常数,长文档不被惩罚,BM25 退化成饱和 TF。
+ *
+ * @param avgdl 语料平均文档长度(token 数)。缺省时回退到 docTokens.length(保持
+ *   旧的单文档调用语义,不破坏现有无参调用方)。
+ */
+export function bm25Score(queryTokens: string[], docTokens: string[], avgdl?: number): number {
   if (queryTokens.length === 0 || docTokens.length === 0) return 0
   const docFreq = new Map<string, number>()
   for (const t of docTokens) docFreq.set(t, (docFreq.get(t) ?? 0) + 1)
   const k1 = 1.5
   const b = 0.75
-  const avgdl = docTokens.length
+  // avgdl 用调用方传入的语料平均值;缺省时回退到本文档长度(向后兼容)。
+  const effectiveAvgdl = avgdl && avgdl > 0 ? avgdl : docTokens.length
   let score = 0
   const qSeen = new Set<string>()
   for (const qt of queryTokens) {
@@ -337,7 +393,7 @@ export function bm25Score(queryTokens: string[], docTokens: string[]): number {
     qSeen.add(qt)
     const f = docFreq.get(qt) ?? 0
     if (f === 0) continue
-    const tfNorm = (f * (k1 + 1)) / (f + k1 * (1 - b + b * (docTokens.length / avgdl)))
+    const tfNorm = (f * (k1 + 1)) / (f + k1 * (1 - b + b * (docTokens.length / effectiveAvgdl)))
     score += tfNorm
   }
   // 归一化到 [0,1] 量级

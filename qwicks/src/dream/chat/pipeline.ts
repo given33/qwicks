@@ -58,7 +58,7 @@ import { decideInjection, type InjectionDecision } from '../retrieval/injection-
 import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/natural-builder.js'
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
-import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
+import { DreamingScheduler, MemoryDecay } from '../refresh/scheduler.js'
 import { TemporalDreamer } from '../refresh/temporal-dreamer.js'
 import { TopOfMindBalancer } from '../refresh/top-of-mind.js'
 import { DreamMemoryStore } from '../dream-store.js'
@@ -212,6 +212,16 @@ export class DreamMemorySystem {
       userId: this.userId
     })
     this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
+    // B8:默认密钥(dream-default-key)下加密的 OAuth token 拿到源码即可解密,生产不安全。
+    // 生产环境检测到默认密钥时记录告警(连接器 ingest 路径会在 requireSecureOAuth 里拒绝)。
+    if (this.oauthStore.isUsingDefaultKey()) {
+      const isProd = process.env.NODE_ENV === 'production' || process.env.DREAM_OAUTH_PRODUCTION === 'true'
+      try {
+        this.repository.logEvent('oauth_insecure_default_key', {
+          payload: { production: isProd, message: 'OAuth tokens encrypted with default key; connectors disabled in production.' }
+        })
+      } catch { /* 非 fatal */ }
+    }
 
     // embeddings:HTTP 优先 + hash 回退(报告 §4.7 P2-2 / 二轮报告 §5.4)。
     // 若配置了 embedding baseUrl,用 EmbeddingRouter(HttpEmbedder + HashEmbedder 回退);
@@ -271,14 +281,14 @@ export class DreamMemorySystem {
 
     this.twinBuilder = new TwinBuilder()
     const decay = new MemoryDecay({ repository: this.repository })
-    const reinforcement = new MemoryReinforcement({ repository: this.repository })
     // v3:TemporalDreamer(planned→occurred)+ TopOfMindBalancer(salience 排序)
     // 都接入 scheduler.tick,让 dreaming 自动执行时间转换与 top-of-mind 调整。
+    // B2/B3/B5:强化已收口到检索侧的 repository.reinforceUsed(见 retrieve/beforeTurn),
+    // 不再走 scheduler —— 历史的 MemoryReinforcement 类是死代码,已删。
     const temporalDreamer = new TemporalDreamer({ repository: this.repository })
     const topOfMindBalancer = new TopOfMindBalancer({ repository: this.repository })
     this.scheduler = new DreamingScheduler({
       decay,
-      reinforcement,
       temporalDreamer,
       topOfMindBalancer,
       repository: this.repository
@@ -689,11 +699,16 @@ export class DreamMemorySystem {
     // 跑 ObservableGate(轻量)
     const allItems = this.repository.list(userId, {})
     const gateReport = this.observableGate.run({ userId, query, candidates: hits.map((h) => ({ item: h.item, score: h.score })), allUserItems: allItems })
-    return gateReport.decisions
+    const routed = gateReport.decisions
       .filter((d) => d.finalDecision !== 'suppress')
       .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { item: h.item, score: Math.max(0, d.scoreAfter) } })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
+    // B2+B3+B5(合并写侧):对最终注入集批量强化。
+    if (routed.length > 0) {
+      try { this.repository.reinforceUsed(routed.map((h) => h.item.id), { boost: 0.05 }) } catch { /* fail-open */ }
+    }
+    return routed
   }
 
   // ================================================================
@@ -762,6 +777,15 @@ export class DreamMemorySystem {
     } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
 
     try { routedHits = filterSuppressedWithExplicitAsk(userId, routedHits, this.controls2, input.prompt) } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
+
+    // B2+B3+B5(合并写侧):对最终注入集(gate 通过 + 未被 suppress)做一次批量强化。
+    // 在 injection decision 之前,这样即使 shouldInject=false(routedHits 被清空),
+    // 已被 gate/suppress 过滤掉的候选也不会被强化(强化的是"真正用到"的记忆)。
+    if (routedHits.length > 0) {
+      try {
+        this.repository.reinforceUsed(routedHits.map((h) => h.item.id), { boost: 0.05 })
+      } catch (err) { failures.push(`reinforce: ${String(err)}`) }
+    }
 
     let injectionDecision: InjectionDecision | null = null
     try {
@@ -888,8 +912,24 @@ export class DreamMemorySystem {
     return { newMemories, sourceId: chatSourceId, failures, dreamingTriggered }
   }
 
+  /**
+   * B8:连接器路径(ingest/revoke)的安全前置检查。生产环境(NODE_ENV=production 或
+   * DREAM_OAUTH_PRODUCTION=true)下用默认密钥加密的 OAuth token 拿源码即可解密,
+   * 是安全违规 → 拒绝执行连接器操作。要求设置 DREAM_OAUTH_KEY。
+   */
+  private requireSecureOAuth(): void {
+    if (this.oauthStore.isUsingDefaultKey() &&
+        (process.env.NODE_ENV === 'production' || process.env.DREAM_OAUTH_PRODUCTION === 'true')) {
+      throw new Error(
+        'OAuth connectors disabled: token store uses the insecure default key in production. ' +
+          'Set the DREAM_OAUTH_KEY environment variable (or supply a passphrase) to enable Gmail/Drive connectors.'
+      )
+    }
+  }
+
   /** Phase 5:从 Gmail 拉取邮件,抽取记忆(带 connector source lineage)。 */
   async ingestGmail(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    this.requireSecureOAuth()
     const token = this.oauthStore.load(account)
     if (!token) throw new Error(`no oauth token for ${account}`)
     const gmail = new GmailConnector({ token, fetchImpl: opts.fetchImpl })
@@ -929,6 +969,7 @@ export class DreamMemorySystem {
 
   /** Phase 5:从 Drive 拉取文件,抽取记忆(带 connector source lineage)。 */
   async ingestDrive(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    this.requireSecureOAuth()
     const token = this.oauthStore.load(account)
     if (!token) throw new Error(`no oauth token for ${account}`)
     const drive = new DriveConnector({ token, fetchImpl: opts.fetchImpl })
@@ -972,6 +1013,7 @@ export class DreamMemorySystem {
    * @param opts.preview - 只返回受影响列表,不删除(3.4 revoke preview)。
    */
   revokeConnector(account: string, userId: string, opts: { preview?: boolean } = {}): { affected: number; affectedMemoryIds?: string[]; affectedSourceIds?: string[] } {
+    this.requireSecureOAuth()
     // 3.4:preview 模式不删除,只返回受影响列表
     const sources = this.controls2.listSources(userId, { includeDeleted: true })
       .concat(userId !== account ? this.controls2.listSources(account, { includeDeleted: true }) : [])

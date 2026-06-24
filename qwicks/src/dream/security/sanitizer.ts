@@ -55,15 +55,56 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ['pii_jwt', g(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/)]
 ]
 
+/**
+ * B9:Luhn 校验(信用卡)。匹配 13-19 位数字串后,只有通过 Luhn 的才算信用卡,
+ * 避免误脱敏订单号 / 版本号 / 追踪号。
+ */
+function passesLuhn(rawDigits: string): boolean {
+  const digits = rawDigits.replace(/\D/g, '')
+  if (digits.length < 13 || digits.length > 19) return false
+  let sum = 0
+  let dbl = false
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = digits.charCodeAt(i) - 48
+    if (dbl) {
+      d *= 2
+      if (d > 9) d -= 9
+    }
+    sum += d
+    dbl = !dbl
+  }
+  return sum % 10 === 0
+}
+
+/**
+ * B9:判断 IP 匹配是否实际是版本号(如 `v1.2.3.4`、`version 1.2.3.4`、`1.2.3` build)。
+ * 版本号四段语义和 IPv4 重叠(都 ≤255),但版本常紧跟 `v`/`version` 前缀或段数≠4。
+ */
+function looksLikeVersion(text: string, matchStart: number, matched: string): boolean {
+  const segments = matched.split('.')
+  if (segments.length !== 4) return true // 真正的 IP 总是 4 段;非 4 段当作版本/其它
+  // 检查前缀:往前看最多 10 个字符是否有 v/version/build 等版本语义
+  const prefix = text.slice(Math.max(0, matchStart - 10), matchStart).toLowerCase()
+  if (/(?:^|[^a-z])(v|version|build|ver|release)\s*$/i.test(prefix)) return true
+  return false
+}
+
 export function detectSecrets(text: string): Finding[] {
   const out: Finding[] = []
   for (const [kind, pat] of SECRET_PATTERNS) {
     for (const m of text.matchAll(pat)) {
       const start = m.index ?? 0
+      const matched = m[0]
+      // B9:对易误报的 kind 做后置校验,避免误脱敏正常内容。
+      if (kind === 'pii_credit_card') {
+        if (!passesLuhn(matched)) continue // Luhn 不过 → 不是信用卡
+      } else if (kind === 'pii_ip') {
+        if (looksLikeVersion(text, start, matched)) continue // 版本号 → 不是 IP
+      }
       out.push({
         kind,
-        span: [start, start + m[0].length],
-        snippet: text.slice(Math.max(0, start - 20), start + m[0].length + 20)
+        span: [start, start + matched.length],
+        snippet: text.slice(Math.max(0, start - 20), start + matched.length + 20)
       })
     }
   }

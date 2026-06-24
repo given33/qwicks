@@ -288,4 +288,70 @@ describe('SqliteMemoryRepository', () => {
       expect(gotSuppressed!.status).toBe(MemoryLifecycleStatus.SUPPRESSED)
     })
   })
+
+  describe('B4: dreamJobStats without userId (global query must not throw)', () => {
+    it('returns zeros for an empty queue without throwing (no dangling AND)', () => {
+      expect(() => repo.dreamJobStats()).not.toThrow()
+      const stats = repo.dreamJobStats()
+      expect(stats.pending).toBe(0)
+      expect(stats.completed).toBe(0)
+      expect(stats.lastCompletedAt).toBeNull()
+    })
+
+    it('counts and reports lastCompletedAt globally (no userId)', () => {
+      repo.enqueueDreamJob({ type: 'dream_refresh', userId: 'alice' })
+      repo.enqueueDreamJob({ type: 'dream_refresh', userId: 'bob' })
+      const jobs = repo.claimDueDreamJobs(5)
+      for (const j of jobs) repo.completeDreamJob(j.id)
+      const stats = repo.dreamJobStats() // 全局观测,无 userId
+      expect(stats.completed).toBe(2)
+      expect(stats.pending).toBe(0)
+      expect(stats.lastCompletedAt).not.toBeNull()
+    })
+
+    it('still works scoped to a userId', () => {
+      repo.enqueueDreamJob({ type: 'dream_refresh', userId: 'alice' })
+      repo.enqueueDreamJob({ type: 'dream_refresh', userId: 'bob' })
+      const jobs = repo.claimDueDreamJobs(5)
+      for (const j of jobs) repo.completeDreamJob(j.id)
+      const aliceStats = repo.dreamJobStats('alice')
+      expect(aliceStats.completed).toBe(1)
+    })
+  })
+
+  describe('B12: claimDueDreamJobs UPDATE status guard', () => {
+    it('does not re-claim a job whose status drifted to running (multi-worker safety)', () => {
+      const id = repo.enqueueDreamJob({ type: 'dream_refresh', userId: 'alice' })
+      // 模拟另一 worker 已把它置 running(或崩溃恢复前)
+      repo.rawExec(`UPDATE dream_job SET status='running', locked_at='2026-06-23T00:00:00Z', attempts=1 WHERE id=?`, [id])
+      const claimed = repo.claimDueDreamJobs(5)
+      expect(claimed.find((c) => c.id === id)).toBeUndefined() // 不再重取
+    })
+  })
+
+  describe('B10: source_ids LIKE escaping (no wildcard false-positives)', () => {
+    it('hasSourceId filter with ESCAPE: source id containing _ does not match other ids', () => {
+      // 两条记忆,source ids 一个含 "_wild"(会被当通配符),一个含 "_wild_card"。
+      // 若 LIKE 未转义,"%"_wild"%" 会同时匹配两者。加 ESCAPE 后只精确匹配。
+      const exact = makeItem({ id: 'memA', userId: 'alice', content: 'a' })
+      exact.sourceIds = ['src_exact_wild']
+      const decoy = makeItem({ id: 'memB', userId: 'alice', content: 'b' })
+      decoy.sourceIds = ['src_other']
+      repo.upsert(exact)
+      repo.upsert(decoy)
+      const ids = repo.list('alice', { hasSourceId: 'src_exact_wild' }).map((i) => i.id)
+      expect(ids).toEqual(['memA'])
+      expect(ids).not.toContain('memB')
+    })
+
+    it('memoriesDerivedFromSource fallback path escapes wildcards in sourceId', () => {
+      // 清空 memory_source_link 强制走 JSON LIKE 回退路径。
+      repo.rawExec(`DELETE FROM memory_source_link`)
+      const m = makeItem({ id: 'memC', userId: 'alice', content: 'c' })
+      m.sourceIds = ['src_50_pct']
+      repo.upsert(m)
+      const derived = repo.memoriesDerivedFromSource('alice', 'src_50_pct')
+      expect(derived.map((d) => d.id)).toEqual(['memC'])
+    })
+  })
 })

@@ -70,7 +70,11 @@ export class DreamMemoryStore implements MemoryStore {
       // 1) sanitizer:拦截 PII / prompt injection(报告 §4.12)。
       // sanitizer 拒绝必须向上抛出(不能 fail-open),否则注入内容会走旧路径落库。
       const sanitized = sanitizeForMemory(input.content, { source: 'user' })
-      if (sanitized.decision === 'reject' || sanitized.findings.some((f) => f.kind.startsWith('injection_'))) {
+      // B11 修复:策略与 chat 抽取路径(pipeline.ts: sanitizedDrafts)对齐 ——
+      // 旧版"只要任何 injection_ finding 就 reject",会覆盖 sanitizer 给出的 redact
+      // (保留脱敏内容)决策,导致同一内容:工具路径被拒、chat 抽取路径却保留 → 策略不一致。
+      // 现改为:仅 reject 才拒绝;有高危注入但 sanitizer 已 redact → 用脱敏后内容落库。
+      if (sanitized.decision === 'reject') {
         throw new Error('memory content rejected by sanitizer (PII or prompt injection)')
       }
       const cleanContent = sanitized.decision === 'redact' ? sanitized.sanitized : input.content

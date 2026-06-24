@@ -78,4 +78,23 @@ describe('sanitizeForMemory', () => {
     expect(r.decision).toBe('redact')
     expect(r.sanitized).toContain('<REDACTED:pii_ssn>')
   })
+
+  it('B9: redacts a Luhn-valid credit card but NOT arbitrary 13-19 digit strings (order/tracking numbers)', () => {
+    // 真实测试卡号(通过 Luhn)
+    const card = sanitizeForMemory('my card is 4532015112830366')
+    expect(card.decision).toBe('redact')
+    expect(card.sanitized).toContain('<REDACTED:pii_credit_card>')
+    // 任意 18 位数字(订单/追踪号,Luhn 不过)→ 不脱敏
+    const order = sanitizeForMemory('order #123456789012345678')
+    // 这串若通过 Luhn 才脱敏;故意选一个 Luhn 不过的串
+    expect(order.sanitized).toContain('123456789012345678')
+  })
+
+  it('B9: does not redact version numbers like v1.2.3.4, but redacts real IPs like 8.8.8.8', () => {
+    const version = sanitizeForMemory('upgrade to v2.1.3.4 now')
+    expect(version.sanitized).toContain('2.1.3.4') // 版本号保留
+    const ip = sanitizeForMemory('dns server 8.8.8.8 is down')
+    expect(ip.decision).toBe('redact')
+    expect(ip.sanitized).toContain('<REDACTED:pii_ip>')
+  })
 })
