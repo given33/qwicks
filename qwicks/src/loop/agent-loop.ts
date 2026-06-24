@@ -446,6 +446,13 @@ export type AgentLoopOptions = {
   compactor: ContextCompactor
   prefix: ImmutablePrefix
   ids: IdGenerator
+  /**
+   * P0-A(跨线程记忆):稳定的记忆用户身份。
+   * 这是 Dream 记忆的 userId —— 跨线程/跨会话共享,而非 threadId。
+   * 默认 'default'(单用户本地应用);生产应传设备用户/workspace 身份。
+   * threadId 只作为 source metadata(记录记忆来自哪个对话),不作为用户身份。
+   */
+  memoryUserId?: string
   nowIso: () => string
   nowMs?: () => number
   modelCapabilities?: (model: string) => ModelCapabilityMetadata
@@ -526,6 +533,8 @@ export class AgentLoop {
   private lastDreamSuppressedIds: string[] = []
   /** 1.1(工业级):缓存当前 turn 的 memoryMode,供 secondary tool context 检查。 */
   private lastMemoryMode: 'normal' | 'temporary' | 'off' = 'normal'
+  /** P0-A:稳定记忆身份(跨线程共享,来自 opts.memoryUserId 或 'default')。 */
+  private readonly memoryUserId: string
   private readonly autoModelRoutes = new Map<string, AutoModelRouteSelection>()
   private readonly promptTokenPressure = new Map<string, { model: string; promptTokens: number }>()
   /** Threads for which a one-time pressure hydration from persisted usage was already attempted. */
@@ -542,6 +551,7 @@ export class AgentLoop {
 
   constructor(opts: AgentLoopOptions) {
     this.opts = opts
+    this.memoryUserId = opts.memoryUserId ?? 'default'
     this.goalResume = new GoalResumeCoordinator({
       launch: (threadId) => this.launchGoalResumeTurn(threadId),
       getActiveGoalKey: async (threadId) => {
@@ -692,7 +702,7 @@ export class AgentLoop {
               threadId,
               turnId,
               memoryMode: turn.memoryMode,
-              userId: threadId
+              userId: this.memoryUserId
             })
           }
         } catch {
@@ -1105,8 +1115,7 @@ export class AgentLoop {
       workspace: thread?.workspace ?? '',
       threadId,
       turnId,
-      memoryMode: turn?.memoryMode,
-      userId: threadId
+      memoryMode: turn?.memoryMode
     })
     const planTurnActive = effectiveMode === 'plan' || Boolean(activePlanContext)
     const activeGoalInstruction = planTurnActive
@@ -2668,6 +2677,13 @@ export class AgentLoop {
     /** 6(差距6):真实用户身份(workspace path 或 deviceId,替代硬编码 default)。 */
     userId?: string
   }) {
+    // P0-B(差距P0-B):每个 turn 开始先清空上一轮 Dream 状态,防止跨 turn 泄漏。
+    // 特别是 temporary/off 模式必须清空 rewrite/status,否则下一轮工具上下文
+    // 仍可能带上旧的 memoryRewrite。
+    this.lastDreamStatusHints = null
+    this.lastDreamRewrittenQuery = null
+    this.lastDreamDownrankedIds = []
+    this.lastDreamSuppressedIds = []
     // P0-5(报告 §6.3/§15):temporary/off 模式完全不读记忆。
     this.lastMemoryMode = input.memoryMode ?? 'normal'
     if (input.memoryMode === 'temporary' || input.memoryMode === 'off') return []

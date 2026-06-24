@@ -249,7 +249,7 @@ describe('create_plan tool mapping', () => {
     expect(fatalCalled).toBe(false)
     expect(capturedRuntimeError).toMatchObject({
       itemId: 'item_error_1',
-      message: 'Authorization=<redacted> failed',
+      message: 'Authorization: Bearer <redacted> failed',
       code: 'stream_read_error',
       details: { token: 'secret-token' }
     })

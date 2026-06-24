@@ -1039,7 +1039,15 @@ export function SettingsView(): ReactElement {
                 getDreamMemoryVersions: (...args) => getProvider().getDreamMemoryVersions!(...args),
                 restoreDreamMemoryVersion: (...args) => getProvider().restoreDreamMemoryVersion!(...args),
                 suppressDreamMemory: (...args) => getProvider().suppressDreamMemory!(...args),
-                setDreamOptOut: (...args) => getProvider().setDreamOptOut!(...args)
+                setDreamOptOut: (...args) => getProvider().setDreamOptOut!(...args),
+                // P1-C(差距P1-C):接通全部 dream methods —— 三开关、来源、dreaming、抑制
+                disableDreamReferenceChatHistory: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['disableDreamReferenceChatHistory']>>) => getProvider().disableDreamReferenceChatHistory!(...args),
+                triggerDreamDreaming: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['triggerDreamDreaming']>>) => getProvider().triggerDreamDreaming!(...args),
+                getDreamDreamingStatus: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['getDreamDreamingStatus']>>) => getProvider().getDreamDreamingStatus!(...args),
+                getDreamSources: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['getDreamSources']>>) => getProvider().getDreamSources!(...args),
+                getDreamSuppressions: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['getDreamSuppressions']>>) => getProvider().getDreamSuppressions!(...args),
+                getDreamMemorySettings: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['getDreamMemorySettings']>>) => getProvider().getDreamMemorySettings!(...args),
+                setDreamMemorySettings: (...args: Parameters<NonNullable<ReturnType<typeof getProvider>['setDreamMemorySettings']>>) => getProvider().setDreamMemorySettings!(...args)
               }}
             />
           ) : null}

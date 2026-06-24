@@ -1375,8 +1375,8 @@ function MessageBubbleImpl({
     const createdAtLabel = block.createdAt
       ? formatMessageDateTime(block.createdAt, i18n.language)
       : null
-    // v3(差距2):从 store 读取该 turn 的记忆状态,挂载 DreamMemoryStatusIndicator
-    const memStatus = block.turnId ? useChatStore.getState().memoryStatusByTurnId[block.turnId] : null
+    // v3(差距2/P1-D):从 store 订阅该 turn 的记忆状态(reactive selector,非 getState)
+    const memStatus = useChatStore((s) => block.turnId ? s.memoryStatusByTurnId[block.turnId] : null)
     return (
       <div className="group/message flex min-w-0 max-w-full flex-col">
         <div className="ds-markdown ds-chat-answer min-w-0 max-w-full text-ds-ink">

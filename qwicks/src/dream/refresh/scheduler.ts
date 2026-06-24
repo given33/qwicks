@@ -132,6 +132,20 @@ export class DreamingScheduler {
   }
 
   /**
+   * P1-E(差距P1-E):强制执行 dreaming,不检查内存 dirty set。
+   * 供 durable dream_job worker 使用 —— job 从持久化队列 claim 后,
+   * 即使内存 dirty set 在重启后丢失(该 user 不在 dirty 里),
+   * 仍然执行 decay/temporal/top-of-mind。
+   */
+  forceTick(opts: { userId: string }): DreamingTickResult {
+    this.opts.decay.apply({ userId: opts.userId })
+    const temporal = this.opts.temporalDreamer?.apply({ userId: opts.userId })
+    const topOfMind = this.opts.topOfMindBalancer?.apply({ userId: opts.userId })
+    this.dirty.delete(opts.userId)
+    return { ran: true, temporal, topOfMind }
+  }
+
+  /**
    * 跑一轮 dreaming:decay + reinforcement(+ v3 可选 temporal/top-of-mind)。
    * 指定 userId 只处理该 user 且清其 dirty;不指定则处理所有 dirty user。
    * 返回 DreamingTickResult(ran=true 表示实际跑了)。

@@ -321,14 +321,14 @@ export class DreamMemorySystem {
     void this.runDreamJobCycle()
   }
 
-  /** 执行一轮 dream_job:claim → tick → complete/fail。 */
+  /** 执行一轮 dream_job:claim → forceTick → complete/fail。 */
   private async runDreamJobCycle(): Promise<void> {
     try {
       const jobs = this.repository.claimDueDreamJobs(5)
       for (const job of jobs) {
         try {
-          // 执行 dreaming(该 user 的 decay + temporal + top-of-mind)
-          this.scheduler.tick({ userId: job.userId })
+          // P1-E(差距P1-E):用 forceTick 而非 tick —— 持久化 job claim 后不依赖内存 dirty。
+          this.scheduler.forceTick({ userId: job.userId })
           this.repository.completeDreamJob(job.id)
         } catch (err) {
           this.repository.failDreamJob(job.id, String(err), { maxRetries: 3, baseDelayMs: 60_000 })
