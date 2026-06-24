@@ -98,6 +98,11 @@ export function MemorySettingsSection({ ctx }: { ctx: Record<string, any> }): Re
 
   return (
     <SettingsCard title={t('sectionMemory')}>
+      {ctx.memoryDiagnostics?.migrationError ? (
+        <div className="mb-2 rounded-xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-[12px] text-red-700 dark:border-red-800/40 dark:bg-red-500/10 dark:text-red-300">
+          {t('memoryMigrationError', { error: ctx.memoryDiagnostics.migrationError })}
+        </div>
+      ) : null}
       <SettingRow
         title={t('memoryEnable')}
         description={t('memoryEnableDesc')}
@@ -106,6 +111,36 @@ export function MemorySettingsSection({ ctx }: { ctx: Record<string, any> }): Re
             checked={qwicks?.memoryEnabled ?? false}
             onChange={(checked: boolean) => updateQWicks({ memoryEnabled: checked })}
           />
+        }
+      />
+      <SettingRow
+        title={t('memoryEngine')}
+        description={t('memoryEngineDesc')}
+        control={
+          <div className="inline-flex overflow-hidden rounded-lg border border-ds-border-muted">
+            {(['file', 'dream'] as const).map((engine) => (
+              <button
+                key={engine}
+                type="button"
+                onClick={() => {
+                  if (engine === 'dream' && (qwicks?.memoryBackend ?? 'file') !== 'dream') {
+                    const ok = window.confirm(
+                      `${t('memoryEngineSwitchConfirmTitle')}\n\n${t('memoryEngineSwitchConfirmBody')}`
+                    )
+                    if (!ok) return
+                  }
+                  updateQWicks({ memoryBackend: engine })
+                }}
+                className={`px-3 py-1 text-[12px] font-medium transition ${
+                  (qwicks?.memoryBackend ?? 'file') === engine
+                    ? 'bg-ds-ink text-ds-main'
+                    : 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink'
+                }`}
+              >
+                {engine === 'dream' ? t('memoryEngineDream') : t('memoryEngineFile')}
+              </button>
+            ))}
+          </div>
         }
       />
       <SettingRow
