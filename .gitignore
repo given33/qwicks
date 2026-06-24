@@ -56,3 +56,4 @@ nul
 .codex-tmp/
 .tools/
 dist-fresh/
+.superpowers/
