@@ -89,6 +89,7 @@ import { parseGuiPlanCommand } from '../plan/plan-command'
 import { confirmDialog } from '../lib/confirm-dialog'
 import { DevPreviewLaunchCard } from './DevPreviewLaunchCard'
 import { RuntimeBanner } from './RuntimeBanner'
+import { ComposerErrorBar } from './chat/ComposerErrorBar'
 import { CODE_PANEL_PREFERRED, useWorkbenchLayout } from './workbench-layout'
 import { useWorkbenchPlanController } from './workbench-plan-controller'
 import { prepareImageAttachmentUpload } from '../lib/image-attachment-upload'
@@ -2618,6 +2619,11 @@ export function Workbench(): ReactElement {
               {uiModeCameosEnabled && !focusModeEnabled ? <IqwicksCameoLayer /> : null}
               {!focusModeEnabled ? <QWicksCelebrationLayer active={busy} suppressed={Boolean(error)} /> : null}
             </div>
+            {error ? (
+              <ComposerErrorBar
+                error={{ summary: error, detail: runtimeErrorDetail ?? undefined, maxAttempts: 5 }}
+              />
+            ) : null}
             <div className="ds-no-drag flex shrink-0 justify-center px-2 pb-3 pt-0 sm:px-4 md:px-6 lg:px-8">
               <FloatingComposer
                 input={input}
