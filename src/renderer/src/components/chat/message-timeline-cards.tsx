@@ -345,7 +345,7 @@ export function WorkMetaRow({
       : t('processing')
     : typeof durationMs === 'number'
       ? `${t('processed')} ${formatDuration(durationMs)}`
-      : t('processSteps', { count: stepCount })
+      : t('processed')
 
   const showThoughtSuffix =
     !processing &&
