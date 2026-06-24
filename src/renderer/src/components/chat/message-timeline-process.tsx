@@ -1,7 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactElement, RefObject } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, Minimize2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileEdit, FilePlus, FileText, Globe, Minimize2, SearchCode, Terminal, Wrench } from 'lucide-react'
 import type { ChatBlock, ToolBlock } from '../../agent/types'
 import { extractUnifiedDiffText } from '../../lib/diff-stats'
 import { useDeferredRender } from '../../hooks/use-deferred-render'
@@ -13,13 +13,35 @@ import { AssistantMarkdown } from './AssistantMarkdown'
 import { MessageBubble } from './message-timeline-bubbles'
 import { blockHasPendingRuntimeWork, splitThink } from './message-timeline-turns'
 import { formatDuration, formatToolTitle } from './message-timeline-tools'
+import {
+  classifyToolCategory,
+  categoryGroupKey,
+  type ToolCategory,
+  toolDurationMs,
+  toolRunningDurationMs,
+  toolExitCode,
+  roundSeconds
+} from './tool-category'
 
 export type ProcessSection = {
   id: string
   kind: 'reasoning' | 'execution' | 'output'
   blocks: ChatBlock[]
+  /** Semantic category for execution sections (tool calls only). Absent for
+   * reasoning/output sections and for non-tool execution blocks (approval,
+   * user_input, compaction, system) which keep their original flat grouping. */
+  category?: ToolCategory
 }
 
+/**
+ * Group process blocks into sections. Execution blocks are segmented by tool
+ * category: consecutive tool calls of the SAME category merge into one node,
+ * but a category change (or a non-tool block) starts a new node. This yields a
+ * timeline like read(2) · edit(1) · read(1) instead of one flat batch.
+ *
+ * Non-tool execution blocks (approval / user_input / compaction / system) have
+ * no category and merge with each other as before.
+ */
 export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
   const sections: ProcessSection[] = []
 
@@ -30,14 +52,22 @@ export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
         : block.kind === 'assistant'
           ? 'output'
           : 'execution'
+    const category = kind === 'execution' && block.kind === 'tool' ? classifyToolCategory(block) : undefined
     const last = sections[sections.length - 1]
-    if (last && last.kind === kind) {
+    // Merge only into an execution section of the SAME category. A category
+    // change breaks the run so each typed node stays distinct.
+    if (
+      last &&
+      last.kind === kind &&
+      (kind !== 'execution' || last.category === category)
+    ) {
       last.blocks.push(block)
       continue
     }
     sections.push({
-      id: `${kind}-${block.id}`,
+      id: `${kind}-${category ?? ''}-${block.id}`,
       kind,
+      ...(category ? { category } : {}),
       blocks: [block]
     })
   }
@@ -111,13 +141,18 @@ export function ProcessSectionRow({
   processing,
   reasoningDurationMs,
   singleReasoningSection,
-  viewportRef
+  viewportRef,
+  nowMs
 }: {
   section: ProcessSection
   processing: boolean
   reasoningDurationMs?: number
   singleReasoningSection: boolean
   viewportRef: RefObject<HTMLDivElement | null>
+  /** Ticking clock (epoch ms) from the parent's 1s interval; drives live
+   * duration badges while tools run. Falls back to Date.now() when absent
+   * (e.g. in unit tests). */
+  nowMs?: number
 }): ReactElement {
   const { t } = useTranslation('common')
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null)
@@ -160,7 +195,7 @@ export function ProcessSectionRow({
   if (section.kind === 'execution' && section.blocks.length === 1) {
     const [block] = section.blocks
     if (block) {
-      return <ProcessEntryRow block={block} processing={processing} />
+      return <ProcessEntryRow block={block} processing={processing} nowMs={nowMs} />
     }
   }
 
@@ -198,7 +233,9 @@ export function ProcessSectionRow({
               <span className="h-2 w-2 rounded-full bg-red-500 dark:bg-red-300" />
             </span>
           ) : null}
+          <CategoryIcon category={section.category} className="h-3.5 w-3.5 shrink-0 opacity-60" />
           <span className={active && !hasError ? 'ds-shiny-text' : ''}>{title}</span>
+          <ExecutionGroupBadge section={section} processing={processing} hasError={hasError} t={t} nowMs={nowMs} />
           {expanded ? (
             <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-45" strokeWidth={1.8} />
           ) : (
@@ -216,7 +253,9 @@ export function ProcessSectionRow({
               <span className="h-2 w-2 rounded-full bg-red-500 dark:bg-red-300" />
             </span>
           ) : null}
+          <CategoryIcon category={section.category} className="h-3.5 w-3.5 shrink-0 opacity-60" />
           <span className={active && !hasError ? 'ds-shiny-text' : ''}>{title}</span>
+          <ExecutionGroupBadge section={section} processing={processing} hasError={hasError} t={t} nowMs={nowMs} />
         </div>
       )}
 
@@ -232,7 +271,7 @@ export function ProcessSectionRow({
               <AssistantMarkdown text={reasoningText} streaming={active && processing} />
             </div>
           ) : (
-            <ProcessStackRows blocks={section.blocks} processing={processing} />
+            <ProcessStackRows blocks={section.blocks} processing={processing} nowMs={nowMs} />
           )
           ) : null}
         </div>
@@ -272,12 +311,94 @@ function processBlockHasError(block: ChatBlock): boolean {
   )
 }
 
+/** Category glyph for a typed execution section. Null for non-tool sections. */
+function CategoryIcon({
+  category,
+  className
+}: {
+  category: ToolCategory | undefined
+  className?: string
+}): ReactElement | null {
+  if (!category) return null
+  const Icon =
+    category === 'terminal'
+      ? Terminal
+      : category === 'search'
+        ? SearchCode
+        : category === 'read'
+          ? FileText
+          : category === 'edit'
+            ? FileEdit
+            : category === 'write'
+              ? FilePlus
+              : category === 'web'
+                ? Globe
+                : Wrench
+  return <Icon className={className} strokeWidth={1.9} />
+}
+
+/**
+ * L2 group badge: while any tool in the group is running, show a live duration;
+ * once the group is done with failures, show "Failed" in red; once done with
+ * all-success, show nothing. `nowMs` is the ticking clock (re-rendered every
+ * second by the parent) so the running duration stays live.
+ */
+function ExecutionGroupBadge({
+  section,
+  processing,
+  hasError,
+  t,
+  nowMs = Date.now()
+}: {
+  section: ProcessSection
+  processing: boolean
+  hasError: boolean
+  t: (key: string, opts?: Record<string, unknown>) => string
+  nowMs?: number
+}): ReactElement | null {
+  if (section.kind !== 'execution' || !section.category) return null
+  const toolBlocks = section.blocks.filter(
+    (block): block is ToolBlock => block.kind === 'tool'
+  )
+  if (toolBlocks.length === 0) return null
+
+  // While processing and any tool is still running: live duration.
+  const hasRunning = processing && toolBlocks.some((block) => block.status === 'running')
+  if (hasRunning) {
+    const runningMs = toolBlocks
+      .filter((block) => block.status === 'running')
+      .reduce((sum, block) => sum + toolRunningDurationMs(block, nowMs), 0)
+    // If no started_at is available, fall back to the group's finished duration.
+    const finishedMs = toolBlocks.reduce((sum, block) => sum + toolDurationMs(block), 0)
+    const total = runningMs || finishedMs
+    if (total <= 0) return null
+    return (
+      <span className="ml-0.5 text-[12px] font-normal text-ds-faint">
+        {formatDuration(total)}
+      </span>
+    )
+  }
+
+  // Group finished with errors: show Failed.
+  if (hasError) {
+    return (
+      <span className="ml-0.5 text-[12px] font-normal text-red-600 dark:text-red-300">
+        {t('execFailed')}
+      </span>
+    )
+  }
+
+  return null
+}
+
 function ProcessStackRows({
   blocks,
-  processing
+  processing,
+  nowMs
 }: {
   blocks: ChatBlock[]
   processing: boolean
+  nowMs?: number
 }): ReactElement {
   const { t } = useTranslation('common')
   const [openBlockId, setOpenBlockId] = useState<string | null>(null)
@@ -367,6 +488,7 @@ function ProcessStackRows({
                   )}
                 </button>
               ) : null}
+              <ProcessEntryBadge block={block} processing={processing} t={t} nowMs={nowMs} />
             </div>
             {open ? (
               detail.kind === 'assistant' ? (
@@ -386,13 +508,86 @@ function ProcessStackRows({
   )
 }
 
-/** One line inside an execution section. */
-function ProcessEntryRow({
+/**
+ * L3 per-step badge. Terminal commands show their exit status when finished
+ * (success / exit code N); other tool types show "Failed" on error. While a
+ * tool is running, all types show a live duration. Success with no running
+ * state shows nothing.
+ */
+function ProcessEntryBadge({
   block,
-  processing
+  processing,
+  t,
+  nowMs = Date.now()
 }: {
   block: ChatBlock
   processing: boolean
+  t: (key: string, opts?: Record<string, unknown>) => string
+  nowMs?: number
+}): ReactElement | null {
+  if (block.kind !== 'tool') return null
+  const isRunning = processing && block.status === 'running'
+
+  // Running: live duration (all types).
+  if (isRunning) {
+    const ms = toolRunningDurationMs(block, nowMs) || toolDurationMs(block)
+    if (ms <= 0) return null
+    return (
+      <span className="ml-0.5 shrink-0 text-[12px] font-normal text-ds-faint">
+        {formatDuration(ms)}
+      </span>
+    )
+  }
+
+  const category = classifyToolCategory(block)
+
+  // Terminal: exit status when finished.
+  if (category === 'terminal') {
+    const exit = toolExitCode(block)
+    if (exit === null) {
+      // No exit code recorded — fall back to error badge if it failed.
+      if (block.status === 'error') {
+        return (
+          <span className="ml-0.5 shrink-0 text-[12px] font-normal text-red-600 dark:text-red-300">
+            {t('execFailed')}
+          </span>
+        )
+      }
+      return null
+    }
+    if (exit === 0) {
+      return (
+        <span className="ml-0.5 shrink-0 text-[12px] font-normal text-emerald-600 dark:text-emerald-400">
+          {t('execSuccess')}
+        </span>
+      )
+    }
+    return (
+      <span className="ml-0.5 shrink-0 text-[12px] font-normal text-red-600 dark:text-red-300">
+        {t('execExitCode', { code: exit })}
+      </span>
+    )
+  }
+
+  // Other types: only surface failures.
+  if (block.status === 'error') {
+    return (
+      <span className="ml-0.5 shrink-0 text-[12px] font-normal text-red-600 dark:text-red-300">
+        {t('execFailed')}
+      </span>
+    )
+  }
+
+  return null
+}
+function ProcessEntryRow({
+  block,
+  processing,
+  nowMs
+}: {
+  block: ChatBlock
+  processing: boolean
+  nowMs?: number
 }): ReactElement {
   const { t } = useTranslation('common')
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
@@ -484,6 +679,7 @@ function ProcessEntryRow({
             )}
           </button>
         ) : null}
+        <ProcessEntryBadge block={block} processing={processing} t={t} nowMs={nowMs} />
       </div>
       <RuntimeMetaBadges block={block} t={t} />
       {canExpand && open ? (
@@ -534,13 +730,28 @@ function describeProcessSection(
     return describeProcessBlock(section.blocks[0], t)
   }
 
-  return summarizeExecutionSection(section.blocks, t)
+  return summarizeExecutionSection(section.blocks, t, section.category)
 }
 
 function summarizeExecutionSection(
   blocks: ChatBlock[],
-  t: (key: string, opts?: Record<string, unknown>) => string
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  category?: ToolCategory
 ): string {
+  // Typed node: a single category group produced by groupProcessSections.
+  // Count only the tool blocks (the section may also carry non-tool blocks like
+  // a pending approval in legacy/manual sections).
+  if (category) {
+    const toolCount = blocks.filter((block) => block.kind === 'tool').length
+    if (toolCount > 0) {
+      const key = categoryGroupKey(category)
+      // Categories with singular/plural i18n variants use the {{count}} form.
+      return t(key, { count: toolCount })
+    }
+  }
+
+  // Fallback (mixed/legacy section with no single category): keep the old
+  // composite summary so manually-built sections still render sensibly.
   let fileCount = 0
   let commandCount = 0
   let toolCount = 0

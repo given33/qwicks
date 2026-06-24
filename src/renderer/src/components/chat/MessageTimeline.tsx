@@ -360,6 +360,7 @@ export function MessageTimeline({
                 onBuildPlan={onBuildPlan}
                 onOpenPlan={onOpenPlan}
                 viewportRef={containerRef}
+                nowMs={tickNow}
                 compactCards={compactCards}
               />
             </div>
@@ -407,6 +408,7 @@ export function MessageTimeline({
               if (typeof first !== 'number' || typeof last !== 'number') return undefined
               return Math.max(0, last - first)
             })()}
+            nowMs={tickNow}
           />
         ) : null}
         <div ref={endRef} aria-hidden className="h-px w-full shrink-0" />
@@ -427,6 +429,7 @@ function MessageTurn({
   onBuildPlan,
   onOpenPlan,
   viewportRef,
+  nowMs,
   compactCards = false
 }: {
   turn: Turn
@@ -440,6 +443,8 @@ function MessageTurn({
   onBuildPlan?: () => void
   onOpenPlan?: () => void
   viewportRef: RefObject<HTMLDivElement | null>
+  /** Ticking clock for live duration badges; only meaningful while processing. */
+  nowMs?: number
   compactCards?: boolean
 }): ReactElement {
   const workspaceRoot = useChatStore((s) => s.workspaceRoot)
@@ -558,6 +563,7 @@ function MessageTurn({
                   reasoningDurationMs={reasoningDurationMs}
                   singleReasoningSection={reasoningSectionCount === 1}
                   viewportRef={viewportRef}
+                  nowMs={nowMs}
                 />
               ))}
             </div>
@@ -663,5 +669,6 @@ const MemoMessageTurn = memo(MessageTurn, (prev, next) => (
   prev.onBuildPlan === next.onBuildPlan &&
   prev.onOpenPlan === next.onOpenPlan &&
   prev.compactCards === next.compactCards &&
-  prev.viewportRef === next.viewportRef
+  prev.viewportRef === next.viewportRef &&
+  prev.nowMs === next.nowMs
 ))
