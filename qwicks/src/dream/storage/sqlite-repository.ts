@@ -171,6 +171,18 @@ CREATE TABLE IF NOT EXISTS dream_job (
 );
 CREATE INDEX IF NOT EXISTS ix_dreamjob_status ON dream_job(status, due_at);
 CREATE INDEX IF NOT EXISTS ix_dreamjob_user ON dream_job(user_id);
+
+-- Batch A(spec §1.4):迁移日志,记录一次性迁移(如 file_to_dream),防止重跑。
+CREATE TABLE IF NOT EXISTS migration_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    migrated_count INTEGER NOT NULL,
+    skipped_count INTEGER NOT NULL,
+    failed_count INTEGER NOT NULL,
+    error TEXT,
+    ran_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_migration_kind ON migration_log(kind);
 `
 
 interface MemoryRow {
@@ -396,6 +408,36 @@ export class SqliteMemoryRepository implements MemoryRepository {
     return row ? this.rowToItem(row) : null
   }
 
+  /**
+   * v3(B2+B3+B5 合并写侧):一次批量 UPDATE 强化被注入的记忆。
+   * - last_used_at = at                      (B3:使用时间;B5 recency 读它)
+   * - importance  = MIN(1.0, importance+boost)   (B2:强化封顶)
+   * - salience    = MIN(1.0, salience+salienceBoost)
+   * **不写 event log、不同步 source_link、不碰 updated_at**(B5 时效语义保护)。
+   * 单条 prepared statement + 事务,空 ids 数组是 no-op。
+   */
+  reinforceUsed(
+    ids: readonly string[],
+    opts: { boost?: number; salienceBoost?: number; at?: string } = {}
+  ): void {
+    if (ids.length === 0) return
+    const boost = opts.boost ?? 0.05
+    const salienceBoost = opts.salienceBoost ?? 0
+    const at = opts.at ?? this.now()
+    const placeholders = ids.map(() => '?').join(',')
+    const stmt = this.db.prepare(
+      /* sql */ `
+        UPDATE memory SET
+          last_used_at = ?,
+          importance = MIN(1.0, importance + ?),
+          salience = MIN(1.0, salience + ?)
+        WHERE id IN (${placeholders})
+      `
+    )
+    // better-sqlite3 支持数组解构绑定
+    stmt.run(at, boost, salienceBoost, ...ids)
+  }
+
   list(userId?: string, filter: ListFilter = {}): MemoryItem[] {
     const where: string[] = ['1=1']
     const params: unknown[] = []
@@ -434,8 +476,10 @@ export class SqliteMemoryRepository implements MemoryRepository {
     }
     if (filter.hasSourceId) {
       // JSON array containment: source_ids LIKE '%"sourceId"%'
-      where.push('source_ids LIKE ?')
-      params.push(`%"${filter.hasSourceId.replace(/"/g, '\\"')}"%`)
+      // B10 修复:LIKE 必须指定 ESCAPE 子句,否则 source id 里的 `_`/`%` 会被当通配符
+      // → 误匹配(回退路径有风险,JOIN 路径掩盖了它)。转义 `_`/`%`/`\` 并用 ESCAPE '\'。
+      where.push("source_ids LIKE ? ESCAPE '\\'")
+      params.push(`%"${escapeLike(filter.hasSourceId)}"%`)
     }
     const sql = `SELECT * FROM memory WHERE ${where.join(' AND ')} ORDER BY updated_at DESC`
     const rows = this.db.prepare(sql).all(...params) as MemoryRow[]
@@ -567,6 +611,55 @@ export class SqliteMemoryRepository implements MemoryRepository {
       // memory_source_link 表可能不存在(极老 DB)→ 静默跳过
     }
     return { backfilled }
+  }
+
+  /**
+   * Batch A(spec §1.4):读取某类迁移的最近一次记录(成功或失败),用于判定是否还需再跑。
+   * 返回 null 表示该 kind 从未运行过。
+   */
+  lastMigration(kind: string): {
+    kind: string
+    migratedCount: number
+    skippedCount: number
+    failedCount: number
+    ranAt: string
+  } | null {
+    const row = this.db
+      .prepare(
+        /* sql */ `SELECT kind, migrated_count, skipped_count, failed_count, ran_at FROM migration_log WHERE kind = ? ORDER BY id DESC LIMIT 1`
+      )
+      .get(kind) as
+      | {
+          kind: string
+          migrated_count: number
+          skipped_count: number
+          failed_count: number
+          ran_at: string
+        }
+      | undefined
+    if (!row) return null
+    return {
+      kind: row.kind,
+      migratedCount: row.migrated_count,
+      skippedCount: row.skipped_count,
+      failedCount: row.failed_count,
+      ranAt: row.ran_at
+    }
+  }
+
+  /** Batch A(spec §1.4):记录一次迁移运行(成功或失败,均写入供 lastMigration 查询)。 */
+  recordMigration(entry: {
+    kind: string
+    migratedCount: number
+    skippedCount: number
+    failedCount: number
+    error?: string
+  }): void {
+    this.db
+      .prepare(
+        /* sql */ `INSERT INTO migration_log (kind, migrated_count, skipped_count, failed_count, error, ran_at) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(entry.kind, entry.migratedCount, entry.skippedCount, entry.failedCount, entry.error ?? null, this.now())
   }
 
   saveChat(
@@ -737,9 +830,9 @@ export class SqliteMemoryRepository implements MemoryRepository {
     }
     const rows = this.db
       .prepare(
-        /* sql */ `SELECT * FROM memory WHERE user_id=? AND source_ids LIKE ? ORDER BY updated_at DESC`
+        /* sql */ `SELECT * FROM memory WHERE user_id=? AND source_ids LIKE ? ESCAPE '\\' ORDER BY updated_at DESC`
       )
-      .all(userId, `%"${sourceId.replace(/"/g, '\\"')}"%`) as MemoryRow[]
+      .all(userId, `%"${escapeLike(sourceId)}"%`) as MemoryRow[]
     return rows.map((r) => this.rowToItem(r))
   }
 
@@ -966,8 +1059,11 @@ export class SqliteMemoryRepository implements MemoryRepository {
       }>
     const claimed: Array<{ id: string; type: string; userId: string; payload: unknown; attempts: number }> = []
     for (const row of rows) {
+      // B12 修复:UPDATE 加 `AND status IN ('pending','retrying')` 守卫。
+      // 旧版只有 `WHERE id=?`,单进程同步 SQLite 下安全,但多 worker / 状态被
+      // 外部改动后会双取/重取已 running 的 job。
       this.db
-        .prepare(/* sql */ `UPDATE dream_job SET status='running', locked_at=?, attempts=attempts+1 WHERE id=?`)
+        .prepare(/* sql */ `UPDATE dream_job SET status='running', locked_at=?, attempts=attempts+1 WHERE id=? AND status IN ('pending','retrying')`)
         .run(now, row.id)
       let payload: unknown = null
       if (row.payload) {
@@ -1003,6 +1099,9 @@ export class SqliteMemoryRepository implements MemoryRepository {
 
   /** 查询 dream job 统计(observability)。 */
   dreamJobStats(userId?: string): { pending: number; running: number; retrying: number; dead: number; completed: number; lastCompletedAt: string | null } {
+    // B4 修复:无 userId 时 where='' 会拼出 `FROM dream_job  AND status='completed'`
+    // (悬空 AND),且 `.replace('WHERE  AND','WHERE')` 匹配不到(串里没 WHERE)→ SQL 语法错。
+    // 全局观测查询(dreamJobStats())必崩。改为两个查询各自构造正确的 WHERE 子句。
     const where = userId ? `WHERE user_id=?` : ``
     const params = userId ? [userId] : []
     const counts = this.db
@@ -1016,8 +1115,11 @@ export class SqliteMemoryRepository implements MemoryRepository {
         FROM dream_job ${where}`
       )
       .get(...params) as { pending: number; running: number; retrying: number; dead: number; completed: number } | undefined
+    // lastCompleted 单独构造 WHERE:无 userId 时 `WHERE status='completed'`,
+    // 有 userId 时 `WHERE user_id=? AND status='completed'`(不再用 .replace hack)。
+    const lastCompletedWhere = userId ? `WHERE user_id=? AND status='completed'` : `WHERE status='completed'`
     const lastCompleted = this.db
-      .prepare(/* sql */ `SELECT completed_at FROM dream_job ${where} AND status='completed' ORDER BY completed_at DESC LIMIT 1`.replace('WHERE  AND', 'WHERE'))
+      .prepare(/* sql */ `SELECT completed_at FROM dream_job ${lastCompletedWhere} ORDER BY completed_at DESC LIMIT 1`)
       .get(...params) as { completed_at: string } | undefined
     return {
       pending: counts?.pending ?? 0,
@@ -1251,6 +1353,15 @@ function boolFromInt(n: number | null | undefined): boolean {
 
 function placeholders(n: number): string {
   return Array.from({ length: n }, () => '?').join(',')
+}
+
+/**
+ * B10:转义 LIKE 模式中的通配符 `_`/`%` 和转义符 `\` 自身。
+ * 配合 SQL 里的 `ESCAPE '\'` 子句使用,保证 source id 含这些字符时精确匹配,
+ * 不被 SQLite 当成通配符误匹配。
+ */
+function escapeLike(value: string): string {
+  return value.replace(/[_%\\]/g, '\\$&')
 }
 
 function defaultNewId(): string {
