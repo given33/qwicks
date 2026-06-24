@@ -353,6 +353,33 @@ export async function dreamEmbeddingHealth(system: DreamMemorySystem | undefined
   })
 }
 
+/**
+ * 7(差距7):获取用户记忆设置(三开关:saved memories / chat history / connectors)。
+ */
+export async function dreamGetMemorySettings(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  const settings = dream.repository.getMemorySettings(userId)
+  return jsonResponse({ userId, ...settings })
+}
+
+/**
+ * 7(差距7):更新用户记忆设置。
+ */
+export async function dreamSetMemorySettings(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse | Response> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const url = new URL(request.url)
+  const userId = url.searchParams.get('user_id') ?? 'default'
+  const body = await readJsonBody(request)
+  if (!body.ok) return body.response
+  const v = body.value as { savedMemoriesEnabled?: boolean; chatHistoryEnabled?: boolean; connectorsEnabled?: boolean }
+  dream.repository.setMemorySettings(userId, v)
+  return jsonResponse({ userId, ...dream.repository.getMemorySettings(userId) })
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

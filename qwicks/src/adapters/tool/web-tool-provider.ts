@@ -169,12 +169,19 @@ function createSearchTool(config: WebCapabilityConfig, provider: WebProvider) {
       const userQuery = pickString(args.query)
       if (!userQuery) return toolError('invalid_query', 'query is required')
       if (!provider.search) return toolError('provider_unavailable', 'web search provider is unavailable')
-      // v3(P1-3 报告 §10):若 Dream 基于记忆改写了查询,用改写后的增强查询搜索。
-      // 例:用户问"附近餐厅",记忆里有 vegan + SF → 改写成"vegan restaurant San Francisco"。
+      // v3(差距8):若 Dream 基于记忆改写了查询,用改写后的增强查询搜索。
+      // 旧版只在 query === originalQuery 时替换(精确字符串相等),但模型常会改写
+      // 查询(如"附近餐厅"→"best restaurants near me"),导致 rewrite 不生效。
+      // 新版:只要 memoryRewrite 存在且 originalQuery 有显著重叠(意图匹配)就应用。
       const memoryRewrite = context.memoryRewrite
-      const query = memoryRewrite && memoryRewrite.originalQuery.trim().toLowerCase() === userQuery.trim().toLowerCase()
-        ? memoryRewrite.rewrittenQuery
-        : userQuery
+      const applyRewrite = memoryRewrite && (
+        // 精确匹配(旧行为)
+        memoryRewrite.originalQuery.trim().toLowerCase() === userQuery.trim().toLowerCase() ||
+        // 意图匹配:query 是 originalQuery 的子串,或 vice versa(模型改写了但意图相同)
+        memoryRewrite.originalQuery.trim().toLowerCase().includes(userQuery.trim().toLowerCase().split(' ')[0] ?? '') ||
+        userQuery.trim().toLowerCase().includes(memoryRewrite.originalQuery.trim().toLowerCase().split(' ')[0] ?? '')
+      )
+      const query = applyRewrite ? memoryRewrite!.rewrittenQuery : userQuery
       const limit = boundedInt(args.limit, DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT)
       const timeoutMs = boundedInt(args.timeout_ms, DEFAULT_WEB_TIMEOUT_MS, 1, DEFAULT_WEB_TIMEOUT_MS)
       try {

@@ -46,6 +46,9 @@ export function DreamMemorySummarySection({
     getDreamDreamingStatus?: (userId: string) => Promise<{ dirtyCount: number; isDirty: boolean }>
     getDreamSources?: (userId: string) => Promise<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>>
     getDreamSuppressions?: (userId: string) => Promise<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>
+    // 7(差距7):三开关
+    getDreamMemorySettings?: (userId: string) => Promise<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>
+    setDreamMemorySettings?: (userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>) => Promise<void>
   }
 }): ReactElement {
   const [summary, setSummary] = useState<DreamMemorySummaryJson | null>(null)
@@ -59,6 +62,8 @@ export function DreamMemorySummarySection({
   const [suppressions, setSuppressions] = useState<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>([])
   const [dreamingStatus, setDreamingStatus] = useState<{ dirtyCount: number; isDirty: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
+  // 7(差距7):三开关状态
+  const [memSettings, setMemSettings] = useState<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean } | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -71,6 +76,7 @@ export function DreamMemorySummarySection({
 
   useEffect(() => {
     void reload()
+    void loadMemorySettings()
   }, [reload])
 
   const handleSuppress = async (memoryId: string): Promise<void> => {
@@ -152,6 +158,16 @@ export function DreamMemorySummarySection({
     }
   }
 
+  // 7(差距7):加载三开关设置
+  const loadMemorySettings = async (): Promise<void> => {
+    if (!qwicks.getDreamMemorySettings) return
+    try {
+      setMemSettings(await qwicks.getDreamMemorySettings(userId))
+    } catch {
+      // fail-open: API 不支持时保持 null(显示旧按钮)
+    }
+  }
+
   if (error) {
     return (
       <SettingsCard title="Dream 记忆摘要">
@@ -194,21 +210,70 @@ export function DreamMemorySummarySection({
         }
       />
 
-      {/* v3(P1-4 报告 §6.3):Reference chat history 开关 */}
-      <SettingRow
-        title="关闭参考聊天历史"
-        description="删除由历史聊天推断的记忆,保留显式保存的记忆和原始聊天(对齐文档 §3)。"
-        control={
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleDisableRefChat()}
-            className="px-3 py-1 rounded text-xs bg-amber-700 text-zinc-100 hover:bg-amber-600 disabled:opacity-50"
-          >
-            关闭参考历史
-          </button>
-        }
-      />
+      {/* 7(差距7):完整三开关 UI — Saved memories / Chat history / Connectors */}
+      {memSettings && qwicks.setDreamMemorySettings && (
+        <>
+          <SettingRow
+            title="显式保存的记忆"
+            description="用户明确要求记住的事实、偏好、说明。关闭后不再读取已保存的记忆。"
+            control={
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { const next = { ...memSettings, savedMemoriesEnabled: !memSettings.savedMemoriesEnabled }; setMemSettings(next); void qwicks.setDreamMemorySettings?.(userId, { savedMemoriesEnabled: next.savedMemoriesEnabled }) }}
+                className={`px-3 py-1 rounded text-xs ${memSettings.savedMemoriesEnabled ? 'bg-emerald-700 text-zinc-100' : 'bg-zinc-700 text-zinc-400'}`}
+              >
+                {memSettings.savedMemoriesEnabled ? '✓ 开启' : '已关闭'}
+              </button>
+            }
+          />
+          <SettingRow
+            title="参考聊天历史"
+            description="从历史聊天中自动推断长期上下文。关闭后不再从新聊天抽取记忆,旧推断记忆也被过滤。"
+            control={
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { const next = { ...memSettings, chatHistoryEnabled: !memSettings.chatHistoryEnabled }; setMemSettings(next); void qwicks.setDreamMemorySettings?.(userId, { chatHistoryEnabled: next.chatHistoryEnabled }); if (!next.chatHistoryEnabled) void handleDisableRefChat() }}
+                className={`px-3 py-1 rounded text-xs ${memSettings.chatHistoryEnabled ? 'bg-emerald-700 text-zinc-100' : 'bg-zinc-700 text-zinc-400'}`}
+              >
+                {memSettings.chatHistoryEnabled ? '✓ 开启' : '已关闭'}
+              </button>
+            }
+          />
+          <SettingRow
+            title="连接器记忆 (Gmail / Drive)"
+            description="从 Gmail、Drive 等连接来源推断记忆。关闭后不再读取连接器推断的记忆。"
+            control={
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { const next = { ...memSettings, connectorsEnabled: !memSettings.connectorsEnabled }; setMemSettings(next); void qwicks.setDreamMemorySettings?.(userId, { connectorsEnabled: next.connectorsEnabled }) }}
+                className={`px-3 py-1 rounded text-xs ${memSettings.connectorsEnabled ? 'bg-emerald-700 text-zinc-100' : 'bg-zinc-700 text-zinc-400'}`}
+              >
+                {memSettings.connectorsEnabled ? '✓ 开启' : '已关闭'}
+              </button>
+            }
+          />
+        </>
+      )}
+      {/* 旧的单独"关闭参考历史"按钮已被三开关取代,保留兼容(无 settings API 时显示) */}
+      {!memSettings && (
+        <SettingRow
+          title="关闭参考聊天历史"
+          description="删除由历史聊天推断的记忆,保留显式保存的记忆和原始聊天(对齐文档 §3)。"
+          control={
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleDisableRefChat()}
+              className="px-3 py-1 rounded text-xs bg-amber-700 text-zinc-100 hover:bg-amber-600 disabled:opacity-50"
+            >
+              关闭参考历史
+            </button>
+          }
+        />
+      )}
 
       {/* v3(P1-6 报告 §9):Dreaming 手动触发 + 状态 */}
       <SettingRow

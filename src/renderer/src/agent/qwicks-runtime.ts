@@ -868,6 +868,23 @@ export class QWicksRuntimeProvider implements AgentProvider {
     return readRuntimeJson<{ suppressions: Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }> }>(response.body, 'invalid suppressions response').suppressions ?? []
   }
 
+  // 7(差距7):记忆三开关
+  async getDreamMemorySettings(userId = 'default'): Promise<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/memory-settings?user_id=${encodeURIComponent(userId)}`, 'GET'
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to get memory settings'))
+    const body = readRuntimeJson<{ savedMemoriesEnabled?: boolean; chatHistoryEnabled?: boolean; connectorsEnabled?: boolean }>(response.body, 'invalid settings response')
+    return { savedMemoriesEnabled: body.savedMemoriesEnabled ?? true, chatHistoryEnabled: body.chatHistoryEnabled ?? true, connectorsEnabled: body.connectorsEnabled ?? true }
+  }
+
+  async setDreamMemorySettings(userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>): Promise<void> {
+    const response = await rendererRuntimeClient.runtimeRequest(
+      `/v1/dream/memory-settings?user_id=${encodeURIComponent(userId)}`, 'POST', JSON.stringify(settings)
+    )
+    if (!response.ok) throw runtimeErrorToError(readRuntimeError(response.body, 'failed to set memory settings'))
+  }
+
   async forkThread(
     threadId: string,
     options?: { relation?: 'primary' | 'fork' | 'side'; title?: string; turnId?: string }

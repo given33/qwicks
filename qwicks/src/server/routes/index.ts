@@ -71,7 +71,9 @@ import {
   dreamDisableReferenceChatHistory,
   dreamTriggerDreaming,
   dreamDreamingStatus,
-  dreamEmbeddingHealth
+  dreamEmbeddingHealth,
+  dreamGetMemorySettings,
+  dreamSetMemorySettings
 } from './dream.js'
 import {
   meshModelsResponse,
@@ -272,6 +274,15 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('GET', '/v1/dream/embedding/health', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamEmbeddingHealth(runtime.dreamSystem)
+  })
+  // 7(差距7):记忆三开关(saved/chat history/connectors)
+  router.add('GET', '/v1/dream/memory-settings', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamGetMemorySettings(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/memory-settings', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamSetMemorySettings(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

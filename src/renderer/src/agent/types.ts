@@ -517,6 +517,10 @@ export interface AgentProvider {
   getDreamSources?(userId?: string, sourceType?: string): Promise<Array<{ id: string; source_type: string; title: string | null; external_ref: string | null; deleted: boolean }>>
   /** 列出抑制规则(Don't mention this again)。 */
   getDreamSuppressions?(userId?: string): Promise<Array<{ id: string; scope: string; target: string; reason: string | null; active: boolean }>>
+  /** 7(差距7):获取记忆三开关设置。 */
+  getDreamMemorySettings?(userId?: string): Promise<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>
+  /** 7(差距7):更新记忆三开关设置。 */
+  setDreamMemorySettings?(userId: string, settings: Partial<{ savedMemoriesEnabled: boolean; chatHistoryEnabled: boolean; connectorsEnabled: boolean }>): Promise<void>
   steerUserMessage?(threadId: string, turnId: string, text: string): Promise<void>
   interruptTurn(threadId: string, turnId: string, options?: { discard?: boolean }): Promise<void>
   renameThread(threadId: string, title: string): Promise<void>

@@ -905,10 +905,12 @@ export class DreamMemorySystem {
           sourceType: SourceType.GMAIL,
           externalRef: m.id,
           title: full.subject ?? '(no subject)',
-          content: full.snippet
+          content: full.snippet,
+          // 9(差距9):规范 connector 外键,revoke 精确匹配(不再靠字符串包含)
+          attrs: { connectorAccountId: account, connectorProvider: 'gmail' }
         })
         gmailSourceId = source.id
-      } catch { /* fail-open: 谱系缺失不阻断摄入 */ }
+      } catch { /* fail-open */ }
       const drafts = gmail.extractDrafts(full, account)
       for (const d of drafts) {
         // 3.3(工业级):connector ingest 必须走 sanitizer(PII/injection/secret 过滤)
@@ -942,7 +944,8 @@ export class DreamMemorySystem {
           sourceType: SourceType.DRIVE,
           externalRef: f.id,
           title: f.name,
-          content
+          content,
+          attrs: { connectorAccountId: account, connectorProvider: 'drive' }
         })
         driveSourceId = source.id
       } catch { /* fail-open */ }
@@ -977,8 +980,11 @@ export class DreamMemorySystem {
     const affectedSourceIds: string[] = []
     const affectedMemoryIds: string[] = []
     for (const src of sources) {
-      // 匹配 account(externalRef 或 title 含 account,或 metadata)
-      const isMatch = src.externalRef?.includes(account) || src.title?.includes(account) || src.userId === account
+      // 9(差距9):优先用规范外键 connectorAccountId 精确匹配,
+      // 回退到 externalRef/title/userId 字符串匹配(向后兼容)。
+      const connectorAcct = src.attrs?.connectorAccountId as string | undefined
+      const isMatch = connectorAcct === account ||
+        src.externalRef?.includes(account) || src.title?.includes(account) || src.userId === account
       if (!isMatch) continue
       affectedSourceIds.push(src.id)
       // 用 memory_source_link 精确查派生
