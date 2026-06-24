@@ -2531,9 +2531,8 @@ export function Workbench(): ReactElement {
           </>
         ) : (
           <>
-        {visibleRuntimeError && !(runtimeConnection !== 'ready' && !activeThreadId)
-          ? renderRuntimeBanner(visibleRuntimeError, visibleRuntimeErrorDetail)
-          : null}
+        {/* Runtime errors now surface in-conversation and above the composer
+            (ComposerErrorBar) instead of a top banner — see task 1/2. */}
 
         <div className="flex min-h-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1">
