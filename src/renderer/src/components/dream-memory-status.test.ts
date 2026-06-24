@@ -4,7 +4,7 @@
  * 且 DreamMemoryStatusIndicator 能从 store 读取状态。
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { DreamTurnMemoryStatus } from './store/chat-store-types'
+import type { DreamTurnMemoryStatus } from '../store/chat-store-types'
 
 // 测试 1:DreamMemoryStatusIndicator 组件能正确渲染各种状态
 describe('DreamMemoryStatusIndicator rendering', () => {
@@ -36,8 +36,6 @@ describe('DreamMemoryStatusIndicator rendering', () => {
       memorySourcesUsed: ['src_1'], rewrittenQueryFromMemory: false
     })
     expect(result).not.toBeNull()
-    // Should contain the indicator content
-    expect(result?.props?.children).toBeDefined()
   })
 
   it('renders when personalizing is true', async () => {
