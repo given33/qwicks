@@ -42,6 +42,7 @@ export const RuntimeEventKind = z.enum([
   'pipeline_stage',
   'usage',
   'error',
+  'model_retry',
   'heartbeat',
   'memory_status',
   'memory_sources_ready'
@@ -250,6 +251,18 @@ export const ErrorEvent = RuntimeEventBase.extend({
 })
 export type ErrorEvent = z.infer<typeof ErrorEvent>
 
+/**
+ * 模型请求连接重试事件。当模型请求失败后、即将进行下一次重试前推送,
+ * 让 GUI 在模型输出区覆盖显示"正在重连(第 x/5 次)"。
+ */
+export const ModelRetryEvent = RuntimeEventBase.extend({
+  kind: z.literal('model_retry'),
+  attempt: z.number().int().positive(),
+  maxAttempts: z.number().int().positive(),
+  reason: z.string()
+})
+export type ModelRetryEvent = z.infer<typeof ModelRetryEvent>
+
 export const HeartbeatEvent = RuntimeEventBase.extend({
   kind: z.literal('heartbeat')
 })
@@ -304,6 +317,7 @@ export const RuntimeEvent = z.discriminatedUnion('kind', [
   PipelineStageEvent,
   UsageEvent,
   ErrorEvent,
+  ModelRetryEvent,
   HeartbeatEvent,
   MemoryStatusEvent,
   MemorySourcesReadyEvent

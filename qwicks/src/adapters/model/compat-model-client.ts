@@ -15,7 +15,6 @@ import {
   modelEndpointPath,
   normalizeModelEndpointFormat,
   resolveModelEndpointFormat,
-  usesChatCompletionsShape,
   type ModelEndpointFormat
 } from '../../contracts/model-endpoint-format.js'
 import { createProxyFetch } from './proxy-fetch.js'
@@ -258,22 +257,48 @@ export class CompatModelClient implements ModelClient {
     }
     const headers = this.buildHeaders(stream, endpointFormat)
     let result = await this.postChatCompletion(url, headers, body, request.abortSignal)
-    // Retry transient gateway failures (502/503/504) a few times before giving
-    // up. These are upstream load-balancer hiccups (e.g. an ALB returning
-    // "502 Bad Gateway"), not request errors — failing the whole turn on the
-    // first blip is needlessly fragile, especially for flaky providers. No
-    // response body has been streamed yet, so re-POSTing the same request is
-    // safe. Aborts short-circuit the backoff.
-    for (let attempt = 0; attempt < MAX_TRANSIENT_RETRIES; attempt += 1) {
-      if (result.kind === 'error') break
-      if (result.response.ok || !TRANSIENT_RETRY_STATUSES.has(result.response.status)) break
-      await result.response.body?.cancel().catch(() => {})
-      const aborted = await sleepWithAbort(TRANSIENT_RETRY_BASE_MS * 2 ** attempt, request.abortSignal)
-      if (aborted || request.abortSignal.aborted) {
-        yield { kind: 'error', message: 'request was aborted during retry backoff' }
-        return
+    // Connection-level retry: ALL errors (network errors + any HTTP status)
+    // retry up to MODEL_CONNECT_MAX_RETRIES times with exponential backoff.
+    // Before each retry, emit a `model_retry` chunk so the GUI can show
+    // "正在重连(第 x/5 次)" in the model output area. No response body has
+    // been streamed yet, so re-POSTing the same request is safe. Aborts
+    // short-circuit the backoff. (Supersedes the old transient-only retry.)
+    let lastError: { message: string; code?: string } | null = null
+    for (let attempt = 0; attempt < MODEL_CONNECT_MAX_RETRIES; attempt += 1) {
+      if (result.kind === 'error') {
+        lastError = { message: result.message }
+      } else if (result.response.ok) {
+        break // success — fall through to response handling
+      } else {
+        // HTTP error: classify, log, record for the final error event.
+        const text = await result.response.text().catch(() => '')
+        await result.response.body?.cancel().catch(() => {})
+        const classified = await this.classifyHttpError(result.response.status, text)
+        this.logHttpFailure({
+          url,
+          status: result.response.status,
+          body: text,
+          endpointFormat,
+          configuredEndpointFormat,
+          model: requestModel
+        })
+        lastError = { message: classified.message, ...(classified.code ? { code: classified.code } : {}) }
       }
-      result = await this.postChatCompletion(url, headers, body, request.abortSignal)
+      // Still have retries left → backoff + emit model_retry.
+      if (attempt < MODEL_CONNECT_MAX_RETRIES - 1) {
+        yield {
+          kind: 'model_retry',
+          attempt: attempt + 1,
+          maxAttempts: MODEL_CONNECT_MAX_RETRIES,
+          reason: lastError.message
+        }
+        const aborted = await sleepWithAbort(MODEL_CONNECT_RETRY_BASE_MS * 2 ** attempt, request.abortSignal)
+        if (aborted || request.abortSignal.aborted) {
+          yield { kind: 'error', message: 'request was aborted during reconnect backoff' }
+          return
+        }
+        result = await this.postChatCompletion(url, headers, body, request.abortSignal)
+      }
     }
     if (result.kind === 'error') {
       yield { kind: 'error', message: result.message }
@@ -281,59 +306,11 @@ export class CompatModelClient implements ModelClient {
     }
     let response = result.response
     if (!response.ok) {
-      const text = await response.text()
-      if (usesChatCompletionsShape(endpointFormat) && shouldRetryWithoutStreamUsage(response.status, text, body)) {
-        const retryBody = this.buildRequestBody(request, stream, { endpointFormat, includeStreamUsage: false })
-        if (round) round.requestBody = retryBody
-        const retry = await this.postChatCompletion(url, headers, retryBody, request.abortSignal)
-        if (retry.kind === 'error') {
-          yield { kind: 'error', message: retry.message }
-          return
-        }
-        response = retry.response
-        if (response.ok) {
-          if (this.config.nonStreaming || response.headers.get('content-type')?.includes('application/json')) {
-            const json = (await response.json()) as ChatCompletionResponse
-            yield* this.materializeNonStreaming(json, endpointFormat, requestModel)
-            return
-          }
-          if (!response.body) {
-            yield { kind: 'error', message: 'model response had no body' }
-            return
-          }
-          yield* this.streamSse(response.body, request.abortSignal, endpointFormat, requestModel)
-          return
-        }
-        const retryText = await response.text()
-        this.logHttpFailure({
-          url,
-          status: response.status,
-          body: retryText,
-          endpointFormat,
-          configuredEndpointFormat,
-          model: requestModel
-        })
-        const retryClassified = await this.classifyHttpError(response.status, retryText)
-        yield {
-          kind: 'error',
-          message: retryClassified.message,
-          code: retryClassified.code
-        }
-        return
-      }
-      this.logHttpFailure({
-        url,
-        status: response.status,
-        body: text,
-        endpointFormat,
-        configuredEndpointFormat,
-        model: requestModel
-      })
-      const classified = await this.classifyHttpError(response.status, text)
+      // All retries exhausted — surface the classified error.
       yield {
         kind: 'error',
-        message: classified.message,
-        code: classified.code
+        message: lastError?.message ?? `model request failed with status ${response.status}`,
+        ...(lastError?.code ? { code: lastError.code } : {})
       }
       return
     }
@@ -2241,11 +2218,13 @@ function normalizeReasoningEffortValue(effort: string | undefined): NormalizedRe
   }
 }
 
-// Transient upstream gateway statuses worth retrying — load balancers and
-// reverse proxies return these for momentary backend unavailability.
-const TRANSIENT_RETRY_STATUSES = new Set([502, 503, 504])
-const MAX_TRANSIENT_RETRIES = 2
-const TRANSIENT_RETRY_BASE_MS = 500
+// Connection-level retry for ALL model request errors (network errors + any
+// HTTP status). This is the user-visible "reconnecting" layer: before each
+// retry the generator emits a `model_retry` chunk so the GUI can show
+// "正在重连(第 x/5 次)" in the model output area. Exponential backoff
+// 1s → 2s → 4s → 8s → 16s (~31s worst case).
+const MODEL_CONNECT_MAX_RETRIES = 5
+const MODEL_CONNECT_RETRY_BASE_MS = 1_000
 
 /** Sleep `ms`, resolving early to `true` if the signal aborts first. */
 function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -2262,16 +2241,6 @@ function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
     }, ms)
     signal.addEventListener('abort', onAbort, { once: true })
   })
-}
-
-function shouldRetryWithoutStreamUsage(
-  status: number,
-  text: string,
-  body: Record<string, unknown>
-): boolean {
-  if (status !== 400 && status !== 422) return false
-  if (!Object.prototype.hasOwnProperty.call(body, 'stream_options')) return false
-  return /\b(stream_options|include_usage)\b/i.test(text)
 }
 
 function isAzureOpenAiEndpoint(baseUrl: string): boolean {

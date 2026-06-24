@@ -1494,6 +1494,16 @@ export class AgentLoop {
         case 'completed':
           if (stopReason !== 'error') stopReason = chunk.stopReason
           break
+        case 'model_retry':
+          await this.opts.events.record({
+            kind: 'model_retry',
+            threadId,
+            turnId,
+            attempt: chunk.attempt,
+            maxAttempts: chunk.maxAttempts,
+            reason: chunk.reason
+          })
+          break
         case 'error':
           this.rememberTurnFailure(turnId, {
             error: chunk.message,

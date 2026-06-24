@@ -67,7 +67,10 @@ describe('CompatModelClient transient gateway retry', () => {
     expect(chunks.some((c) => c.kind === 'error')).toBe(false)
   })
 
-  it('does not retry a non-transient 500', async () => {
+  // Connection-level retry now covers ALL errors (not just transient gateways):
+  // a persistent 500 is retried MODEL_CONNECT_MAX_RETRIES times, emitting a
+  // model_retry chunk before each attempt, before surfacing the classified error.
+  it('retries a persistent 500 up to MODEL_CONNECT_MAX_RETRIES times', async () => {
     let calls = 0
     const fetchImpl = (async () => {
       calls += 1
@@ -76,9 +79,12 @@ describe('CompatModelClient transient gateway retry', () => {
 
     const chunks = await drain(client(fetchImpl).stream(request()))
 
-    expect(calls).toBe(1)
+    expect(calls).toBe(5)
+    const retries = chunks.filter((c) => c.kind === 'model_retry')
+    expect(retries).toHaveLength(4)
+    expect(retries[0]).toMatchObject({ kind: 'model_retry', attempt: 1, maxAttempts: 5 })
     expect(chunks.some((c) => c.kind === 'error')).toBe(true)
-  })
+  }, 60_000)
 
   it('stops retrying when the request is aborted during backoff', async () => {
     const controller = new AbortController()
@@ -94,5 +100,53 @@ describe('CompatModelClient transient gateway retry', () => {
 
     expect(calls).toBe(1)
     expect(chunks.some((c) => c.kind === 'error')).toBe(true)
+  })
+})
+
+describe('CompatModelClient connection retry (all errors)', () => {
+  // 5 attempts: the first 4 failures each emit a model_retry announcing the
+  // upcoming retry; the 5th (final) attempt fails and surfaces the error
+  // without another retry. So full-failure = 4 retry events.
+  // Full-failure retries take ~31s of backoff (1+2+4+8+16); allow headroom.
+  it('retries network errors 5 times before yielding a final error', async () => {
+    const fetchImpl = (async () => {
+      throw new Error('fetch failed')
+    }) as unknown as typeof fetch
+
+    const chunks = await drain(client(fetchImpl).stream(request()))
+
+    const retries = chunks.filter((c) => c.kind === 'model_retry')
+    const errors = chunks.filter((c) => c.kind === 'error')
+    expect(retries).toHaveLength(4)
+    expect(retries[0]).toMatchObject({ kind: 'model_retry', attempt: 1, maxAttempts: 5 })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ kind: 'error' })
+  }, 60_000)
+
+  it('retries an HTTP 404 5 times before yielding the classified error', async () => {
+    const fetchImpl = (async () =>
+      new Response('Not Found', { status: 404 })) as unknown as typeof fetch
+
+    const chunks = await drain(client(fetchImpl).stream(request()))
+
+    const retries = chunks.filter((c) => c.kind === 'model_retry')
+    expect(retries).toHaveLength(4)
+    expect(chunks.at(-1)).toMatchObject({ kind: 'error', code: 'http_404' })
+  }, 60_000)
+
+  it('recovers when a later retry succeeds and streams the response', async () => {
+    let calls = 0
+    const fetchImpl = (async () => {
+      calls += 1
+      if (calls < 3) return gatewayError(500)
+      return okJson()
+    }) as unknown as typeof fetch
+
+    const chunks = await drain(client(fetchImpl).stream(request()))
+
+    const retries = chunks.filter((c) => c.kind === 'model_retry')
+    expect(retries).toHaveLength(2) // first two failures each emit a retry
+    expect(chunks.some((c) => c.kind === 'assistant_text_delta')).toBe(true)
+    expect(chunks.some((c) => c.kind === 'error')).toBe(false)
   })
 })

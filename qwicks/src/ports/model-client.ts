@@ -14,6 +14,7 @@ export type ModelStreamChunk =
   | { kind: 'usage'; usage: UsageSnapshot }
   | { kind: 'completed'; stopReason: 'stop' | 'tool_calls' | 'length' | 'error' }
   | { kind: 'error'; message: string; code?: string }
+  | { kind: 'model_retry'; attempt: number; maxAttempts: number; reason: string }
 
 /**
  * A single model turn request: the immutable prefix items, the running
