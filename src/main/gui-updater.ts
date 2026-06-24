@@ -1055,7 +1055,12 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
     }
     emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
     await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
-    autoUpdater.quitAndInstall(false, true)
+    // Bug fix:用静默模式安装(isSilent=true)避免 NSIS UI 弹出"软件已打开"对话框。
+    // 非静默模式下 NSIS 会检测 app 进程,如果 runtime 关闭有竞态(file lock),
+    // 就会卡在"请关闭软件"对话框 → 用户关闭软件 → 安装也停止 → 死锁。
+    // 静默模式下 NSIS 直接安装+重启,体验类似 codex(一键更新→自动重启)。
+    // isForceRunAfter=true 确保安装后自动启动新版本。
+    autoUpdater.quitAndInstall(true, true)
     return { ok: true }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)

@@ -58,13 +58,19 @@ jobs:
             $base = 'HEAD~1'
           }
           $files = @(git diff --name-only $base $env:GITHUB_SHA)
-          $hotOnly = @($files | Where-Object { $_ -and $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' }).Count -eq 0
+          # Hot-update-safe 前缀:所有纯 JS/TS 代码(renderer/preload/main 的 JS 部分/
+          # contracts/loop/server/adapters/ports/services/dream/qwicks)都是热更新安全的。
+          # 只有以下情况才需要全量 installer:electron-builder.config / package.json deps /
+          # scripts/ / .github/ / native 模块 / electron 主入口(src/main/index.ts)。
+          $hotSafePattern = '^(src/renderer/|src/preload/|src/asset/|src/contracts/|src/loop/|src/server/|src/adapters/|src/ports/|src/services/|src/dream/|src/shared/|qwicks/src/|qwicks/tests/|docs/)'
+          $hotOnly = @($files | Where-Object { $_ -and $_ -notmatch $hotSafePattern -and $_ -notmatch '^(src/main/(?!index\.ts$))' }).Count -eq 0
           if ($hotOnly) {
-            Write-Host "Skipping full installer because this push is hot-update safe."
+            Write-Host "Skipping full installer because this push is hot-update safe (all changes are JS/TS code)."
             "needed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } else {
             Write-Host "Full installer required because this push includes shell/native/CI files:"
-            $files | Where-Object { $_ -and $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' } | ForEach-Object { Write-Host "  $_" }
+            $hotSafePattern = '^(src/renderer/|src/preload/|src/asset/|src/contracts/|src/loop/|src/server/|src/adapters/|src/ports/|src/services/|src/dream/|src/shared/|qwicks/src/|qwicks/tests/|docs/)'
+            $files | Where-Object { $_ -and $_ -notmatch $hotSafePattern -and $_ -notmatch '^(src/main/(?!index\.ts$))' } | ForEach-Object { Write-Host "  $_" }
             "needed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
 

@@ -59,7 +59,9 @@ jobs:
             $base = 'HEAD~1'
           }
           $files = @(git diff --name-only $base $env:GITHUB_SHA)
-          $unsafe = @($files | Where-Object { $_ -notmatch '^(src/renderer/|src/preload/|src/asset/|qwicks/src/|qwicks/tests/)' })
+          # Hot-update-safe prefixes (consistent with release-windows.yml):
+          $hotSafePattern = '^(src/renderer/|src/preload/|src/asset/|src/contracts/|src/loop/|src/server/|src/adapters/|src/ports/|src/services/|src/dream/|src/shared/|qwicks/src/|qwicks/tests/|docs/)'
+          $unsafe = @($files | Where-Object { $_ -and $_ -notmatch $hotSafePattern -and $_ -notmatch '^(src/main/(?!index\.ts$))' })
           if ($unsafe.Count -gt 0) {
             Write-Host "Skipping server deploy because this push includes non-hot-update-safe files:"
             $unsafe | ForEach-Object { Write-Host "  $_" }
