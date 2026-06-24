@@ -63,6 +63,10 @@ import {
   guiSkillRootsForRuntime,
   normalizeSkillRootPath
 } from './services/skill-service'
+import {
+  builtinSkillsTargetDir,
+  ensureBuiltinMediaSkills
+} from './services/builtin-skills-service'
 
 let child: ChildProcess | null = null
 let childLogCapture: QWicksChildLogCapture | null = null
@@ -317,6 +321,9 @@ async function startQWicksChildOnce(
     )
   }
   const dataDir = resolveQWicksDataDir(runtime)
+  // Materialize built-in media skills before writing the config so the skill
+  // capability roots include them on first launch (task 5).
+  await ensureBuiltinMediaSkills()
   await syncGuiManagedQWicksConfig(dataDir, runtime, {
     scheduleMcp: {
       settings,
@@ -591,9 +598,17 @@ async function skillCapabilityConfigForRuntime(
   const manualExisting = stringArrayValue(existing.roots)
     .map(normalizeSkillRootPath)
     .filter((path) => path.length > 0 && !managed.has(comparableSkillRootPath(path)))
+  // Normalize the built-in root the same way other roots are so the persisted
+  // path is byte-stable across syncs (otherwise the raw app.getPath value and
+  // its resolve()'d form would alternate on every write).
+  const builtinRoot = normalizeSkillRootPath(builtinSkillsTargetDir())
   const roots = uniqueStrings([
     ...manualExisting,
-    ...(await guiSkillRootsForRuntime(settings)).map((root) => root.path)
+    ...(await guiSkillRootsForRuntime(settings)).map((root) => root.path),
+    // Built-in media skills are always-on and excluded from the user-toggleable
+    // root list, mirroring how Codex plugin caches are handled. They materialize
+    // into userData/builtin-skills on startup (see ensureBuiltinMediaSkills).
+    builtinRoot
   ])
   return {
     ...existing,

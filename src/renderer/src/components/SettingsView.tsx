@@ -63,12 +63,11 @@ import {
   ModelConfigurationSettingsSection,
   DreamMemorySummarySection,
   ProvidersSettingsSection,
-  SpeechToTextSettingsSection,
   UpdatesSettingsSection,
   WriteSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'media' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type InlineNotice = {
@@ -290,16 +289,8 @@ export function SettingsView(): ReactElement {
       setCategory('write')
       return
     }
-    if (settingsSection === 'imageGeneration') {
-      setCategory('mediaGeneration')
-      return
-    }
-    if (settingsSection === 'mediaGeneration') {
-      setCategory('mediaGeneration')
-      return
-    }
-    if (settingsSection === 'speechToText') {
-      setCategory('speechToText')
+    if (settingsSection === 'imageGeneration' || settingsSection === 'mediaGeneration' || settingsSection === 'speechToText') {
+      setCategory('media')
       return
     }
     if (settingsSection === 'permissions') {
@@ -344,6 +335,7 @@ export function SettingsView(): ReactElement {
       settingsSection === 'shortcuts' ||
       settingsSection === 'easterEgg' ||
       settingsSection === 'updates' ||
+      category === 'media' ||
       (category !== 'agents' && category !== 'permissions')
     ) {
       return
@@ -1037,8 +1029,8 @@ export function SettingsView(): ReactElement {
           ) : null}
           {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'speechToText' ? <SpeechToTextSettingsSection ctx={settingsSectionContext} /> : null}
+          {/* 媒体能力（任务5）：图像/语音合成/音乐/视频生成 + 语音输入合并为单个卡片。 */}
+          {category === 'media' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'agents' || category === 'permissions' || category === 'skills' || category === 'mcp' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}

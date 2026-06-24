@@ -129,6 +129,15 @@ module.exports = {
       to: 'QWicks.ico'
     }
   ],
+  // Ship the static built-in media skill packages (skill.json + SKILL.md) so
+  // they can be materialized into userData/builtin-skills on startup (task 5).
+  extraResources: [
+    {
+      from: 'resources/builtin-skills',
+      to: 'builtin-skills',
+      filter: ['**/*']
+    }
+  ],
   artifactName: `QWicks-${artifactVersion}-\${os}-\${arch}.\${ext}`,
   publish: [
     {

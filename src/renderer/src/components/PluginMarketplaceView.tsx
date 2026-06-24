@@ -338,7 +338,7 @@ function itemDescription(item: MarketplaceItem, t: (key: string) => string): str
 
 export function skillMarketplaceItemsFromDiscoveredSkills(
   skills: SkillListItem[],
-  labels: { project: string; global: string }
+  labels: { project: string; global: string; builtin: string }
 ): MarketplaceItem[] {
   return skills.map((skill) => ({
     id: skill.id,
@@ -346,7 +346,11 @@ export function skillMarketplaceItemsFromDiscoveredSkills(
     title: skill.name,
     description: skill.description ?? skill.root,
     group: 'personal' as const,
-    sourceLabel: skill.scope === 'project' ? labels.project : labels.global
+    sourceLabel: skill.builtin
+      ? labels.builtin
+      : skill.scope === 'project'
+        ? labels.project
+        : labels.global
   }))
 }
 
@@ -767,7 +771,8 @@ export function PluginMarketplaceView(): ReactElement {
   const discoveredSkillItems = useMemo(
     () => skillMarketplaceItemsFromDiscoveredSkills(discoveredSkills, {
       project: t('pluginSkillSourceProject'),
-      global: t('pluginSkillSourceGlobal')
+      global: t('pluginSkillSourceGlobal'),
+      builtin: t('pluginSkillSourceBuiltin')
     }),
     [discoveredSkills, t]
   )

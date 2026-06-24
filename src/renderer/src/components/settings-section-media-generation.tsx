@@ -12,6 +12,7 @@ import {
 } from '@shared/app-settings'
 import { ModelSelect, SecretInput, SettingsCard, SettingRow, Toggle } from './settings-controls'
 import { ImageGenerationSettingsSection } from './settings-section-image-generation'
+import { SpeechToTextSettingsSection } from './settings-section-speech-to-text'
 
 const AUDIO_FORMATS = ['mp3', 'wav', 'flac'] as const
 const VIDEO_RESOLUTIONS = ['768P', '1080P'] as const
@@ -421,6 +422,9 @@ export function MediaGenerationSettingsSection({ ctx }: { ctx: Record<string, an
           </>
         ) : null}
       </SettingsCard>
+
+      {/* 语音输入（语音转文字）—— 麦克风听写功能，结构与生成类工具不同，配置并入媒体能力卡片。 */}
+      <SpeechToTextSettingsSection ctx={ctx} />
     </div>
   )
 }

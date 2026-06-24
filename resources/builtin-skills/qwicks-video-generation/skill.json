@@ -1,0 +1,23 @@
+{
+  "id": "qwicks-video-generation",
+  "name": "视频生成",
+  "description": "根据文字描述生成视频片段，支持图生视频（首尾帧引导）。调用 generate_video 工具。",
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "triggers": {
+    "commands": ["/video"],
+    "promptPatterns": [
+      "生成视频",
+      "做视频",
+      "短视频",
+      "视频片段",
+      "文生视频",
+      "生成一段视频",
+      "做一段视频",
+      "generate video",
+      "create a video"
+    ]
+  },
+  "allowedTools": ["generate_video"],
+  "priority": 100
+}

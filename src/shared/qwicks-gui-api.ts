@@ -128,6 +128,8 @@ export type SkillListItem = {
   entryPath: string
   scope: 'project' | 'global'
   legacy: boolean
+  /** True for skills materialized from the app's built-in media skill packages. */
+  builtin?: boolean
 }
 export type SkillListResult =
   | { ok: true; skills: SkillListItem[]; validationErrors: Array<{ root: string; message: string }> }

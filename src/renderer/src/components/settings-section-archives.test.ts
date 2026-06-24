@@ -113,8 +113,8 @@ describe('ArchivedThreadsSettingsSection', () => {
     expect(agentsIndex).toBeGreaterThanOrEqual(0)
     expect(permissionsIndex).toBeGreaterThan(agentsIndex)
     expect(archivesIndex).toBeGreaterThan(permissionsIndex)
-    // Write -1, skills +mcp +2, providers -1 → net 0 from the 17 baseline... actually 16+2-1=17.
-    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(17)
+    // mediaGeneration + speechToText merged into one media tab → 17 baseline minus 1.
+    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(16)
   })
 
   it('keeps settings tabs scrollable without pushing the footer away', () => {

@@ -916,6 +916,7 @@
   "pluginSkillScanPartial": "Some skill folders could not be scanned.",
   "pluginSkillSourceProject": "Project",
   "pluginSkillSourceGlobal": "Global",
+  "pluginSkillSourceBuiltin": "Built-in",
   "pluginSkillEnable": "Enable",
   "pluginSkillDisable": "Disable",
   "pluginSkillEnabled": "Skill enabled",

@@ -9,6 +9,7 @@ import {
   type CommonSkillDir
 } from '../../shared/skill-dirs'
 import { expandHomePath } from './workspace-service'
+import { builtinSkillsTargetDir } from './builtin-skills-service'
 
 export type GuiSkillScope = 'project' | 'global'
 
@@ -20,6 +21,8 @@ export type GuiSkillSummary = {
   entryPath: string
   scope: GuiSkillScope
   legacy: boolean
+  /** True for skills materialized from the app's built-in media skill packages. */
+  builtin?: boolean
 }
 
 export type GuiSkillListResult =
@@ -264,6 +267,7 @@ export async function listGuiSkills(
 ): Promise<GuiSkillListResult> {
   try {
     const roots = await guiSkillRootsForRuntime(settings, workspaceRootOverride)
+    const builtinRoot = builtinSkillsTargetDir()
     const skills: GuiSkillSummary[] = []
     const validationErrors: Array<{ root: string; message: string }> = []
     for (const root of roots) {
@@ -277,6 +281,15 @@ export async function listGuiSkills(
           return null
         })
         if (loaded) skills.push(loaded)
+      }
+    }
+    // Built-in media skills live in userData/builtin-skills and are always-on;
+    // they are not part of the user-toggleable root list, so scan them here.
+    if (existsSync(builtinRoot)) {
+      const candidates = await packageCandidates(builtinRoot).catch(() => [])
+      for (const candidate of candidates) {
+        const loaded = await loadSkillSummary(candidate, 'global').catch(() => null)
+        if (loaded) skills.push({ ...loaded, builtin: true })
       }
     }
     return {

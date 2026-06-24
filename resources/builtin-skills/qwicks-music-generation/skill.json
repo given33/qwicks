@@ -1,0 +1,26 @@
+{
+  "id": "qwicks-music-generation",
+  "name": "音乐生成",
+  "description": "根据描述或歌词生成音乐（含纯音乐与人声歌曲）。调用 generate_music 工具。",
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "triggers": {
+    "commands": ["/music"],
+    "promptPatterns": [
+      "作曲",
+      "写歌",
+      "配乐",
+      "生成音乐",
+      "做一首",
+      "背景音乐",
+      "纯音乐",
+      "BGM",
+      "写一段音乐",
+      "作一首曲",
+      "generate music",
+      "create a song"
+    ]
+  },
+  "allowedTools": ["generate_music"],
+  "priority": 100
+}

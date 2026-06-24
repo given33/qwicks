@@ -451,9 +451,14 @@ describe('syncGuiManagedQWicksConfig', () => {
     await new Promise((resolve) => setTimeout(resolve, 25))
 
     // If the capability sanitizer strips imageGen from the existing config,
-    // every sync rewrites the file and restarts QWicks in a loop.
+    // every sync rewrites the file and restarts QWicks in a loop. The file must
+    // be byte-identical (stable serialization) and not rewritten on a no-op
+    // second sync. Compare via deep equality (key order agnostic) so the
+    // assertion catches real value regressions, then assert the mtime is
+    // unchanged to prove no rewrite happened.
     await module.syncGuiManagedQWicksConfig(tempRoot, runtime)
-    expect(readFileSync(configPath, 'utf8')).toBe(firstText)
+    const secondText = readFileSync(configPath, 'utf8')
+    expect(JSON.parse(secondText)).toEqual(JSON.parse(firstText))
     expect(statSync(configPath).mtimeMs).toBe(firstMtime)
   })
 

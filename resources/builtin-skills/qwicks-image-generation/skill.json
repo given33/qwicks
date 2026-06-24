@@ -1,0 +1,29 @@
+{
+  "id": "qwicks-image-generation",
+  "name": "图像生成",
+  "description": "根据文本描述生成图片，支持文生图与图生图（参考图）。调用 generate_image 工具。",
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "triggers": {
+    "commands": ["/image"],
+    "promptPatterns": [
+      "生成图",
+      "画一",
+      "画个",
+      "画张",
+      "插图",
+      "配图",
+      "生成图片",
+      "文生图",
+      "图生图",
+      "画一幅",
+      "画副",
+      "生成一幅",
+      "draw an? image",
+      "generate an? image",
+      "create an? image"
+    ]
+  },
+  "allowedTools": ["generate_image"],
+  "priority": 100
+}

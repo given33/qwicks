@@ -1,0 +1,27 @@
+{
+  "id": "qwicks-text-to-speech",
+  "name": "语音合成",
+  "description": "把文字转成语音朗读出来（TTS）。调用 generate_speech 工具。",
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "triggers": {
+    "commands": ["/tts"],
+    "promptPatterns": [
+      "朗读",
+      "配音",
+      "说一段",
+      "语音合成",
+      "文字转语音",
+      "念一遍",
+      "念出来",
+      "读出来",
+      "转成语音",
+      "转成音频",
+      "text to speech",
+      "read it aloud",
+      "generate speech"
+    ]
+  },
+  "allowedTools": ["generate_speech"],
+  "priority": 100
+}

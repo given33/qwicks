@@ -11,6 +11,7 @@ const labels: Record<string, string> = {
   write: 'Write',
   agents: 'AI assistant',
   mediaGeneration: 'Media generation',
+  media: 'Media',
   keyboardShortcuts: 'Keyboard shortcuts',
   claw: 'Connect phone',
   settingsFooter: 'Settings',
@@ -68,20 +69,18 @@ describe('ImageGenerationSettingsSection', () => {
     expect(html).toContain('value="240000"')
   })
 
-  it('uses the media generation tab for image generation settings', () => {
+  it('uses the media tab for image generation settings', () => {
     const html = renderToStaticMarkup(createElement(SettingsSidebar, {
-      category: 'mediaGeneration',
+      category: 'media',
       goBack: () => undefined,
       setCategory: () => undefined,
       t
     }))
 
-    // Write tab was removed (task 4); image generation lives under media generation.
-    const mediaIndex = html.indexOf('Media generation')
-    const imageIndex = html.indexOf('Image generation')
+    // Image generation lives under the unified media tab (task 5).
+    const mediaIndex = html.indexOf('Media')
     const agentsIndex = html.indexOf('AI assistant')
     expect(mediaIndex).toBeGreaterThanOrEqual(0)
-    expect(imageIndex).toBe(-1)
     expect(agentsIndex).toBeGreaterThan(mediaIndex)
   })
 })

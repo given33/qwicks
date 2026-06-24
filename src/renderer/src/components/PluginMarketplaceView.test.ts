@@ -259,7 +259,7 @@ describe('skillMarketplaceItemsFromDiscoveredSkills', () => {
         scope: 'global',
         legacy: true
       }
-    ], { project: 'Project', global: 'Global' })
+    ], { project: 'Project', global: 'Global', builtin: 'Built-in' })
 
     expect(items).toEqual([
       expect.objectContaining({
@@ -273,6 +273,29 @@ describe('skillMarketplaceItemsFromDiscoveredSkills', () => {
         group: 'personal',
         title: 'Remotion Best Practices',
         sourceLabel: 'Global'
+      })
+    ])
+  })
+
+  it('tags built-in media skills with the built-in source label', () => {
+    const items = skillMarketplaceItemsFromDiscoveredSkills([
+      {
+        id: 'qwicks-image-generation',
+        name: '图像生成',
+        description: '根据文本描述生成图片。',
+        root: '/userData/builtin-skills/qwicks-image-generation',
+        entryPath: '/userData/builtin-skills/qwicks-image-generation/SKILL.md',
+        scope: 'global',
+        legacy: false,
+        builtin: true
+      }
+    ], { project: 'Project', global: 'Global', builtin: 'Built-in' })
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: 'qwicks-image-generation',
+        title: '图像生成',
+        sourceLabel: 'Built-in'
       })
     ])
   })

@@ -542,6 +542,7 @@
   "imageGenTimeoutDesc": "Per-request timeout for the image API. Image models can take minutes at high resolutions.",
   "mediaGeneration": "Media generation",
   "mediaGenerationDesc": "Expose image, speech, music, and video generation as agent tools. When enabled, QWicks registers generate_image, generate_speech, generate_music, and generate_video according to configuration.",
+  "media": "Media",
   "textToSpeech": "Speech generation",
   "textToSpeechEnabled": "Enable speech generation",
   "textToSpeechEnabledDesc": "Enables the generate_speech tool in agent chats to synthesize text into audio files.",

@@ -1,7 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
-import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Plug, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
+import { Archive, Bot, BrainCircuit, Clapperboard, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Plug, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'media' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 
 export function SettingsSidebar({
   category,
@@ -57,20 +57,11 @@ export function SettingsSidebar({
         <button
           type="button"
           data-cursor-spotlight-target
-          className={catCls('mediaGeneration')}
-          onClick={() => setCategory('mediaGeneration')}
+          className={catCls('media')}
+          onClick={() => setCategory('media')}
         >
-          <AudioLines className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
-          {t('mediaGeneration')}
-        </button>
-        <button
-          type="button"
-          data-cursor-spotlight-target
-          className={catCls('speechToText')}
-          onClick={() => setCategory('speechToText')}
-        >
-          <Mic className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
-          {t('speechToText')}
+          <Clapperboard className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
+          {t('media')}
         </button>
         <button
           type="button"

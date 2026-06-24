@@ -14,6 +14,13 @@ import {
 } from '../../shared/app-settings'
 import { guiSkillRootsForRuntime, listGuiSkillRoots, listGuiSkills } from './skill-service'
 
+// Built-in media skills materialize into userData/builtin-skills at runtime; in
+// unit tests there is no real Electron userData dir, so point the built-in root
+// at a temp path that does not exist (the scan tolerates a missing root).
+vi.mock('./builtin-skills-service', () => ({
+  builtinSkillsTargetDir: () => join(tmpdir(), 'gui-skills-builtin-does-not-exist')
+}))
+
 vi.mock('node:os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:os')>()
   return {

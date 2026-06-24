@@ -916,6 +916,7 @@
   "pluginSkillScanPartial": "部分 Skill 目录扫描失败。",
   "pluginSkillSourceProject": "项目",
   "pluginSkillSourceGlobal": "全局",
+  "pluginSkillSourceBuiltin": "内置",
   "pluginSkillEnable": "启用",
   "pluginSkillDisable": "禁用",
   "pluginSkillEnabled": "Skill 已启用",
