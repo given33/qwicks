@@ -496,3 +496,67 @@ describe('watched completion notifications', () => {
     expect(completionNotificationDedupeKeyForWatchedThread('thread-0', 999)).toBe('watch:thread-0:1000')
   })
 })
+
+describe('model_retry (reconnect overlay)', () => {
+  it('sets modelReconnecting on model_retry event', () => {
+    const { getState, set, get } = makeSinkHarness()
+    const controller = new AbortController()
+    const sink = buildThreadEventSink(set, get, {
+      threadId: 'thread-current',
+      signal: controller.signal
+    })
+
+    sink.onModelRetry?.({
+      attempt: 2,
+      maxAttempts: 5,
+      reason: 'fetch failed',
+      threadId: 'thread-current'
+    })
+
+    expect(getState().modelReconnecting).toEqual({
+      attempt: 2,
+      maxAttempts: 5,
+      reason: 'fetch failed'
+    })
+  })
+
+  it('clears modelReconnecting and resets the thinking timer when deltas arrive', () => {
+    const { getState, set, get } = makeSinkHarness({
+      modelReconnecting: { attempt: 3, maxAttempts: 5, reason: 'timeout' },
+      turnStartedAtByUserId: { 'user-current': 1000 }
+    })
+    const controller = new AbortController()
+    const sink = buildThreadEventSink(set, get, {
+      threadId: 'thread-current',
+      signal: controller.signal
+    })
+
+    const before = Date.now()
+    sink.onDeltas([{ kind: 'agent_message', text: 'recovered', seq: 10 }])
+
+    const state = getState()
+    expect(state.modelReconnecting).toBeNull()
+    // Thinking timer reset to ~now (not the old 1000).
+    expect(state.turnStartedAtByUserId['user-current']).toBeGreaterThanOrEqual(before)
+    expect(state.liveAssistant).toBe('recovered')
+  })
+
+  it('clears modelReconnecting on a runtime error', () => {
+    const { getState, set, get } = makeSinkHarness({
+      modelReconnecting: { attempt: 5, maxAttempts: 5, reason: 'last try' }
+    })
+    const controller = new AbortController()
+    const sink = buildThreadEventSink(set, get, {
+      threadId: 'thread-current',
+      signal: controller.signal
+    })
+
+    sink.onRuntimeError?.({
+      itemId: 'err-1',
+      message: 'model request failed',
+      severity: 'error'
+    })
+
+    expect(getState().modelReconnecting).toBeNull()
+  })
+})

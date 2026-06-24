@@ -153,6 +153,13 @@ export interface DreamTurnMemoryStatus {
   }
 }
 
+/** 模型连接重连中状态:有值时覆盖模型气泡显示"正在重连"。 */
+export type ModelReconnectingState = {
+  attempt: number
+  maxAttempts: number
+  reason: string
+}
+
 export type ChatState = {
   route: AppRoute
   settingsReturnRoute: Exclude<AppRoute, 'settings'>
@@ -191,6 +198,8 @@ export type ChatState = {
   busy: boolean
   error: string | null
   runtimeErrorDetail: string | null
+  /** 模型连接重连中:覆盖模型气泡显示重连进度。null 表示未在重连。 */
+  modelReconnecting: ModelReconnectingState | null
   currentTurnId: string | null
   currentTurnUserId: string | null
   turnStartedAtByUserId: Record<string, number>

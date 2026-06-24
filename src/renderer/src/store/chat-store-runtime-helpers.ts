@@ -185,6 +185,7 @@ export function clearedThreadSelection(): Pick<
   | 'liveReasoning'
   | 'liveAssistant'
   | 'busy'
+  | 'modelReconnecting'
   | 'currentTurnId'
   | 'currentTurnUserId'
   | 'turnStartedAtByUserId'
@@ -205,6 +206,7 @@ export function clearedThreadSelection(): Pick<
     liveReasoning: '',
     liveAssistant: '',
     busy: false,
+    modelReconnecting: null,
     currentTurnId: null,
     currentTurnUserId: null,
     turnStartedAtByUserId: {},

@@ -151,6 +151,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   busy: false,
   error: null,
   runtimeErrorDetail: null,
+  modelReconnecting: null,
   currentTurnId: null,
   currentTurnUserId: null,
   turnStartedAtByUserId: {},

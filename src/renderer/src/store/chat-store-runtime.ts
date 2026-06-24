@@ -691,6 +691,16 @@ export function buildThreadEventSink(
           base.busy = true
           armBusyWatchdog(set, get)
         }
+        // Deltas arriving after a model_retry means the reconnect succeeded:
+        // clear the reconnecting overlay and reset the thinking timer to zero
+        // so the user perceives a fresh "思考中" rather than accumulated stall.
+        if (s.modelReconnecting) {
+          base.modelReconnecting = null
+          const userId2 = s.currentTurnUserId
+          if (userId2) {
+            base.turnStartedAtByUserId = { ...s.turnStartedAtByUserId, [userId2]: Date.now() }
+          }
+        }
         let liveReasoning = s.liveReasoning
         let liveAssistant = s.liveAssistant
         let nextReasoningFirstAtByUserId = s.turnReasoningFirstAtByUserId
@@ -1016,9 +1026,21 @@ export function buildThreadEventSink(
         return {
           ...flushed,
           blocks: upsertRuntimeErrorBlock(baseBlocks, block),
-          error: clearRuntimeStreamRecoveringError(s.error)
+          error: clearRuntimeStreamRecoveringError(s.error),
+          modelReconnecting: null
         }
       })
+    },
+    onModelRetry: (ev) => {
+      if (!isCurrentStream()) return
+      set((s) => ({
+        ...s,
+        modelReconnecting: {
+          attempt: ev.attempt,
+          maxAttempts: ev.maxAttempts,
+          reason: ev.reason
+        }
+      }))
     },
     onGoal: (ev) => {
       if (!isCurrentStream()) return
