@@ -22,6 +22,7 @@ import {
   type QWicksHistoryHygieneSettingsV1,
   type QWicksImageGenerationSettingsV1,
   type QWicksMcpSearchSettingsV1,
+  type QWicksMemoryBackend,
   type QWicksMusicGenerationSettingsV1,
   type QWicksRuntimeTuningSettingsV1,
   type QWicksRuntimeSettingsPatchV1,
@@ -112,6 +113,11 @@ function legacyReasoningRuntimeDefaults(): LegacyReasoningRuntimeSettingsV1 {
   }
 }
 
+/** Resolve a possibly-absent memoryBackend from saved settings (old installs predate the field). */
+export function resolveMemoryBackend(raw: { memoryBackend?: unknown } | undefined): QWicksMemoryBackend {
+  return raw?.memoryBackend === 'dream' ? 'dream' : 'file'
+}
+
 export function defaultQWicksRuntimeSettings(
   port = DEFAULT_QWICKS_PORT
 ): QWicksRuntimeSettingsV1 {
@@ -142,6 +148,7 @@ export function defaultQWicksRuntimeSettings(
     videoGeneration: defaultQWicksVideoGenerationSettings(),
     modelProfiles: {},
     memoryEnabled: false,
+    memoryBackend: 'file',
     computerUse: defaultQWicksComputerUseSettings(),
     quality: defaultQWicksQualitySettings()
   }
@@ -439,6 +446,7 @@ export function mergeQWicksRuntimeSettings(
     videoGeneration: nextVideoGeneration,
     modelProfiles: nextModelProfiles,
     memoryEnabled: patch?.memoryEnabled ?? current.memoryEnabled ?? false,
+    memoryBackend: resolveMemoryBackend(patch?.memoryBackend ?? current.memoryBackend),
     computerUse: nextComputerUse,
     quality: nextQuality
   }
