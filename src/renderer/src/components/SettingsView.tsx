@@ -1033,7 +1033,13 @@ export function SettingsView(): ReactElement {
           ) : null}
 
           {category === 'general' ? <GeneralSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'modelConfiguration' ? <ModelConfigurationSettingsSection /> : null}
+          {category === 'modelConfiguration' ? (
+            <>
+              <ModelConfigurationSettingsSection />
+              {/* 供应商面板已并入模型配置（任务3）。 */}
+              <ProvidersSettingsSection ctx={settingsSectionContext} />
+            </>
+          ) : null}
           {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}

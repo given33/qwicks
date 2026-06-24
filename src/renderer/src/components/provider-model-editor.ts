@@ -60,6 +60,7 @@ export type ProviderModelFormError =
   | { code: 'missingId' }
   | { code: 'duplicate'; kind: ProviderModelKind }
   | { code: 'invalidContextWindow' }
+  | { code: 'contextWindowTooLarge' }
   | { code: 'noReasoningEfforts' }
 
 export type ProviderModelListEntry = {
@@ -230,6 +231,14 @@ export function validateProviderModelForm(
     (!Number.isInteger(form.contextWindowTokens) || form.contextWindowTokens <= 0)
   ) {
     errors.push({ code: 'invalidContextWindow' })
+  }
+  // 上下文窗口上限 1M tokens（任务3）。超出视为无效。
+  if (
+    form.contextWindowTokens !== null &&
+    Number.isInteger(form.contextWindowTokens) &&
+    form.contextWindowTokens > 1_048_576
+  ) {
+    errors.push({ code: 'contextWindowTooLarge' })
   }
   if (form.kind === 'chat' && form.reasoningEnabled && form.reasoningEfforts.length === 0) {
     errors.push({ code: 'noReasoningEfforts' })

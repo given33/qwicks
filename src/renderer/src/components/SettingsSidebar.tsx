@@ -1,5 +1,5 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
-import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Plug, RefreshCw, ServerCog, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
+import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Plug, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
 
 type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 
@@ -53,15 +53,6 @@ export function SettingsSidebar({
         >
           <SlidersHorizontal className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
           {t('modelConfiguration')}
-        </button>
-        <button
-          type="button"
-          data-cursor-spotlight-target
-          className={catCls('providers')}
-          onClick={() => setCategory('providers')}
-        >
-          <ServerCog className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
-          {t('providers')}
         </button>
         <button
           type="button"

@@ -315,6 +315,7 @@
   "providerModelErrorDuplicateMusic": "This ID is already used by the music generation capability — pick another ID or remove it there first.",
   "providerModelErrorDuplicateVideo": "This ID is already used by the video generation capability — pick another ID or remove it there first.",
   "providerModelErrorContext": "Context window must be a positive integer; shorthand like 128k / 1m works.",
+  "providerModelErrorContextTooLarge": "Context window max is 1M (1048576) tokens.",
   "providerModelErrorNoEfforts": "Select at least one reasoning effort.",
   "providerModelDefaultProfileBadge": "Default profile",
   "providerModelReasoningBadge": "Reasoning",

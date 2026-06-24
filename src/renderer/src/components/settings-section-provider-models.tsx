@@ -179,6 +179,8 @@ function formErrorMessage(t: Translate, error: ProviderModelFormError): string {
       return t(`providerModelErrorDuplicate${duplicateKindSuffix(error.kind)}`)
     case 'invalidContextWindow':
       return t('providerModelErrorContext')
+    case 'contextWindowTooLarge':
+      return t('providerModelErrorContextTooLarge')
     case 'noReasoningEfforts':
       return t('providerModelErrorNoEfforts')
   }

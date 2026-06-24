@@ -113,8 +113,8 @@ describe('ArchivedThreadsSettingsSection', () => {
     expect(agentsIndex).toBeGreaterThanOrEqual(0)
     expect(permissionsIndex).toBeGreaterThan(agentsIndex)
     expect(archivesIndex).toBeGreaterThan(permissionsIndex)
-    // Write removed (-1), skills + mcp added (+2) → net +1 from the 16 baseline.
-    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(18)
+    // Write -1, skills +mcp +2, providers -1 → net 0 from the 17 baseline... actually 16+2-1=17.
+    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(17)
   })
 
   it('keeps settings tabs scrollable without pushing the footer away', () => {
