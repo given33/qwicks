@@ -46,11 +46,13 @@ type Props = {
   devPreviewCard?: ReactElement | null
   /** Disables the inline Review Plan card's Build action while a turn runs. */
   planActionsBusy?: boolean
-  /** Runs the active plan (Build button on the inline Review Plan card). */
+  /** Runs the active plan (Build button on the inline Review Plan). */
   onBuildPlan?: () => void
   /** Opens/focuses the Plan panel (Open button on the inline card). */
   onOpenPlan?: () => void
   compactCards?: boolean
+  /** 模型连接重连中:有值时覆盖 live block 显示重连进度。 */
+  modelReconnecting?: { attempt: number; maxAttempts: number; reason: string } | null
 }
 
 type CompactionTimelineBlock = Extract<ChatBlock, { kind: 'compaction' }>
@@ -153,7 +155,8 @@ export function MessageTimeline({
   planActionsBusy,
   onBuildPlan,
   onOpenPlan,
-  compactCards = false
+  compactCards = false,
+  modelReconnecting = null
 }: Props): ReactElement {
   const { t } = useTranslation('common')
   const {
@@ -383,12 +386,12 @@ export function MessageTimeline({
           </div>
         ) : null}
 
-        {blocks.length === 0 && (live || liveReasoning) ? (
+        {blocks.length === 0 && (live || liveReasoning || modelReconnecting) ? (
           <MemoMessageTurn
             turn={{ blocks: [] }}
             isProcessing={busy}
-            liveReasoning={liveReasoning}
-            live={live}
+            liveReasoning={modelReconnecting ? '' : liveReasoning}
+            live={modelReconnecting ? t('modelReconnecting', { attempt: modelReconnecting.attempt, max: modelReconnecting.maxAttempts }) : live}
             devPreviewCard={devPreviewCard}
             viewportRef={containerRef}
             compactCards={compactCards}

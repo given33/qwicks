@@ -343,6 +343,7 @@ export function Workbench(): ReactElement {
     liveAssistant,
     error,
     runtimeErrorDetail,
+    modelReconnecting,
     runtimeStatus,
     busy,
     route,
@@ -402,6 +403,7 @@ export function Workbench(): ReactElement {
       liveAssistant: s.liveAssistant,
       error: s.error,
       runtimeErrorDetail: s.runtimeErrorDetail,
+      modelReconnecting: s.modelReconnecting,
       runtimeStatus: s.runtimeStatus,
       busy: s.busy,
       route: s.route,
@@ -2596,6 +2598,7 @@ export function Workbench(): ReactElement {
                 activeThreadId={activeThreadId}
                 runtimeConnection={runtimeConnection}
                 runtimeError={error}
+                modelReconnecting={modelReconnecting}
                 onRetryConnection={() => void probeRuntime('user', { restart: true })}
                 onOpenSettings={() => openSettings('agents')}
                 onSelectSuggestion={(text) => setInput(text)}

@@ -1302,6 +1302,8 @@
   "sandboxExternalShort": "External",
   "runtimeChecking": "Checking runtime…",
   "runtimeStreamRecovering": "Recovering runtime event stream…",
+  "modelReconnecting": "Reconnecting (attempt {{attempt}}/{{max}})",
+  "modelConnectFailed": "Model connection failed (after {{max}} retries)",
   "toolUploadWaitStatus": "Waiting for model after {{count}} tool result(s)…",
   "toolCatalogChangedStatus": "Tool catalog changed; QWicks refreshed the active tool list.",
   "toolStormSuppressedStatus": "{{tool}} repeated the same call too many times; QWicks suppressed the duplicate and asked the model to change approach.",
