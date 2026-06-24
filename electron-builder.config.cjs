@@ -185,7 +185,10 @@ module.exports = {
     createStartMenuShortcut: true,
     shortcutName: 'QWicks',
     uninstallDisplayName: 'QWicks',
-    deleteAppDataOnUninstall: false
+    deleteAppDataOnUninstall: false,
+    // 自定义脚本：安装前用 taskkill 强制结束 QWicks 进程，避免 NSIS
+    // 弹出"请关闭软件"对话框导致死锁（用户关闭软件后安装器不继续）。
+    include: 'build/installer.nsh'
   },
   linux: {
     category: 'Development',
