@@ -121,6 +121,11 @@ jobs:
         shell: pwsh
         run: npm run typecheck
 
+      - name: Test stable suite
+        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        shell: pwsh
+        run: npm run test:ci
+
       - name: Build Windows installer
         if: ${{ steps.full_release.outputs.needed == 'true' }}
         shell: pwsh

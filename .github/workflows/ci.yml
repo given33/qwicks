@@ -47,3 +47,37 @@ jobs:
       - name: Run mesh test suite
         shell: pwsh
         run: npm --prefix qwicks run test -- tests/mesh
+
+  # Quality gate for the Electron GUI shell (src/). Typecheck is a hard gate;
+  # test:ci runs the stable test suite. A handful of pre-existing tests are
+  # excluded (see package.json test:ci) because they depend on a real git
+  # binary, bundled plugin examples, or have stale mocks — tracked as test
+  # debt. Restore them to the default `npm run test` once fixed.
+  gui-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: "Setup Python (native modules: better-sqlite3)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci
+
+      - name: Typecheck (hard gate)
+        shell: pwsh
+        run: npm run typecheck
+
+      - name: Test stable suite (hard gate)
+        shell: pwsh
+        run: npm run test:ci

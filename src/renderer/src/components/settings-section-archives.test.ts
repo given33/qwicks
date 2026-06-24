@@ -113,7 +113,8 @@ describe('ArchivedThreadsSettingsSection', () => {
     expect(agentsIndex).toBeGreaterThanOrEqual(0)
     expect(permissionsIndex).toBeGreaterThan(agentsIndex)
     expect(archivesIndex).toBeGreaterThan(permissionsIndex)
-    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(16)
+    // Pet settings added a spotlight target after the pet feature landed.
+    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(17)
   })
 
   it('keeps settings tabs scrollable without pushing the footer away', () => {

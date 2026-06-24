@@ -117,6 +117,11 @@ jobs:
         shell: pwsh
         run: npm run typecheck
 
+      - name: Test stable suite
+        if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
+        shell: pwsh
+        run: npm run test:ci
+
       - name: Build app code
         if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
