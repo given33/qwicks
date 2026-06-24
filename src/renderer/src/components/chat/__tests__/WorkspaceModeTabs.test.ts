@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../../../i18n'
 import { WorkspaceModeTabs } from '../WorkspaceModeTabs'
 
+// 写作功能已下架（任务4）：WorkspaceModeTabs 现在只渲染 Code tab。
 describe('WorkspaceModeTabs', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
@@ -17,83 +18,48 @@ describe('WorkspaceModeTabs', () => {
     }
   }
 
-  it('renders two tab buttons', () => {
-    const onCodeOpen = vi.fn()
-    const onWriteOpen = vi.fn()
-
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, {
-        activeView: 'chat',
-        onCodeOpen,
-        onWriteOpen
-      })
-    )
+  it('renders a single Code tab button (write was removed)', () => {
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
     expect(html).toContain('Code')
-    expect(html).toContain('Write')
-    expect(html.match(/role="tab"/g)?.length).toBe(2)
+    expect(html).not.toContain('Write')
+    expect(html.match(/role="tab"/g)?.length).toBe(1)
   })
 
   it('uses horizontal row layout not vertical column', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
-    // Container should have flex-row, not flex-col
     expect(html).toContain('flex-row')
     expect(html).not.toContain('flex-col')
   })
 
-  it('buttons use flex-1 for equal width instead of w-full', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
-
-    const flex1Matches = html.match(/flex-1/g)
-    expect(flex1Matches?.length).toBe(2)
-  })
-
-  it('marks active button with aria-selected true', () => {
-    for (const activeView of ['chat', 'write'] as const) {
-      const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props(activeView)))
-      expect(html.match(/aria-selected="true"/g)?.length).toBe(1)
-      expect(html.match(/aria-selected="false"/g)?.length).toBe(1)
-    }
+  it('marks the Code button with aria-selected true when active', () => {
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props('chat')))
+    expect(html.match(/aria-selected="true"/g)?.length).toBe(1)
   })
 
   it('preserves truncate class on button text for narrow sidebars', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
-    const truncateMatches = html.match(/truncate/g)
-    expect(truncateMatches?.length).toBe(2)
+    expect(html.match(/truncate/g)?.length).toBe(1)
   })
 
   it('preserves min-w-0 on buttons for flex truncation', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
-    // min-w-0 must be present to allow truncate to work in flex children
     expect(html).toContain('min-w-0')
   })
 
   it('renders role="tablist" container with descriptive aria-label', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
     expect(html).toContain('role="tablist"')
-    expect(html).toContain('Code / Write')
   })
 
   it('does not render secondary switches in the sidebar mode tabs', () => {
-    const html = renderToStaticMarkup(
-      createElement(WorkspaceModeTabs, props())
-    )
+    const html = renderToStaticMarkup(createElement(WorkspaceModeTabs, props()))
 
     expect(html).not.toContain('role="switch"')
-    expect(html.match(/role="tab"/g)?.length).toBe(2)
+    expect(html.match(/role="tab"/g)?.length).toBe(1)
   })
 })

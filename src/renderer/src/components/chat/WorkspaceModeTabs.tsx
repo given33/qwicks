@@ -1,17 +1,21 @@
 import type { ReactElement } from 'react'
-import { Code2, PencilLine } from 'lucide-react'
+import { Code2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 type Props = {
   activeView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow'
   onCodeOpen: () => void
-  onWriteOpen: () => void
+  /** Kept for call-site compatibility; the write tab was removed (task 4). */
+  onWriteOpen?: () => void
 }
 
+/**
+ * Code/Write 切换。写作功能已下架（任务4），仅保留 Code 入口；
+ * props 保留 onWriteOpen 以避免大面积调用方改动，但不再渲染 write tab。
+ */
 export function WorkspaceModeTabs({
   activeView,
-  onCodeOpen,
-  onWriteOpen
+  onCodeOpen
 }: Props): ReactElement {
   const { t } = useTranslation('common')
 
@@ -32,7 +36,7 @@ export function WorkspaceModeTabs({
   return (
     <div
       role="tablist"
-      aria-label={`${t('code')} / ${t('write')}`}
+      aria-label={t('code')}
       className="mb-1.5 flex flex-row gap-1 rounded-[8px] bg-[color-mix(in_srgb,var(--ds-sidebar-field-bg)_72%,transparent)] p-0.5 shadow-[inset_0_0_0_1px_var(--ds-sidebar-row-ring)] dark:bg-white/[0.045] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]"
     >
       <button
@@ -45,17 +49,6 @@ export function WorkspaceModeTabs({
       >
         <Code2 className={iconClass(activeView === 'chat')} strokeWidth={1.9} />
         <span className="truncate">{t('code')}</span>
-      </button>
-      <button
-        type="button"
-        data-cursor-spotlight-target
-        role="tab"
-        aria-selected={activeView === 'write'}
-        onClick={onWriteOpen}
-        className={tabClass(activeView === 'write')}
-      >
-        <PencilLine className={iconClass(activeView === 'write')} strokeWidth={1.9} />
-        <span className="truncate">{t('write')}</span>
       </button>
     </div>
   )

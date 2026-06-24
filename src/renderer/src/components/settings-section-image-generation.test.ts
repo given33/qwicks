@@ -76,12 +76,11 @@ describe('ImageGenerationSettingsSection', () => {
       t
     }))
 
-    const writeIndex = html.indexOf('Write')
+    // Write tab was removed (task 4); image generation lives under media generation.
     const mediaIndex = html.indexOf('Media generation')
     const imageIndex = html.indexOf('Image generation')
     const agentsIndex = html.indexOf('AI assistant')
-    expect(writeIndex).toBeGreaterThanOrEqual(0)
-    expect(mediaIndex).toBeGreaterThan(writeIndex)
+    expect(mediaIndex).toBeGreaterThanOrEqual(0)
     expect(imageIndex).toBe(-1)
     expect(agentsIndex).toBeGreaterThan(mediaIndex)
   })
