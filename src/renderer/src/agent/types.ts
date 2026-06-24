@@ -405,10 +405,10 @@ export type ThreadEventSink = {
   onUserInputStatus(ev: UserInputStatusPayload): void
   onRuntimeStatus?(ev: RuntimeStatusEventPayload): void
   onRuntimeError?(ev: RuntimeErrorEventPayload): void
-  /** v3(CHIEF P0-3):记忆状态提示(remembering/personalizing/sources)。 */
-  onMemoryStatus?(ev: { remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }): void
-  /** v3(CHIEF P0-1):Memory Sources 就绪(used/downranked/suppressed/sourceIds)。 */
-  onMemorySourcesReady?(ev: { usedMemoryIds: string[]; downrankedMemoryIds: string[]; suppressedMemoryIds: string[]; sourceIds: string[] }): void
+  /** v3(差距1):记忆状态提示,带 threadId/turnId 以便绑定到对应 assistant message。 */
+  onMemoryStatus?(ev: { threadId: string; turnId: string; remembering: boolean; personalizing: boolean; memorySourcesUsed: string[]; rewrittenQueryFromMemory: boolean }): void
+  /** v3(差距1):Memory Sources 就绪,带 threadId/turnId。 */
+  onMemorySourcesReady?(ev: { threadId: string; turnId: string; usedMemoryIds: string[]; downrankedMemoryIds: string[]; suppressedMemoryIds: string[]; sourceIds: string[] }): void
   onGoal(ev: { threadId: string; goal: ThreadGoal | null; cleared?: boolean; createdAt?: string }): void
   onTodos?(ev: { threadId: string; todos: ThreadTodoList | null; cleared?: boolean; createdAt?: string }): void
   onTurnComplete(): void

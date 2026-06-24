@@ -1240,8 +1240,10 @@ export async function dispatchQWicksRuntimeEvent(
       sink.onRuntimeError?.(runtimeErrorFromEvent(event, 'Runtime error'))
       return
     case 'memory_status': {
-      // v3(CHIEF P0-3):把 memory_status SSE 事件转成 renderer 可消费的状态。
+      // v3(差距1):带 threadId/turnId 以便 renderer 绑定到对应 assistant message。
       sink.onMemoryStatus?.({
+        threadId: event.threadId ?? '',
+        turnId: event.turnId ?? '',
         remembering: event.remembering ?? false,
         personalizing: event.personalizing ?? false,
         memorySourcesUsed: event.memorySourcesUsed ?? [],
@@ -1251,6 +1253,8 @@ export async function dispatchQWicksRuntimeEvent(
     }
     case 'memory_sources_ready': {
       sink.onMemorySourcesReady?.({
+        threadId: event.threadId ?? '',
+        turnId: event.turnId ?? '',
         usedMemoryIds: event.usedMemoryIds ?? [],
         downrankedMemoryIds: event.downrankedMemoryIds ?? [],
         suppressedMemoryIds: event.suppressedMemoryIds ?? [],

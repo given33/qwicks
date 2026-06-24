@@ -1,27 +1,20 @@
 import type { ReactElement } from 'react'
 import { Brain, Sparkles, Search } from 'lucide-react'
+import type { DreamTurnMemoryStatus } from '../store/chat-store-types'
 
 /**
- * v3(CHIEF P0-3 报告二轮 §4.3/§13):回答级 Memory Sources 指示器。
+ * v3(差距1/2):回答级 Memory Sources 指示器。
  *
- * 消费 memory_status SSE 事件,在 assistant message 旁显示轻量状态:
- * - 🧠 remembering:本次回答使用了记忆上下文
- * - ✨ personalizing:注入了个性化记忆
- * - 🔍 rewrittenQueryFromMemory:搜索查询基于记忆优化
- *
+ * 从 chat store 的 memoryStatusByTurnId[turnId] 读取状态,渲染到 assistant message 旁。
  * 状态只显示抽象标志,不直接展示敏感内容(报告 §4.2 验收标准)。
+ *
+ * 挂载方式:在 MessageTimeline 的 assistant message 渲染处,
+ * 传入该 message 对应的 turnId,组件自动从 store 查找并渲染。
  */
-export interface DreamMemoryStatus {
-  remembering: boolean
-  personalizing: boolean
-  memorySourcesUsed: string[]
-  rewrittenQueryFromMemory: boolean
-}
-
 export function DreamMemoryStatusIndicator({
   status
 }: {
-  status: DreamMemoryStatus | null
+  status: DreamTurnMemoryStatus | null | undefined
 }): ReactElement | null {
   if (!status) return null
   // 无记忆时不显示(报告 §4.2:无记忆/Temporary/opt-out 不显示)
@@ -49,9 +42,9 @@ export function DreamMemoryStatusIndicator({
           查询优化
         </span>
       )}
-      {status.memorySourcesUsed.length > 0 && (
+      {status.sources && status.sources.sourceIds.length > 0 && (
         <span className="text-zinc-500">
-          ({status.memorySourcesUsed.length} 个来源)
+          ({status.sources.sourceIds.length} 个来源)
         </span>
       )}
     </div>

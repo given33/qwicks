@@ -147,6 +147,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastSeq: 0,
   usageRefreshKey: 0,
   lastTurnUsage: null,
+  memoryStatusByTurnId: {},
   busy: false,
   error: null,
   runtimeErrorDetail: null,

@@ -133,6 +133,26 @@ export type SidePanelState = {
   activeSideId: string | null
 }
 
+/**
+ * v3(差距1):单个 turn 的 Dream 记忆状态(memory_status + memory_sources_ready 合并)。
+ * 通过 turnId 绑定到对应的 assistant message,让 DreamMemoryStatusIndicator 渲染。
+ */
+export interface DreamTurnMemoryStatus {
+  threadId: string
+  turnId: string
+  remembering: boolean
+  personalizing: boolean
+  memorySourcesUsed: string[]
+  rewrittenQueryFromMemory: boolean
+  /** memory_sources_ready 事件(可能晚于 memory_status 到达)。 */
+  sources?: {
+    usedMemoryIds: string[]
+    downrankedMemoryIds: string[]
+    suppressedMemoryIds: string[]
+    sourceIds: string[]
+  }
+}
+
 export type ChatState = {
   route: AppRoute
   settingsReturnRoute: Exclude<AppRoute, 'settings'>
@@ -162,6 +182,12 @@ export type ChatState = {
    * occupies the window. Null until a live turn reports usage.
    */
   lastTurnUsage: { threadId: string; snapshot: ThreadUsageSnapshot } | null
+  /**
+   * v3(差距1):按 turnId 索引的 Dream 记忆状态。
+   * key = turnId,value = 该 turn 的 memory_status + memory_sources_ready 合并状态。
+   * DreamMemoryStatusIndicator 从此 map 读取对应 turn 的状态渲染到 assistant message。
+   */
+  memoryStatusByTurnId: Record<string, DreamTurnMemoryStatus>
   busy: boolean
   error: string | null
   runtimeErrorDetail: string | null

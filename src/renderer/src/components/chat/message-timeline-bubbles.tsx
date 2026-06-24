@@ -8,6 +8,7 @@ import type { AttachmentReference, ChatBlock, GeneratedFileReference, RuntimeDis
 import { extractUnifiedDiffText } from '../../lib/diff-stats'
 import { useChatStore } from '../../store/chat-store'
 import { getProvider } from '../../agent/registry'
+import { DreamMemoryStatusIndicator } from '../dream-memory-status-indicator'
 import { parseWritePromptForDisplay } from '../../write/quoted-selection'
 import { parseClawUserPromptForDisplay, type ClawUserPromptDisplay } from '@shared/app-settings'
 import { openWorkspacePathInEditor } from '../../lib/open-workspace-path'
@@ -1374,11 +1375,17 @@ function MessageBubbleImpl({
     const createdAtLabel = block.createdAt
       ? formatMessageDateTime(block.createdAt, i18n.language)
       : null
+    // v3(差距2):从 store 读取该 turn 的记忆状态,挂载 DreamMemoryStatusIndicator
+    const memStatus = block.turnId ? useChatStore.getState().memoryStatusByTurnId[block.turnId] : null
     return (
       <div className="group/message flex min-w-0 max-w-full flex-col">
         <div className="ds-markdown ds-chat-answer min-w-0 max-w-full text-ds-ink">
           <AssistantMarkdown text={block.text} streaming={streaming} />
         </div>
+        {/* v3(差距2):回答级 Memory Sources 指示器 */}
+        {memStatus && !streaming ? (
+          <DreamMemoryStatusIndicator status={memStatus} />
+        ) : null}
         {!streaming ? (
           <div className="mt-1 flex min-h-5 min-w-0 items-center justify-between gap-3 text-[11.5px] text-ds-faint opacity-0 transition duration-150 group-hover/message:opacity-100">
             <span className="min-w-0 truncate">{createdAtLabel ?? ''}</span>

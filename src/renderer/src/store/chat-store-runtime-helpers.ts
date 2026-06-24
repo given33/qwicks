@@ -192,12 +192,14 @@ export function clearedThreadSelection(): Pick<
   | 'turnReasoningFirstAtByUserId'
   | 'turnReasoningLastAtByUserId'
   | 'inspectorSelectedId'
+  | 'memoryStatusByTurnId'
   | 'queuedMessages'
 > {
   return {
     activeThreadId: null,
     activeThreadGoal: null,
     activeThreadTodos: null,
+    memoryStatusByTurnId: {},
     blocks: [],
     lastSeq: 0,
     liveReasoning: '',

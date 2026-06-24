@@ -1082,6 +1082,52 @@ export function buildThreadEventSink(
           : { threads: nextThreads }
       })
     },
+    // v3(差距1):记忆状态 → 按 turnId 存入 store,供 DreamMemoryStatusIndicator 渲染。
+    onMemoryStatus: (ev) => {
+      if (!ev.turnId) return
+      set((s) => {
+        const existing = s.memoryStatusByTurnId[ev.turnId]
+        return {
+          memoryStatusByTurnId: {
+            ...s.memoryStatusByTurnId,
+            [ev.turnId]: {
+              threadId: ev.threadId,
+              turnId: ev.turnId,
+              remembering: ev.remembering,
+              personalizing: ev.personalizing,
+              memorySourcesUsed: ev.memorySourcesUsed,
+              rewrittenQueryFromMemory: ev.rewrittenQueryFromMemory,
+              ...(existing?.sources ? { sources: existing.sources } : {})
+            }
+          }
+        }
+      })
+    },
+    onMemorySourcesReady: (ev) => {
+      if (!ev.turnId) return
+      set((s) => {
+        const existing = s.memoryStatusByTurnId[ev.turnId]
+        return {
+          memoryStatusByTurnId: {
+            ...s.memoryStatusByTurnId,
+            [ev.turnId]: {
+              threadId: ev.threadId,
+              turnId: ev.turnId,
+              remembering: existing?.remembering ?? false,
+              personalizing: existing?.personalizing ?? false,
+              memorySourcesUsed: existing?.memorySourcesUsed ?? ev.sourceIds,
+              rewrittenQueryFromMemory: existing?.rewrittenQueryFromMemory ?? false,
+              sources: {
+                usedMemoryIds: ev.usedMemoryIds,
+                downrankedMemoryIds: ev.downrankedMemoryIds,
+                suppressedMemoryIds: ev.suppressedMemoryIds,
+                sourceIds: ev.sourceIds
+              }
+            }
+          }
+        }
+      })
+    },
     onTurnComplete: () => {
       if (!isCurrentStream()) return
       resetBusyRecoveryAttempts()
