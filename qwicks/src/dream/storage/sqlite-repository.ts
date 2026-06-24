@@ -133,6 +133,19 @@ CREATE TABLE IF NOT EXISTS suppression_rule (
 CREATE INDEX IF NOT EXISTS ix_suppression_user ON suppression_rule(user_id);
 CREATE INDEX IF NOT EXISTS ix_suppression_scope ON suppression_rule(scope);
 
+-- Batch B(spec §2.5):高敏感待确认草稿(物理隔离 — 不在 memory 表,任何记忆机制碰不到)。
+-- UNIQUE(user_id, fingerprint) 兜底双向去重;sticky dismiss 走 suppression_rule(scope='sensitive_fingerprint')。
+CREATE TABLE IF NOT EXISTS pending_sensitive_draft (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    category TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS ix_pending_user ON pending_sensitive_draft(user_id, created_at);
+
 -- v3(报告 §7.3):规范化的 memory↔source 关联表。
 -- 与 memory.source_ids JSON 列并存(JSON 列向后兼容,此表用于可靠 JOIN 查询)。
 CREATE TABLE IF NOT EXISTS memory_source_link (
@@ -219,6 +232,7 @@ interface MemoryRow {
   last_used_at: string | null
   sensitivity: string
   shareable: number
+  sensitivity_categories: string
 }
 
 interface SourceRow {
@@ -294,13 +308,13 @@ export class SqliteMemoryRepository implements MemoryRepository {
                             status, status_history, schema_version,
                             normalized_facts, source_ids, temporal_state, valid_from, valid_until,
                             supersedes, superseded_by, is_top_of_mind, is_suppressed, user_corrected,
-                            salience, topic, last_used_at, sensitivity, shareable)
+                            salience, topic, last_used_at, sensitivity, shareable, sensitivity_categories)
         VALUES (@id,@user_id,@type,@content,@scope,@tags,@importance,@confidence,
                 @created_at,@updated_at,@expires_at,@provenance,@embedding_model,@related,@metadata,
                 @status,@status_history,@schema_version,
                 @normalized_facts,@source_ids,@temporal_state,@valid_from,@valid_until,
                 @supersedes,@superseded_by,@is_top_of_mind,@is_suppressed,@user_corrected,
-                @salience,@topic,@last_used_at,@sensitivity,@shareable)
+                @salience,@topic,@last_used_at,@sensitivity,@shareable,@sensitivity_categories)
         ON CONFLICT(id) DO UPDATE SET
             user_id=excluded.user_id, type=excluded.type, content=excluded.content,
             scope=excluded.scope, tags=excluded.tags, importance=excluded.importance,
@@ -315,7 +329,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
             superseded_by=excluded.superseded_by, is_top_of_mind=excluded.is_top_of_mind,
             is_suppressed=excluded.is_suppressed, user_corrected=excluded.user_corrected,
             salience=excluded.salience, topic=excluded.topic, last_used_at=excluded.last_used_at,
-            sensitivity=excluded.sensitivity, shareable=excluded.shareable
+            sensitivity=excluded.sensitivity, shareable=excluded.shareable,
+            sensitivity_categories=excluded.sensitivity_categories
       `
       )
       .run(params)
@@ -366,13 +381,13 @@ export class SqliteMemoryRepository implements MemoryRepository {
                           status, status_history, schema_version,
                           normalized_facts, source_ids, temporal_state, valid_from, valid_until,
                           supersedes, superseded_by, is_top_of_mind, is_suppressed, user_corrected,
-                          salience, topic, last_used_at, sensitivity, shareable)
+                          salience, topic, last_used_at, sensitivity, shareable, sensitivity_categories)
       VALUES (@id,@user_id,@type,@content,@scope,@tags,@importance,@confidence,
               @created_at,@updated_at,@expires_at,@provenance,@embedding_model,@related,@metadata,
               @status,@status_history,@schema_version,
               @normalized_facts,@source_ids,@temporal_state,@valid_from,@valid_until,
               @supersedes,@superseded_by,@is_top_of_mind,@is_suppressed,@user_corrected,
-              @salience,@topic,@last_used_at,@sensitivity,@shareable)
+              @salience,@topic,@last_used_at,@sensitivity,@shareable,@sensitivity_categories)
       ON CONFLICT(id) DO UPDATE SET
           user_id=excluded.user_id, type=excluded.type, content=excluded.content,
           scope=excluded.scope, tags=excluded.tags, importance=excluded.importance,
@@ -387,7 +402,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
           superseded_by=excluded.superseded_by, is_top_of_mind=excluded.is_top_of_mind,
           is_suppressed=excluded.is_suppressed, user_corrected=excluded.user_corrected,
           salience=excluded.salience, topic=excluded.topic, last_used_at=excluded.last_used_at,
-          sensitivity=excluded.sensitivity, shareable=excluded.shareable
+          sensitivity=excluded.sensitivity, shareable=excluded.shareable,
+          sensitivity_categories=excluded.sensitivity_categories
     `
     )
     const insertEvent = this.db.prepare(
@@ -1194,7 +1210,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
       ['topic', 'TEXT'],
       ['last_used_at', 'TEXT'],
       ['sensitivity', "TEXT NOT NULL DEFAULT 'normal'"],
-      ['shareable', 'INTEGER NOT NULL DEFAULT 1']
+      ['shareable', 'INTEGER NOT NULL DEFAULT 1'],
+      ['sensitivity_categories', "TEXT NOT NULL DEFAULT '[]'"]
     ]
     for (const [col, def] of additions) {
       if (!cols.has(col)) {
@@ -1246,7 +1263,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
       topic: item.topic,
       last_used_at: item.lastUsedAt,
       sensitivity: item.sensitivity,
-      shareable: item.shareable ? 1 : 0
+      shareable: item.shareable ? 1 : 0,
+      sensitivity_categories: JSON.stringify(item.sensitivityCategories ?? [])
     }
   }
 
@@ -1285,7 +1303,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
       topic: row.topic,
       last_used_at: row.last_used_at,
       sensitivity: row.sensitivity,
-      shareable: boolFromInt(row.shareable)
+      shareable: boolFromInt(row.shareable),
+      sensitivity_categories: parseStringArray(row.sensitivity_categories)
     }
     return MemoryItem.fromDict(dict)
   }
@@ -1345,6 +1364,12 @@ function parseJsonObject(raw: string | null | undefined): Record<string, unknown
 function parseStatusHistory(raw: string | null | undefined): StatusHistoryEntry[] {
   const arr = parseJsonArray(raw) as Array<Record<string, unknown>>
   return arr.map((e) => statusHistoryEntryFromDict(e))
+}
+
+/** Batch B:解析 sensitivity_categories JSON 列(string[])。 */
+function parseStringArray(raw: string | null | undefined): string[] {
+  const arr = parseJsonArray(raw)
+  return arr.filter((v): v is string => typeof v === 'string')
 }
 
 function boolFromInt(n: number | null | undefined): boolean {
