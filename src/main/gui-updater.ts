@@ -424,6 +424,13 @@ function updateFeedUrl(channel: GuiUpdateChannel): string {
   return `${updateBaseUrl()}/channels/${normalized}/latest/`
 }
 
+// Code (hot) updates live in their own code/ sub-path with a distinct
+// code-latest.json manifest so they never collide with the installer's
+// latest.json at channels/{ch}/latest/latest.json.
+function codeUpdateFeedUrl(channel: GuiUpdateChannel): string {
+  return `${updateFeedUrl(channel)}code/`
+}
+
 function insecureUpdatesAllowed(): boolean {
   if (
     process.env.QWICKS_BLOCK_INSECURE_UPDATES === '1' ||
@@ -577,6 +584,20 @@ async function fetchServerLatestJson(channel: GuiUpdateChannel): Promise<unknown
   return JSON.parse(await response.text()) as unknown
 }
 
+// Reads the code-update manifest from its dedicated code-latest.json path.
+// Prefer this over fetchServerLatestJson for code updates to avoid the
+// installer/code manifest collision.
+async function fetchCodeUpdateLatestJson(channel: GuiUpdateChannel): Promise<unknown | null> {
+  const url = `${codeUpdateFeedUrl(channel)}code-latest.json`
+  const response = await fetch(url, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(8_000)
+  })
+  if (response.status === 404) return null
+  if (!response.ok) return null
+  return JSON.parse(await response.text()) as unknown
+}
+
 async function fetchInstallerUpdateManifest(
   channel: GuiUpdateChannel
 ): Promise<ServerInstallerUpdateManifest | null> {
@@ -594,7 +615,7 @@ async function checkCodePackageUpdate(
 ): Promise<Extract<GuiUpdateInfo, { ok: true }> | null> {
   let raw: unknown | null = null
   try {
-    raw = await fetchServerLatestJson(channel)
+    raw = await fetchCodeUpdateLatestJson(channel)
   } catch (error) {
     console.warn('[qwicks-gui updater] failed to read code update manifest:', error)
     return null

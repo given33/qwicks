@@ -157,7 +157,7 @@ jobs:
           }
           Set-Content -Encoding utf8 -Path dist/code-update/release-notes.md -Value $notes
 
-      - name: Write code latest.json
+      - name: Write code manifest
         if: ${{ github.event_name != 'push' || steps.hot_safe.outputs.hot_safe == 'true' }}
         shell: pwsh
         run: |
@@ -178,7 +178,7 @@ jobs:
           name: QWicks-${{ steps.version.outputs.version }}-code-update
           path: |
             dist/code-update/code.zip
-            dist/code-update/latest.json
+            dist/code-update/code-latest.json
             dist/code-update/release-notes.md
           if-no-files-found: error
 
@@ -279,14 +279,16 @@ jobs:
             Write-Host "Detected server deploy path: $deployBase"
           }
 
-          $remoteDir = "$deployBase/channels/$env:QWICKS_UPDATE_CHANNEL/latest"
+          # Deploy into a dedicated code/ subdir so we never overwrite the
+          # installer's latest.json in channels/{ch}/latest/.
+          $remoteDir = "$deployBase/channels/$env:QWICKS_UPDATE_CHANNEL/latest/code"
 
           & ssh @sshArgs $remote "mkdir -p '$remoteDir'"
           if ($LASTEXITCODE -ne 0) { throw "Failed to create remote update directory" }
 
-          foreach ($file in @('dist/code-update/code.zip', 'dist/code-update/latest.json')) {
+          foreach ($file in @('dist/code-update/code.zip', 'dist/code-update/code-latest.json')) {
             & scp @scpArgs $file "${remote}:$remoteDir/"
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload $file" }
           }
 
-          Write-Host "Uploaded code update feed to $env:QWICKS_UPDATE_BASE_URL/channels/$env:QWICKS_UPDATE_CHANNEL/latest/"
+          Write-Host "Uploaded code update feed to $env:QWICKS_UPDATE_BASE_URL/channels/$env:QWICKS_UPDATE_CHANNEL/latest/code/"

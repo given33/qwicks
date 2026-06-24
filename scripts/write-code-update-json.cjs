@@ -56,7 +56,9 @@ function main() {
   const name = basename(packagePath)
   const size = statSync(packagePath).size
   const sha256 = sha256File(packagePath)
-  const publicBase = `${baseUrl}/channels/${channel}/latest`
+  // Code updates live in a dedicated sub-path so they never overwrite the
+  // installer's latest.json (which shares the parent channels/{ch}/latest/ dir).
+  const publicBase = `${baseUrl}/channels/${channel}/latest/code`
   const manifest = {
     product: 'QWicks',
     kind: 'code',
@@ -86,7 +88,9 @@ function main() {
     ]
   }
 
-  const outPath = join(distDir, 'latest.json')
+  // Distinct filename so code updates never collide with the installer's
+  // latest.json even if a deploy path ever overlaps.
+  const outPath = join(distDir, 'code-latest.json')
   writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   console.log(`Wrote ${outPath}`)
 }
