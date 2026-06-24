@@ -493,6 +493,10 @@ export interface MemoryItemDict {
   sensitivity?: string
   /** 是否可对外导出 / 共享(对齐 §6 "共享聊天时不得暴露用户的 Memory Sources")。 */
   shareable?: boolean
+  /** 细粒度敏感类别(Batch B)⊆ {financial, health, identity}。 */
+  sensitivity_categories?: string[]
+  /** sensitivity_categories 的驼峰别名(向后兼容)。 */
+  sensitivityCategories?: string[]
 }
 
 export class MemoryItem {
@@ -546,7 +550,13 @@ export class MemoryItem {
     /** sensitivity:隐私敏感度等级(对齐 §1 privacy/sensitivity flags)。 */
     public sensitivity: SensitivityLevel = SensitivityLevel.NORMAL,
     /** shareable:能否对外共享 / 导出到第三方(默认敏感=false 时仍 true,显式标 restricted 时 false)。 */
-    public shareable: boolean = true
+    public shareable: boolean = true,
+    /**
+     * sensitivityCategories:细粒度敏感类别(Batch B)⊆ {financial, health, identity}。
+     * E(query-rewrite 过滤)按类别判定;D(容量管理)只读粗档 sensitivity,不碰此字段。
+     * 新增类别(如 location)对 D/E 透明。ingest 时由 classifier 写定。
+     */
+    public sensitivityCategories: string[] = []
   ) {}
 
   /**
@@ -625,7 +635,12 @@ export class MemoryItem {
       raw.topic === undefined ? null : raw.topic,
       raw.last_used_at === undefined ? null : raw.last_used_at,
       sensitivity,
-      raw.shareable !== false
+      raw.shareable !== false,
+      Array.isArray(raw.sensitivity_categories)
+        ? [...(raw.sensitivity_categories as string[])]
+        : Array.isArray(raw.sensitivityCategories)
+          ? [...(raw.sensitivityCategories as string[])]
+          : []
     )
   }
 
@@ -664,7 +679,8 @@ export class MemoryItem {
       topic: this.topic,
       last_used_at: this.lastUsedAt,
       sensitivity: this.sensitivity,
-      shareable: this.shareable
+      shareable: this.shareable,
+      sensitivity_categories: [...this.sensitivityCategories]
     }
   }
 
@@ -860,6 +876,10 @@ export interface MemoryItemDraftDict {
   scope?: string
   provenance?: MemoryProvenanceDict
   metadata?: Record<string, unknown>
+  /** Batch B:粗档敏感度(由 classifier 填充)。 */
+  sensitivity?: string
+  /** Batch B:细粒度敏感类别(由 classifier 填充)。 */
+  sensitivity_categories?: unknown[]
 }
 
 export class MemoryItemDraft {
@@ -871,7 +891,11 @@ export class MemoryItemDraft {
     public confidence: number = 0.7,
     public scope: MemoryScope = MemoryScope.USER,
     public provenance: MemoryProvenance = new MemoryProvenance(),
-    public metadata: Record<string, unknown> = {}
+    public metadata: Record<string, unknown> = {},
+    /** Batch B:粗档敏感度(由 classifier 填充,默认 NORMAL)。 */
+    public sensitivity: SensitivityLevel = SensitivityLevel.NORMAL,
+    /** Batch B:细粒度敏感类别(由 classifier 填充)。 */
+    public sensitivityCategories: string[] = []
   ) {}
 
   static fromDict(raw: MemoryItemDraftDict): MemoryItemDraft {
@@ -883,7 +907,9 @@ export class MemoryItemDraft {
       typeof raw.confidence === 'number' ? raw.confidence : 0.7,
       parseMemoryScope(typeof raw.scope === 'string' ? raw.scope : 'user'),
       MemoryProvenance.fromDict(raw.provenance ?? {}),
-      { ...(raw.metadata ?? {}) }
+      { ...(raw.metadata ?? {}) },
+      parseSensitivityLevel(typeof raw.sensitivity === 'string' ? raw.sensitivity : 'normal'),
+      Array.isArray(raw.sensitivity_categories) ? [...(raw.sensitivity_categories as string[])] : []
     )
   }
 
@@ -896,7 +922,9 @@ export class MemoryItemDraft {
       confidence: this.confidence,
       scope: this.scope,
       provenance: this.provenance.toDict(),
-      metadata: { ...this.metadata }
+      metadata: { ...this.metadata },
+      sensitivity: this.sensitivity,
+      sensitivity_categories: [...this.sensitivityCategories]
     }
   }
 }
