@@ -88,7 +88,10 @@ describe('write infographic service', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.relativePath).toMatch(/^\.\.\/img\/infographic-\d{14}-[0-9a-f]{4}\.png$/)
-    expect(result.absolutePath).toBe(join(workspace, 'img', result.fileName))
+    // Compare canonicalized paths: on Windows CI the runner home may resolve
+    // to an 8.3 short name (RUNNER~1) via one realpath call and the long name
+    // (runneradmin) via another, so a raw string compare is flaky.
+    expect(realpathSync(result.absolutePath)).toBe(realpathSync(join(workspace, 'img', result.fileName)))
     expect(existsSync(result.absolutePath)).toBe(true)
     expect(readFileSync(result.absolutePath, 'utf8')).toBe('fake-png-bytes')
 
@@ -110,7 +113,7 @@ describe('write infographic service', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.relativePath).toMatch(/^img\/infographic-\d{14}-[0-9a-f]{4}\.png$/)
-    expect(result.absolutePath).toBe(join(workspace, 'img', result.fileName))
+    expect(realpathSync(result.absolutePath)).toBe(realpathSync(join(workspace, 'img', result.fileName)))
   })
 
   it('prefers an explicit defaultSize over the portrait default', async () => {
@@ -209,7 +212,7 @@ describe('write infographic service', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.relativePath).toMatch(/^\.\.\/\.\.\/img\/design-\d{14}-[0-9a-f]{4}\.png$/)
-    expect(result.absolutePath).toBe(join(workspace, '.qwickssdd', 'img', result.fileName))
+    expect(realpathSync(result.absolutePath)).toBe(realpathSync(join(workspace, '.qwickssdd', 'img', result.fileName)))
     expect(existsSync(result.absolutePath)).toBe(true)
   })
 

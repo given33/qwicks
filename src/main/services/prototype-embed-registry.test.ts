@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   authorizePrototypePath,
@@ -45,7 +45,11 @@ describe('prototype embed registry', () => {
   })
 
   it('rejects paths escaping the workspace and missing files', async () => {
-    const escaped = await authorizePrototypePath('/tmp/.qwickssdd/proto/evil.html', workspace)
+    // Use a sibling of the workspace dir so the path is genuinely outside it
+    // on every platform. (A hardcoded "/tmp/..." is not absolute on Windows —
+    // node treats it as drive-relative — so it fails to escape there.)
+    const outsideWorkspace = join(dirname(workspace), 'outside-proto', '.qwickssdd', 'proto', 'evil.html')
+    const escaped = await authorizePrototypePath(outsideWorkspace, workspace)
     expect(escaped.ok).toBe(false)
 
     const missing = await authorizePrototypePath(
