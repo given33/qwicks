@@ -32,6 +32,10 @@ export type ProcessSection = {
    * reasoning/output sections and for non-tool execution blocks (approval,
    * user_input, compaction, system) which keep their original flat grouping. */
   category?: ToolCategory
+  /** Hint from groupProcessSections: this section holds the latest live
+   * (running) activity and should stay expanded by default. Mirrors Codex's
+   * keepLatestLiveActivityInGroup. */
+  keepExpanded?: boolean
 }
 
 /**
@@ -43,7 +47,10 @@ export type ProcessSection = {
  * Non-tool execution blocks (approval / user_input / compaction / system) have
  * no category and merge with each other as before.
  */
-export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
+export function groupProcessSections(
+  blocks: ChatBlock[],
+  keepLatestLiveActivity = false
+): ProcessSection[] {
   const sections: ProcessSection[] = []
 
   for (const block of blocks) {
@@ -75,6 +82,17 @@ export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
       ...(category ? { category } : {}),
       blocks: [block]
     })
+  }
+
+  // keepLatestLiveActivity: if the last section has a running tool, flag it so
+  // ProcessSectionRow keeps it expanded by default (Codex behavior — the live
+  // activity stays visible while earlier finished sections collapse).
+  if (keepLatestLiveActivity && sections.length > 0) {
+    const tail = sections[sections.length - 1]
+    const hasRunning = tail.blocks.some(
+      (b) => b.kind === 'tool' && b.status === 'running'
+    )
+    if (hasRunning) tail.keepExpanded = true
   }
 
   return sections
@@ -176,7 +194,8 @@ export function ProcessSectionRow({
     hasError ||
     sectionHasPendingApproval(section) ||
     (active && section.kind === 'reasoning') ||
-    (processing && section.kind === 'execution' && sectionHasRequestUserInput(section))
+    (processing && section.kind === 'execution' && sectionHasRequestUserInput(section)) ||
+    section.keepExpanded === true
   const forceExpanded = sectionHasPendingApproval(section)
   const expanded = hasDetails && (forceExpanded || (userExpanded ?? defaultExpanded))
   const title = describeProcessSection(section, t, { processing })

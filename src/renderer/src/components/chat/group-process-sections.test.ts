@@ -81,6 +81,27 @@ describe('groupProcessSections — typed grouping', () => {
     expect(sections[0].blocks).toHaveLength(2)
   })
 
+  it('flags the last section keepExpanded when keepLatestLiveActivity and it has a running tool', () => {
+    const blocks: ChatBlock[] = [
+      tool('r1', 'read'),
+      tool('r2', 'read'),
+      tool('b1', 'bash', { status: 'running' })
+    ]
+    const sections = groupProcessSections(blocks, true)
+    // read(2) merged, then terminal(1, running) — last section flagged
+    expect(sections).toHaveLength(2)
+    expect(sections[1].category).toBe('terminal')
+    expect(sections[1].keepExpanded).toBe(true)
+    // first (finished read) section NOT flagged
+    expect(sections[0].keepExpanded).toBeUndefined()
+  })
+
+  it('does not flag keepExpanded when keepLatestLiveActivity is false', () => {
+    const blocks: ChatBlock[] = [tool('b1', 'bash', { status: 'running' })]
+    const sections = groupProcessSections(blocks, false)
+    expect(sections[0].keepExpanded).toBeUndefined()
+  })
+
   it('keeps non-tool execution blocks (approval) ungrouped by category', () => {
     const approval: ChatBlock = {
       kind: 'approval',

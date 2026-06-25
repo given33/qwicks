@@ -525,8 +525,8 @@ function MessageTurn({
   )
 
   const processSections = useMemo(
-    () => (workExpanded ? groupProcessSections(workProcessBlocks) : []),
-    [workProcessBlocks, workExpanded]
+    () => (workExpanded ? groupProcessSections(workProcessBlocks, isProcessing) : []),
+    [workProcessBlocks, workExpanded, isProcessing]
   )
   // Show the live assistant bubble whenever the SSE has streamed any text
   // into `live`. We deliberately do NOT gate on `isProcessing`: the
