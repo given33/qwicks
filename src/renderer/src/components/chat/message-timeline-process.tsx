@@ -10,6 +10,7 @@ import { previewWorkspaceFile } from '../../lib/workspace-file-preview'
 import { useChatStore } from '../../store/chat-store'
 import { DiffView } from '../DiffView'
 import { AssistantMarkdown } from './AssistantMarkdown'
+import { ReasoningSection } from './reasoning-section'
 import { MessageBubble } from './message-timeline-bubbles'
 import { blockHasPendingRuntimeWork, splitThink } from './message-timeline-turns'
 import { formatDuration, formatToolTitle } from './message-timeline-tools'
@@ -192,6 +193,15 @@ export function ProcessSectionRow({
     if (block) {
       return <ProcessEntryRow block={block} processing={processing} nowMs={nowMs} />
     }
+  }
+
+  // Reasoning section: delegate to the Codex-style ReasoningSection component
+  // (streaming markdown + shimmer + collapsible). isThinking = the live
+  // reasoning stream while the turn is processing.
+  if (section.kind === 'reasoning') {
+    const text = getReasoningSectionText(section)
+    const isThinking = processing && section.blocks.some((block) => block.id === 'live-reasoning')
+    return <ReasoningSection text={text} isThinking={isThinking} viewportRef={viewportRef} />
   }
 
   if (section.kind === 'output') {

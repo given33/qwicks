@@ -1900,6 +1900,7 @@
   "compactionFailed": "上下文压缩失败",
   "thinkingNow": "思考中…",
   "thinkingWithSeconds": "思考中 {{duration}}",
+  "reasoningThought": "已思考",
   "thoughtStep": "思考（{{count}} 步）",
   "timelineShowEarlierTurns": "显示更早的 {{count}} 轮对话",
   "timelineCollapseEarlierTurns": "仅显示最近对话",

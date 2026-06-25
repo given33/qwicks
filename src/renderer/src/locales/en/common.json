@@ -1900,6 +1900,7 @@
   "compactionFailed": "Context compaction failed",
   "thinkingNow": "Thinking…",
   "thinkingWithSeconds": "Thinking {{duration}}",
+  "reasoningThought": "Thought",
   "thoughtStep": "Thought ({{count}} step)",
   "timelineShowEarlierTurns": "Show {{count}} earlier turns",
   "timelineCollapseEarlierTurns": "Show recent turns only",
