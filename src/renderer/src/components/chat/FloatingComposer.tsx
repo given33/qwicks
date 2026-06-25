@@ -22,7 +22,6 @@ import {
   ListTodo,
   Loader2,
   MessageCircleMore,
-  Mic,
   Minimize2,
   PauseCircle,
   Pencil,
@@ -101,8 +100,6 @@ import {
 } from './FloatingComposerExecutionPicker'
 import { ImagePreviewLightbox } from './ImagePreviewLightbox'
 import { useComposerDraft } from './use-composer-draft'
-import { useSpeechToTextSettings, useVoiceDictation } from './use-voice-dictation'
-import { VoiceRecordingStrip } from './VoiceRecordingStrip'
 import type { ComposerChangedFile } from '../../lib/composer-change-summary'
 
 export type { ComposerFileReference } from '../../lib/composer-file-references'
@@ -518,30 +515,6 @@ export function FloatingComposer({
   const activeClawChannelId = useChatStore((s) => s.activeClawChannelId)
   const compact = variant === 'compact'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const speechToTextSettings = useSpeechToTextSettings()
-  const dictationInputRef = useRef(input)
-  useEffect(() => {
-    dictationInputRef.current = input
-  }, [input])
-  const dictationPrimaryActionRef = useRef<(() => void) | null>(null)
-  const dictation = useVoiceDictation({
-    speechToText: speechToTextSettings,
-    onText: (text, intent) => {
-      const existing = dictationInputRef.current.replace(/\s+$/, '')
-      setInput(existing ? `${existing} ${text}` : text)
-      if (intent === 'send') {
-        // 等 setInput 的重渲染落地后再走正常的发送路径,
-        // 这样语音直发和手动点发送行为完全一致。
-        window.setTimeout(() => dictationPrimaryActionRef.current?.(), 0)
-      }
-    }
-  })
-  const showVoiceDictation = Boolean(
-    speechToTextSettings?.enabled &&
-    speechToTextSettings.baseUrl.trim() &&
-    speechToTextSettings.apiKey.trim() &&
-    speechToTextSettings.model.trim()
-  )
   const activeClawChannel = useMemo(
     () => clawChannels.find((channel) => channel.id === activeClawChannelId) ?? null,
     [activeClawChannelId, clawChannels]
@@ -1374,7 +1347,6 @@ export function FloatingComposer({
     }
     onSend()
   }
-  dictationPrimaryActionRef.current = primaryActionDisabled ? null : handlePrimaryAction
 
   const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     const sendByEnter =
@@ -2089,13 +2061,6 @@ export function FloatingComposer({
               onChange={handleAttachmentInput}
             />
           ) : null}
-          {dictation.error ? (
-            <div className="px-1">
-              <span className="min-w-0 break-words text-[12px] font-medium text-red-600 dark:text-red-300">
-                {dictation.error}
-              </span>
-            </div>
-          ) : null}
           <div
             className={`ds-composer-toolbar flex min-h-9 items-center gap-2 ${
               showToolbarStartControls ? 'justify-between' : 'justify-end'
@@ -2150,35 +2115,9 @@ export function FloatingComposer({
             ) : null}
             <div
               className={`flex min-w-0 items-center justify-end gap-1.5 ${
-                stretchModelPicker || dictation.status === 'recording' ? 'flex-1' : 'shrink-0'
+                stretchModelPicker ? 'flex-1' : 'shrink-0'
               }`}
             >
-              {dictation.status === 'recording' ? (
-                <>
-                  <VoiceRecordingStrip
-                    getLevel={dictation.getLevel}
-                    startedAtMs={dictation.startedAtMs}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => dictation.stop('insert')}
-                    className="ds-no-drag flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-ds-border bg-ds-card text-ds-ink shadow-sm transition hover:bg-ds-hover"
-                    aria-label={t('composerVoiceStop')}
-                    title={t('composerVoiceStop')}
-                  >
-                    <Square className="h-3 w-3 fill-current" strokeWidth={2.4} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dictation.stop('send')}
-                    className="ds-no-drag flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white shadow-[0_10px_22px_rgba(20,47,95,0.22)] transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-                    aria-label={t('composerVoiceSend')}
-                    title={t('composerVoiceSend')}
-                  >
-                    <Send className="h-4 w-4" strokeWidth={2.2} />
-                  </button>
-                </>
-              ) : (
               <>
               {showContextCapacity && contextCapacity ? (
                 <div className="relative shrink-0" ref={contextCapacityRef}>
@@ -2248,30 +2187,6 @@ export function FloatingComposer({
                   onConfigureProviders={onConfigureProviders}
                 />
               )}
-              {showVoiceDictation ? (
-                <button
-                  type="button"
-                  disabled={dictation.status === 'transcribing' || !canEditComposer}
-                  onClick={dictation.toggle}
-                  className="ds-no-drag flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label={
-                    dictation.status === 'transcribing'
-                      ? t('composerVoiceTranscribing')
-                      : t('composerVoiceStart')
-                  }
-                  title={
-                    dictation.status === 'transcribing'
-                      ? t('composerVoiceTranscribing')
-                      : t('composerVoiceStart')
-                  }
-                >
-                  {dictation.status === 'transcribing' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.2} />
-                  ) : (
-                    <Mic className="h-4 w-4" strokeWidth={2} />
-                  )}
-                </button>
-              ) : null}
               {busy ? (
                 <button
                   type="button"
@@ -2298,7 +2213,6 @@ export function FloatingComposer({
                 )}
               </button>
               </>
-              )}
             </div>
           </div>
         </div>
