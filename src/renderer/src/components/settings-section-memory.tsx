@@ -144,6 +144,32 @@ export function MemorySettingsSection({ ctx }: { ctx: Record<string, any> }): Re
         }
       />
       <SettingRow
+        title={t('memoryDataControl')}
+        description={t('memoryDataControlDesc')}
+        control={
+          <div className="flex flex-col gap-1 text-[12px]">
+            <label className="flex items-center gap-2 text-ds-muted">
+              <Toggle
+                checked={qwicks?.dataControl?.allowModelImprovement ?? false}
+                onChange={(checked: boolean) =>
+                  updateQWicks({ dataControl: { ...qwicks?.dataControl, allowModelImprovement: checked } })
+                }
+              />
+              {t('memoryDataControlImprove')}
+            </label>
+            <label className="flex items-center gap-2 text-ds-muted">
+              <Toggle
+                checked={qwicks?.dataControl?.allowTraining ?? false}
+                onChange={(checked: boolean) =>
+                  updateQWicks({ dataControl: { ...qwicks?.dataControl, allowTraining: checked } })
+                }
+              />
+              {t('memoryDataControlTrain')}
+            </label>
+          </div>
+        }
+      />
+      <SettingRow
         title={t('memoryOverview')}
         description={t('memoryOverviewDesc')}
         wideControl

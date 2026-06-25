@@ -118,6 +118,17 @@ export function resolveMemoryBackend(raw: { memoryBackend?: unknown } | undefine
   return raw?.memoryBackend === 'dream' ? 'dream' : 'file'
 }
 
+/** Batch F:解析数据控制设置(旧安装缺该字段 → 默认全关,零外发)。 */
+export function resolveDataControl(
+  raw: { dataControl?: unknown } | undefined
+): { allowModelImprovement: boolean; allowTraining: boolean } {
+  const dc = (raw?.dataControl ?? {}) as { allowModelImprovement?: unknown; allowTraining?: unknown }
+  return {
+    allowModelImprovement: dc.allowModelImprovement === true,
+    allowTraining: dc.allowTraining === true
+  }
+}
+
 export function defaultQWicksRuntimeSettings(
   port = DEFAULT_QWICKS_PORT
 ): QWicksRuntimeSettingsV1 {
@@ -149,6 +160,7 @@ export function defaultQWicksRuntimeSettings(
     modelProfiles: {},
     memoryEnabled: false,
     memoryBackend: 'file',
+    dataControl: { allowModelImprovement: false, allowTraining: false },
     computerUse: defaultQWicksComputerUseSettings(),
     quality: defaultQWicksQualitySettings()
   }
@@ -447,6 +459,7 @@ export function mergeQWicksRuntimeSettings(
     modelProfiles: nextModelProfiles,
     memoryEnabled: patch?.memoryEnabled ?? current.memoryEnabled ?? false,
     memoryBackend: resolveMemoryBackend(patch?.memoryBackend ?? current.memoryBackend),
+    dataControl: resolveDataControl(patch?.dataControl ?? current.dataControl),
     computerUse: nextComputerUse,
     quality: nextQuality
   }

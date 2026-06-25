@@ -1061,5 +1061,9 @@
   "memoryEngineSwitchConfirmBody": "Your existing memories will be copied into the Dream store (the old files are kept). This runs once and is reversible — you can switch back any time. The runtime will restart to apply the change.",
   "memoryEngineSwitchConfirmCta": "Switch & restart",
   "memoryEngineSwitchConfirmCancel": "Cancel",
-  "memoryMigrationError": "Dream migration failed and fell back to File memory. Your memories are safe in the legacy store. Details: {error}"
+  "memoryMigrationError": "Dream migration failed and fell back to File memory. Your memories are safe in the legacy store. Details: {error}",
+  "memoryDataControl": "Data control",
+  "memoryDataControlDesc": "Choose whether your memory data may be used to improve or train models. Both are off by default — this app is local-first and does not upload memory data. These toggles only affect data reporting; your local memory keeps working.",
+  "memoryDataControlImprove": "Allow model improvement",
+  "memoryDataControlTrain": "Allow model training"
 }

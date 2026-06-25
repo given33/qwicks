@@ -230,6 +230,11 @@ export type QWicksRuntimeSettingsV1 = {
   memoryEnabled: boolean
   /** Long-term memory backend. `file` (default) keeps the legacy JSON store; `dream` switches to the Dream memory system. */
   memoryBackend: QWicksMemoryBackend
+  /**
+   * Batch F(spec §6.1):数据控制 —— 记忆数据是否参与模型改进/训练。默认全关(零外发)。
+   * 仅控制数据上报/外发;本地记忆能力(retrieval/extract/dream)不受影响。
+   */
+  dataControl: DataControlSettings
   /** Host computer-use (screenshot + mouse/keyboard control) settings. */
   computerUse: QWicksComputerUseSettingsV1
   /** First-party design-quality linter applied to frontend output. */
@@ -360,6 +365,17 @@ export type QWicksStorageBackend = 'hybrid' | 'file'
 
 /** Which long-term memory backend the QWicks runtime uses. `file` = legacy JSON-per-record FileMemoryStore; `dream` = Dream memory system (SQLite + lifecycle + embeddings). */
 export type QWicksMemoryBackend = 'file' | 'dream'
+
+/**
+ * Batch F(spec §6.1):数据控制 —— 记忆数据是否参与模型改进/训练。默认全关(零外发)。
+ * 仅控制数据上报/外发;本地记忆能力(retrieval/extract/dream)不受影响。
+ */
+export interface DataControlSettings {
+  /** 记忆数据是否参与模型改进。 */
+  allowModelImprovement: boolean
+  /** 记忆数据是否参与模型训练(opt-out)。 */
+  allowTraining: boolean
+}
 
 export type QWicksStorageSettingsV1 = {
   backend: QWicksStorageBackend
