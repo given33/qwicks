@@ -14,6 +14,29 @@ const SkillTriggerManifest = z.object({
   fileTypes: z.array(z.string().min(1)).default([])
 }).default({ commands: [], promptPatterns: [], fileTypes: [] })
 
+/**
+ * A single configurable field a built-in skill exposes to the GUI. The schema
+ * (this object) is static and ships read-only inside the skill package; the
+ * actual values live in app-settings (mapped via `settingsPath`) or in the
+ * generic `agents.qwicks.skillConfigs` store. The QWicks runtime itself never
+ * reads `configSchema` — it is purely a GUI concern.
+ */
+const SkillConfigField = z.object({
+  key: z.string().min(1),
+  type: z.enum(['string', 'secret', 'number', 'enum', 'boolean']),
+  label: z.string().min(1),
+  description: z.string().optional(),
+  required: z.boolean().default(false),
+  default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  options: z.array(z.object({ value: z.string().min(1), label: z.string().min(1) })).optional(),
+  placeholder: z.string().optional(),
+  settingsPath: z.string().min(1).optional()
+}).strict()
+
+const SkillConfigSchema = z.object({
+  fields: z.array(SkillConfigField)
+}).strict()
+
 export const SkillManifest = z.object({
   id: z.string().min(1).optional(),
   name: z.string().min(1),
@@ -23,7 +46,8 @@ export const SkillManifest = z.object({
   triggers: SkillTriggerManifest,
   allowedTools: z.array(z.string().min(1)).default([]),
   assets: z.array(z.string().min(1)).default([]),
-  priority: z.number().int().default(0)
+  priority: z.number().int().default(0),
+  configSchema: SkillConfigSchema.optional()
 }).strict()
 export type SkillManifest = z.infer<typeof SkillManifest>
 
