@@ -141,15 +141,11 @@ function sectionHasPendingApproval(section: ProcessSection): boolean {
 export function ProcessSectionRow({
   section,
   processing,
-  reasoningDurationMs,
-  singleReasoningSection,
   viewportRef,
   nowMs
 }: {
   section: ProcessSection
   processing: boolean
-  reasoningDurationMs?: number
-  singleReasoningSection: boolean
   viewportRef: RefObject<HTMLDivElement | null>
   /** Ticking clock (epoch ms) from the parent's 1s interval; drives live
    * duration badges while tools run. Falls back to Date.now() when absent
@@ -180,12 +176,7 @@ export function ProcessSectionRow({
     (processing && section.kind === 'execution' && sectionHasRequestUserInput(section))
   const forceExpanded = sectionHasPendingApproval(section)
   const expanded = hasDetails && (forceExpanded || (userExpanded ?? defaultExpanded))
-  const title = describeProcessSection(section, t, {
-    processing,
-    reasoningDurationMs,
-    singleReasoningSection
-  })
-  const reasoningText = section.kind === 'reasoning' ? getReasoningSectionText(section) : ''
+  const title = describeProcessSection(section, t, { processing })
   const canToggleSection = hasDetails && !forceExpanded
   const showActiveError = active && hasError
   const { ref: deferredDetailRef, shouldRender: shouldRenderDetail } = useDeferredRender<HTMLDivElement>({
@@ -268,13 +259,7 @@ export function ProcessSectionRow({
           style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 220px' }}
         >
           {shouldRenderDetail ? (
-            section.kind === 'reasoning' ? (
-            <div className="ds-markdown text-[13.5px] leading-6 text-ds-muted">
-              <AssistantMarkdown text={reasoningText} streaming={active && processing} />
-            </div>
-          ) : (
             <ProcessStackRows blocks={section.blocks} processing={processing} nowMs={nowMs} />
-          )
           ) : null}
         </div>
       ) : null}
@@ -704,26 +689,8 @@ function describeProcessSection(
   t: (key: string, opts?: Record<string, unknown>) => string,
   opts: {
     processing: boolean
-    reasoningDurationMs?: number
-    singleReasoningSection: boolean
   }
 ): string {
-  if (section.kind === 'reasoning') {
-    if (opts.processing && isProcessSectionActive(section, true)) {
-      return t('thinkingNow')
-    }
-    if (
-      opts.singleReasoningSection &&
-      typeof opts.reasoningDurationMs === 'number' &&
-      opts.reasoningDurationMs >= 1000
-    ) {
-      return t('thoughtFor', { duration: formatDuration(opts.reasoningDurationMs) })
-    }
-    return section.blocks.length > 1
-      ? t('thoughtSteps', { count: section.blocks.length })
-      : t('thinkingLabel')
-  }
-
   if (section.kind === 'output') {
     return t('processTextLabel')
   }

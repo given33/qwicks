@@ -499,10 +499,6 @@ function MessageTurn({
     () => (workExpanded ? groupProcessSections(workProcessBlocks) : []),
     [workProcessBlocks, workExpanded]
   )
-  const reasoningSectionCount = useMemo(
-    () => processSections.filter((section) => section.kind === 'reasoning').length,
-    [processSections]
-  )
   // Show the live assistant bubble whenever the SSE has streamed any text
   // into `live`. We deliberately do NOT gate on `isProcessing`: the
   // processing indicator (WorkMetaRow above) already covers "the agent is
@@ -560,8 +556,6 @@ function MessageTurn({
                   key={section.id}
                   section={section}
                   processing={isProcessing}
-                  reasoningDurationMs={reasoningDurationMs}
-                  singleReasoningSection={reasoningSectionCount === 1}
                   viewportRef={viewportRef}
                   nowMs={nowMs}
                 />

@@ -16,10 +16,10 @@ export type TurnPhase =
 export type TurnTimerInput = {
   /** busy || turnPending || hasLiveStream —— turn 是否还在运行 */
   isProcessing: boolean
-  /** !!liveReasoning.trim() —— 是否有思考流 */
-  hasLiveReasoning: boolean
-  /** !!liveAssistant.trim() —— 是否已有回复文字 */
-  hasLiveAssistant: boolean
+  /** !!liveReasoning.trim() —— 是否有思考流（仅 processing 期有意义） */
+  hasLiveReasoning?: boolean
+  /** !!liveAssistant.trim() —— 是否已有回复文字（仅 processing 期有意义） */
+  hasLiveAssistant?: boolean
   /** turnReasoningFirstAtByUserId[userId] —— 首个 reasoning delta 时刻（秒数起跳点） */
   reasoningStartedAt?: number
   /** turnStartedAtByUserId[userId] —— 无 reasoning 时的兜底起点 */

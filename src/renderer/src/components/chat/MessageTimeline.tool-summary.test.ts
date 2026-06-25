@@ -303,7 +303,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-tool_1', kind: 'execution', blocks: [block] },
         processing: false,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -329,7 +328,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-tool_1', kind: 'execution', blocks: [block] },
         processing: true,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -354,7 +352,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-tool_error', kind: 'execution', blocks: [block] },
         processing: false,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -362,27 +359,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
     expect(html).toContain('Recognize image recognize_image')
     expect(html).toContain('model request failed with status 401')
     expect(html).toContain('role="button"')
-  })
-
-  it('expands active reasoning so the current process is visible', () => {
-    const block: ChatBlock = {
-      kind: 'reasoning',
-      id: 'live-reasoning',
-      text: 'current reasoning summary'
-    }
-
-    const html = renderToStaticMarkup(
-      createElement(ProcessSectionRow, {
-        section: { id: 'reasoning', kind: 'reasoning', blocks: [block] },
-        processing: true,
-        singleReasoningSection: true,
-        viewportRef: { current: null }
-      })
-    )
-
-    expect(html).toContain('ds-shiny-text')
-    expect(html).not.toContain('ds-work-logo')
-    expect(html).toContain('current reasoning summary')
   })
 
   it('keeps same-batch tool calls collapsed by default', () => {
@@ -405,7 +381,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-batch', kind: 'execution', blocks: [readBlock, grepBlock] },
         processing: false,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -450,7 +425,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-batch', kind: 'execution', blocks: [readBlock, inputBlock] },
         processing: true,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -482,7 +456,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-batch', kind: 'execution', blocks: [readBlock, approvalBlock] },
         processing: true,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
@@ -514,7 +487,6 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
       createElement(ProcessSectionRow, {
         section: { id: 'execution-input', kind: 'execution', blocks: [inputBlock] },
         processing: true,
-        singleReasoningSection: false,
         viewportRef: { current: null }
       })
     )
