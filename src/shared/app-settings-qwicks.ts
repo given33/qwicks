@@ -458,8 +458,8 @@ export function mergeQWicksRuntimeSettings(
     videoGeneration: nextVideoGeneration,
     modelProfiles: nextModelProfiles,
     memoryEnabled: patch?.memoryEnabled ?? current.memoryEnabled ?? false,
-    memoryBackend: resolveMemoryBackend(patch?.memoryBackend ?? current.memoryBackend),
-    dataControl: resolveDataControl(patch?.dataControl ?? current.dataControl),
+    memoryBackend: resolveMemoryBackend({ memoryBackend: patch?.memoryBackend ?? current.memoryBackend }),
+    dataControl: resolveDataControl({ dataControl: patch?.dataControl ?? current.dataControl }),
     computerUse: nextComputerUse,
     quality: nextQuality
   }

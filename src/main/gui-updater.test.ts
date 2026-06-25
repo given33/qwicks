@@ -350,7 +350,7 @@ describe('installGuiUpdate', () => {
     module.initializeGuiUpdater(() => null, () => 'stable', () => undefined)
     updater.emit('update-downloaded', { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' })
 
-    const flagKey = 'qwicksUpdateInstall' as keyof NodeJS.Process
+    const flagKey = 'qwicksUpdateInstall'
     delete (process as unknown as Record<string, unknown>)[flagKey]
     await expect(module.installGuiUpdate()).resolves.toEqual({ ok: true })
     expect((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall).toBe(true)

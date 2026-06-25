@@ -445,6 +445,7 @@ export async function syncGuiManagedQWicksConfig(
     | 'computerUse'
     | 'modelProfiles'
     | 'memoryEnabled'
+    | 'memoryBackend'
     | 'quality'
   >,
   options?: {
