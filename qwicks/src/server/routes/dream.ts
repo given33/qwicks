@@ -81,6 +81,18 @@ export async function dreamPendingDismiss(system: DreamMemorySystem | undefined,
   return jsonResponse({ dismissed: true })
 }
 
+/** Batch C:序列化某轮对话为可分享 payload(默认全脱敏来源归因)。 */
+export async function dreamShare(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = (await request.json().catch(() => ({}))) as { thread?: unknown; mode?: string }
+  if (!body.thread || typeof body.thread !== 'object') {
+    return ERRORS.validation('thread is required')
+  }
+  const mode = body.mode === 'show-chat' ? 'show-chat' : 'private'
+  return jsonResponse({ result: dream.controls2.shareThread(body.thread as never, mode as never) })
+}
+
 export async function dreamVersions(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
   const dream = requireDream(system)
   if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
