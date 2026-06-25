@@ -180,7 +180,6 @@ export function MessageTimeline({
     turnStartedAtByUserId,
     turnDurationByUserId,
     turnReasoningFirstAtByUserId,
-    turnReasoningLastAtByUserId,
     activeThreadGoal,
     activeThread
   } = useTimelineStores(activeThreadId)

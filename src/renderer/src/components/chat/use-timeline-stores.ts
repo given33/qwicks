@@ -20,7 +20,6 @@ export type TimelineStores = {
   turnStartedAtByUserId: Record<string, number>
   turnDurationByUserId: Record<string, number>
   turnReasoningFirstAtByUserId: Record<string, number>
-  turnReasoningLastAtByUserId: Record<string, number>
   activeThreadGoal: ThreadGoal | null
   activeThread: NormalizedThread | null
 }
@@ -36,7 +35,6 @@ export function useTimelineStores(activeThreadId: string | null): TimelineStores
   const turnStartedAtByUserId = useChatStore((s) => s.turnStartedAtByUserId)
   const turnDurationByUserId = useChatStore((s) => s.turnDurationByUserId)
   const turnReasoningFirstAtByUserId = useChatStore((s) => s.turnReasoningFirstAtByUserId)
-  const turnReasoningLastAtByUserId = useChatStore((s) => s.turnReasoningLastAtByUserId)
   const activeThreadGoal = useChatStore((s) => s.activeThreadGoal)
   const activeThread = useChatStore((s) =>
     activeThreadId ? s.threads.find((thread) => thread.id === activeThreadId) ?? null : null
@@ -57,7 +55,6 @@ export function useTimelineStores(activeThreadId: string | null): TimelineStores
     turnStartedAtByUserId,
     turnDurationByUserId,
     turnReasoningFirstAtByUserId,
-    turnReasoningLastAtByUserId,
     activeThreadGoal,
     activeThread
   }
