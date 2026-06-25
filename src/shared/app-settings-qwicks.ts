@@ -8,7 +8,6 @@ import {
   DEFAULT_MUSIC_GENERATION_PROTOCOL,
   DEFAULT_MODEL_ENDPOINT_FORMAT,
   DEFAULT_SANDBOX_MODE,
-  DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
   DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
   DEFAULT_VIDEO_GENERATION_PROTOCOL,
   MODEL_REASONING_EFFORTS,
@@ -29,7 +28,6 @@ import {
   type QWicksRuntimeSettingsV1,
   type QWicksSettingsEnvelopePatchV1,
   type QWicksSettingsEnvelopeV1,
-  type QWicksSpeechToTextSettingsV1,
   type QWicksStorageSettingsV1,
   type QWicksTextToSpeechSettingsV1,
   type QWicksTokenEconomySettingsV1,
@@ -42,7 +40,6 @@ import {
   type ModelProviderModelProfileV1,
   type ModelProviderReasoningCapabilityV1,
   type ModelProviderSettingsV1,
-  type SpeechToTextProtocol,
   type TextToSpeechProtocol,
   type VideoGenerationProtocol,
   type ApprovalPolicy,
@@ -153,7 +150,6 @@ export function defaultQWicksRuntimeSettings(
     contextCompaction: defaultQWicksContextCompactionSettings(),
     runtimeTuning: defaultQWicksRuntimeTuningSettings(),
     imageGeneration: defaultQWicksImageGenerationSettings(),
-    speechToText: defaultQWicksSpeechToTextSettings(),
     textToSpeech: defaultQWicksTextToSpeechSettings(),
     musicGeneration: defaultQWicksMusicGenerationSettings(),
     videoGeneration: defaultQWicksVideoGenerationSettings(),
@@ -199,18 +195,6 @@ export function defaultQWicksImageGenerationSettings(): QWicksImageGenerationSet
   }
 }
 
-export function defaultQWicksSpeechToTextSettings(): QWicksSpeechToTextSettingsV1 {
-  return {
-    enabled: false,
-    providerId: '',
-    protocol: DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
-    baseUrl: '',
-    apiKey: '',
-    model: '',
-    language: '',
-    timeoutMs: 60_000
-  }
-}
 
 export function defaultQWicksTextToSpeechSettings(): QWicksTextToSpeechSettingsV1 {
   return {
@@ -393,11 +377,6 @@ export function mergeQWicksRuntimeSettings(
     ...currentImageGeneration,
     ...(patch?.imageGeneration ?? {})
   })
-  const currentSpeechToText = normalizeQWicksSpeechToTextSettings(current.speechToText)
-  const nextSpeechToText = normalizeQWicksSpeechToTextSettings({
-    ...currentSpeechToText,
-    ...(patch?.speechToText ?? {})
-  })
   const currentTextToSpeech = normalizeQWicksTextToSpeechSettings(current.textToSpeech)
   const nextTextToSpeech = normalizeQWicksTextToSpeechSettings({
     ...currentTextToSpeech,
@@ -457,7 +436,6 @@ export function mergeQWicksRuntimeSettings(
     contextCompaction: nextContextCompaction,
     runtimeTuning: nextRuntimeTuning,
     imageGeneration: nextImageGeneration,
-    speechToText: nextSpeechToText,
     textToSpeech: nextTextToSpeech,
     musicGeneration: nextMusicGeneration,
     videoGeneration: nextVideoGeneration,
@@ -490,26 +468,6 @@ function normalizeQWicksImageGenerationSettings(
 
 function normalizeQWicksImageGenerationProtocol(value: unknown): ImageGenerationProtocol {
   return value === 'minimax-image' ? 'minimax-image' : DEFAULT_IMAGE_GENERATION_PROTOCOL
-}
-
-function normalizeQWicksSpeechToTextSettings(
-  input: Partial<QWicksSpeechToTextSettingsV1> | undefined
-): QWicksSpeechToTextSettingsV1 {
-  const defaults = defaultQWicksSpeechToTextSettings()
-  return {
-    enabled: input?.enabled === true,
-    providerId: typeof input?.providerId === 'string' ? input.providerId.trim() : defaults.providerId,
-    protocol: normalizeQWicksSpeechToTextProtocol(input?.protocol),
-    baseUrl: typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : defaults.baseUrl,
-    apiKey: typeof input?.apiKey === 'string' ? input.apiKey.trim() : defaults.apiKey,
-    model: typeof input?.model === 'string' ? input.model.trim() : defaults.model,
-    language: typeof input?.language === 'string' ? input.language.trim().toLowerCase().slice(0, 16) : defaults.language,
-    timeoutMs: boundedPositiveInt(input?.timeoutMs, defaults.timeoutMs, 600_000)
-  }
-}
-
-function normalizeQWicksSpeechToTextProtocol(value: unknown): SpeechToTextProtocol {
-  return value === 'mimo-asr' ? 'mimo-asr' : DEFAULT_SPEECH_TO_TEXT_PROTOCOL
 }
 
 /**
@@ -1073,7 +1031,6 @@ export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partia
     contextCompaction: normalizeQWicksContextCompactionSettings(explicitQWicks.contextCompaction),
     runtimeTuning: normalizeQWicksRuntimeTuningSettings(explicitQWicks.runtimeTuning),
     imageGeneration: normalizeQWicksImageGenerationSettings(explicitQWicks.imageGeneration),
-    speechToText: normalizeQWicksSpeechToTextSettings(explicitQWicks.speechToText),
     textToSpeech: normalizeQWicksTextToSpeechSettings(explicitQWicks.textToSpeech),
     musicGeneration: normalizeQWicksMusicGenerationSettings(explicitQWicks.musicGeneration),
     videoGeneration: normalizeQWicksVideoGenerationSettings(explicitQWicks.videoGeneration),

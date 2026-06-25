@@ -38,7 +38,6 @@ import {
   MODEL_REASONING_REQUEST_PROTOCOLS,
   SCHEDULE_MODEL_IDS,
   SCHEDULE_REASONING_EFFORT_IDS,
-  SPEECH_TO_TEXT_PROTOCOLS,
   TEXT_TO_SPEECH_PROTOCOLS,
   VIDEO_GENERATION_PROTOCOLS,
   WRITE_INLINE_COMPLETION_MODEL_IDS
@@ -217,20 +216,9 @@ const writeInlineCompletionModelSchema = z.union([
 ])
 const modelEndpointFormatSchema = z.enum(MODEL_ENDPOINT_FORMATS)
 const imageGenerationProtocolSchema = z.enum(IMAGE_GENERATION_PROTOCOLS)
-const speechToTextProtocolSchema = z.enum(SPEECH_TO_TEXT_PROTOCOLS)
 const textToSpeechProtocolSchema = z.enum(TEXT_TO_SPEECH_PROTOCOLS)
 const musicGenerationProtocolSchema = z.enum(MUSIC_GENERATION_PROTOCOLS)
 const videoGenerationProtocolSchema = z.enum(VIDEO_GENERATION_PROTOCOLS)
-const speechToTextSettingsSchema = z.object({
-  enabled: z.boolean(),
-  providerId: z.string().trim().max(64),
-  protocol: speechToTextProtocolSchema,
-  baseUrl: z.string().trim().max(MAX_URL_LENGTH),
-  apiKey: z.string().max(MAX_BODY_BYTES),
-  model: z.string().trim().max(128),
-  language: z.string().trim().max(16),
-  timeoutMs: z.number().int().positive().max(600_000)
-}).strict()
 const modelProviderInputModalitySchema = z.enum(MODEL_PROVIDER_INPUT_MODALITIES)
 const modelProviderMessagePartSchema = z.enum(MODEL_PROVIDER_MESSAGE_PARTS)
 const modelReasoningEffortSchema = z.enum(MODEL_REASONING_EFFORTS)
@@ -276,11 +264,6 @@ const modelProviderPatchSchema = z.object({
     ).optional(),
     image: z.object({
       protocol: imageGenerationProtocolSchema.optional(),
-      baseUrl: z.string().trim().max(MAX_URL_LENGTH).optional(),
-      models: z.array(z.string().trim().min(1).max(128)).max(500).optional()
-    }).strict().nullable().optional(),
-    speech: z.object({
-      protocol: speechToTextProtocolSchema.optional(),
       baseUrl: z.string().trim().max(MAX_URL_LENGTH).optional(),
       models: z.array(z.string().trim().min(1).max(128)).max(500).optional()
     }).strict().nullable().optional(),
@@ -377,16 +360,6 @@ const qwicksRuntimePatchSchema = z.object({
     apiKey: z.string().max(MAX_BODY_BYTES).optional(),
     model: z.string().trim().max(128).optional(),
     defaultSize: z.string().trim().max(16).optional(),
-    timeoutMs: z.number().int().positive().max(600_000).optional()
-  }).strict().optional(),
-  speechToText: z.object({
-    enabled: z.boolean().optional(),
-    providerId: z.string().trim().max(64).optional(),
-    protocol: speechToTextProtocolSchema.optional(),
-    baseUrl: z.string().trim().max(MAX_URL_LENGTH).optional(),
-    apiKey: z.string().max(MAX_BODY_BYTES).optional(),
-    model: z.string().trim().max(128).optional(),
-    language: z.string().trim().max(16).optional(),
     timeoutMs: z.number().int().positive().max(600_000).optional()
   }).strict().optional(),
   textToSpeech: z.object({

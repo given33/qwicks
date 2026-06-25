@@ -8,7 +8,6 @@ import {
   Eye,
   Image as ImageIcon,
   MessageSquareText,
-  Mic,
   Music2,
   Pencil,
   Plus,
@@ -98,12 +97,6 @@ const MODEL_KIND_META: Array<{
     descKey: 'providerModelKindImageDesc'
   },
   {
-    kind: 'speech',
-    icon: Mic,
-    titleKey: 'providerModelKindSpeech',
-    descKey: 'providerModelKindSpeechDesc'
-  },
-  {
     kind: 'tts',
     icon: AudioLines,
     titleKey: 'providerModelKindTts',
@@ -189,7 +182,6 @@ function formErrorMessage(t: Translate, error: ProviderModelFormError): string {
 function duplicateKindSuffix(kind: ProviderModelKind): string {
   if (kind === 'chat') return 'Chat'
   if (kind === 'image') return 'Image'
-  if (kind === 'speech') return 'Speech'
   if (kind === 'tts') return 'Tts'
   if (kind === 'music') return 'Music'
   return 'Video'

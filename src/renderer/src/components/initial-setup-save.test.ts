@@ -135,11 +135,6 @@ describe('buildInitialSetupSettings', () => {
     expect(profile?.apiKey).toBe('tp-subscription-key')
     expect(profile?.baseUrl).toBe('https://token-plan-sgp.xiaomimimo.com/v1')
     expect(profile?.endpointFormat).toBe('chat_completions')
-    expect(profile?.speech).toEqual({
-      protocol: 'mimo-asr',
-      baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
-      models: ['mimo-v2.5-asr']
-    })
     expect(profile?.modelProfiles['mimo-v2.5']).toEqual(expect.objectContaining({
       inputModalities: expect.arrayContaining(['image']),
       messageParts: expect.arrayContaining(['image_url'])
@@ -150,7 +145,7 @@ describe('buildInitialSetupSettings', () => {
     expect(getActiveAgentApiKey(next)).toBe('tp-subscription-key')
   })
 
-  it('auto-wires speech and image to filled pay-as-you-go profiles', () => {
+  it('auto-wires image to a filled pay-as-you-go profile', () => {
     const current = settings()
     const drafts = initialSetupDrafts(current)
     drafts.xiaomi = { ...drafts.xiaomi, apiKey: 'sk-mimo-key' }
@@ -158,20 +153,15 @@ describe('buildInitialSetupSettings', () => {
     const next = buildInitialSetupSettings(current, drafts, { presetId: 'xiaomi', mode: 'api' })
 
     const runtime = getQWicksRuntimeSettings(next)
-    expect(runtime.speechToText.enabled).toBe(true)
-    expect(runtime.speechToText.providerId).toBe('xiaomi')
     expect(runtime.imageGeneration.enabled).toBe(true)
     expect(runtime.imageGeneration.providerId).toBe('minimax')
-    expect(getModelProviderSettings(next).providers.find((p) => p.id === 'xiaomi')?.speech?.protocol)
-      .toBe('mimo-asr')
   })
 
-  it('wires speech from a xiaomi token plan key and image from a minimax token plan key', () => {
+  it('wires image from a minimax token plan key', () => {
     const tokenPlanOnly = initialSetupDrafts(settings())
-    tokenPlanOnly['xiaomi-token-plan'] = { ...tokenPlanOnly['xiaomi-token-plan'], apiKey: 'tp-key' }
     tokenPlanOnly['minimax-token-plan'] = { ...tokenPlanOnly['minimax-token-plan'], apiKey: 'mm-tp-key' }
     expect(initialSetupAutoWirePlan(settings(), tokenPlanOnly))
-      .toEqual({ speechProviderId: 'xiaomi-token-plan', imageProviderId: 'minimax-token-plan' })
+      .toEqual({ imageProviderId: 'minimax-token-plan' })
   })
 
   it('creates a MiniMax token plan profile with image generation and activates it', () => {
@@ -198,25 +188,12 @@ describe('buildInitialSetupSettings', () => {
     expect(getActiveAgentApiKey(next)).toBe('mm-tp-key')
   })
 
-  it('never overrides existing speech or image generation config while auto-wiring', () => {
-    const configured = settings({ agents: { qwicks: { speechToText: { providerId: 'custom' } } } })
-    const drafts = initialSetupDrafts(configured)
-    drafts.xiaomi = { ...drafts.xiaomi, apiKey: 'sk-mimo-key' }
-    const next = buildInitialSetupSettings(configured, drafts, { presetId: 'xiaomi', mode: 'api' })
-    expect(getQWicksRuntimeSettings(next).speechToText.providerId).toBe('custom')
-
+  it('never overrides existing image generation config while auto-wiring', () => {
     const imageConfigured = settings({ agents: { qwicks: { imageGeneration: { providerId: 'custom-image' } } } })
     const imageDrafts = initialSetupDrafts(imageConfigured)
     imageDrafts['minimax-token-plan'] = { ...imageDrafts['minimax-token-plan'], apiKey: 'mm-tp-key' }
     const nextImage = buildInitialSetupSettings(imageConfigured, imageDrafts, { presetId: 'minimax', mode: 'token-plan' })
     expect(getQWicksRuntimeSettings(nextImage).imageGeneration.providerId).toBe('custom-image')
-  })
-
-  it('prefers the pay-as-you-go profile for speech when both keys are filled', () => {
-    const drafts = initialSetupDrafts(settings())
-    drafts.xiaomi = { ...drafts.xiaomi, apiKey: 'sk-mimo-key' }
-    drafts['xiaomi-token-plan'] = { ...drafts['xiaomi-token-plan'], apiKey: 'tp-key' }
-    expect(initialSetupAutoWirePlan(settings(), drafts).speechProviderId).toBe('xiaomi')
   })
 
   it('keeps the model override when the provider does not change', () => {

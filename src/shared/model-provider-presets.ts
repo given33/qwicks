@@ -7,10 +7,8 @@ import type {
   ModelProviderModelProfileV1,
   ModelProviderProfileV1,
   ModelProviderReasoningCapabilityV1,
-  ModelProviderSpeechCapabilityV1,
   ModelProviderTextToSpeechCapabilityV1,
   ModelProviderVideoCapabilityV1,
-  SpeechToTextProtocol,
   TextToSpeechProtocol,
   VideoGenerationProtocol
 } from './app-settings-types'
@@ -51,11 +49,6 @@ export type ModelProviderTokenPlanPreset = {
   endpointFormat: ModelEndpointFormat
   models: string[]
   modelProfiles?: Record<string, ModelProviderModelProfileV1>
-  /** Speech capability served by the plan endpoint itself (baseUrl follows the plan baseUrl). */
-  speech?: {
-    protocol: SpeechToTextProtocol
-    models: string[]
-  }
   image?: {
     protocol: ImageGenerationProtocol
     baseUrl: string
@@ -95,11 +88,6 @@ export type ModelProviderPreset = {
   modelProfiles?: Record<string, ModelProviderModelProfileV1>
   image?: {
     protocol: ImageGenerationProtocol
-    baseUrl: string
-    models: string[]
-  }
-  speech?: {
-    protocol: SpeechToTextProtocol
     baseUrl: string
     models: string[]
   }
@@ -374,11 +362,6 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
       'mimo-v2-pro': xiaomiTextChatProfile(1_000_000),
       'mimo-v2-omni': xiaomiVisionChatProfile(256_000)
     },
-    speech: {
-      protocol: 'mimo-asr',
-      baseUrl: 'https://api.xiaomimimo.com/v1',
-      models: ['mimo-v2.5-asr']
-    },
     textToSpeech: {
       protocol: 'mimo-tts',
       baseUrl: 'https://api.xiaomimimo.com/v1',
@@ -405,10 +388,6 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
         'mimo-v2.5': xiaomiVisionChatProfile(1_000_000),
         'mimo-v2-pro': xiaomiTextChatProfile(1_000_000),
         'mimo-v2-omni': xiaomiVisionChatProfile(256_000)
-      },
-      speech: {
-        protocol: 'mimo-asr',
-        models: ['mimo-v2.5-asr']
       },
       textToSpeech: {
         protocol: 'mimo-tts',
@@ -617,7 +596,6 @@ export function modelProviderPresetProfile(
     models: [...preset.models],
     modelProfiles: copyModelProfiles(preset.modelProfiles),
     ...(preset.image ? { image: modelProviderPresetImageCapability(preset.image) } : {}),
-    ...(preset.speech ? { speech: modelProviderPresetSpeechCapability(preset.speech) } : {}),
     ...(preset.textToSpeech
       ? { textToSpeech: modelProviderPresetTextToSpeechCapability(preset.textToSpeech) }
       : {}),
@@ -652,15 +630,6 @@ export function modelProviderTokenPlanProfile(
             protocol: tokenPlan.image.protocol,
             baseUrl: tokenPlanCapabilityBaseUrl(tokenPlan, resolvedBaseUrl, tokenPlan.image.baseUrl),
             models: [...tokenPlan.image.models]
-          }
-        }
-      : {}),
-    ...(tokenPlan.speech
-      ? {
-          speech: {
-            protocol: tokenPlan.speech.protocol,
-            baseUrl: resolvedBaseUrl,
-            models: [...tokenPlan.speech.models]
           }
         }
       : {}),
@@ -813,16 +782,6 @@ function modelProviderPresetImageCapability(
     protocol: image.protocol,
     baseUrl: image.baseUrl,
     models: [...image.models]
-  }
-}
-
-function modelProviderPresetSpeechCapability(
-  speech: NonNullable<ModelProviderPreset['speech']>
-): ModelProviderSpeechCapabilityV1 {
-  return {
-    protocol: speech.protocol,
-    baseUrl: speech.baseUrl,
-    models: [...speech.models]
   }
 }
 

@@ -1,7 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
-import { Archive, Bot, BrainCircuit, Clapperboard, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Plug, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
+import { Archive, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Plug, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles } from 'lucide-react'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'media' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 
 export function SettingsSidebar({
   category,
@@ -53,15 +53,6 @@ export function SettingsSidebar({
         >
           <SlidersHorizontal className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
           {t('modelConfiguration')}
-        </button>
-        <button
-          type="button"
-          data-cursor-spotlight-target
-          className={catCls('media')}
-          onClick={() => setCategory('media')}
-        >
-          <Clapperboard className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
-          {t('media')}
         </button>
         <button
           type="button"

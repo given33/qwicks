@@ -29,7 +29,6 @@ import {
   ExternalLink,
   Image as ImageIcon,
   MessageCircle,
-  Mic,
   Sparkles,
   Sun,
   Moon,
@@ -56,7 +55,7 @@ type SetupProviderCard = {
   presetId: string
   name: string
   descKey: string
-  capability: 'speech' | 'image' | null
+  capability: 'image' | null
   preset: ModelProviderPreset | null
 }
 
@@ -72,7 +71,7 @@ const PROVIDER_CARDS: SetupProviderCard[] = [
     presetId: preset.id,
     name: preset.name,
     descKey: preset.id === 'xiaomi' ? 'firstRunProviderXiaomiDesc' : 'firstRunProviderMinimaxDesc',
-    capability: preset.speech ? ('speech' as const) : preset.image ? ('image' as const) : null,
+    capability: preset.image ? ('image' as const) : null,
     preset
   }))
 ]
@@ -298,21 +297,19 @@ export function ModelConfigurationPanel({
   const wire = initialSetupAutoWirePlan(form, drafts)
   const wireNote = (() => {
     if (!selectedCard.capability) return null
-    const wiredProfileId = selectedCard.capability === 'speech' ? wire.speechProviderId : wire.imageProviderId
+    const wiredProfileId = wire.imageProviderId
     if (wiredProfileId && wiredProfileId === selectedProfileId) {
       return {
         tone: 'success' as const,
-        text: t(selectedCard.capability === 'speech' ? 'firstRunAutoWireSpeech' : 'firstRunAutoWireImage')
+        text: t('firstRunAutoWireImage')
       }
     }
     if (selection.mode === 'token-plan' && selectedDraft.apiKey.trim()) {
-      const planServesCapability = selectedCard.capability === 'speech'
-        ? Boolean(tokenPlan?.speech)
-        : selectedCard.capability === 'image' && Boolean(tokenPlan?.image)
+      const planServesCapability = selectedCard.capability === 'image' && Boolean(tokenPlan?.image)
       if (!planServesCapability) {
         return {
           tone: 'warning' as const,
-          text: t(selectedCard.capability === 'speech' ? 'firstRunTokenPlanNoSpeech' : 'firstRunTokenPlanNoImage')
+          text: t('firstRunTokenPlanNoImage')
         }
       }
     }
@@ -456,10 +453,8 @@ export function ModelConfigurationPanel({
                     </span>
                     {card.capability ? (
                       <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                        {card.capability === 'speech'
-                          ? <Mic className="h-3 w-3" strokeWidth={2} />
-                          : <ImageIcon className="h-3 w-3" strokeWidth={2} />}
-                        {t(card.capability === 'speech' ? 'firstRunCapabilitySpeech' : 'firstRunCapabilityImage')}
+                        <ImageIcon className="h-3 w-3" strokeWidth={2} />
+                        {t('firstRunCapabilityImage')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500">

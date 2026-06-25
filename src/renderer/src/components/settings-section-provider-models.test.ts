@@ -119,19 +119,16 @@ describe('ProviderModelsManager', () => {
     expect(html).toContain('group-hover/model-name:opacity-100')
   })
 
-  it('renders image and speech capability models in the unified list', () => {
+  it('renders image capability models in the unified list', () => {
     const html = renderManager(provider({
       models: ['chat-model'],
-      image: { protocol: 'openai-images', baseUrl: 'https://api.example.com/v1', models: ['image-01'] },
-      speech: { protocol: 'mimo-asr', baseUrl: 'https://api.example.com/v1', models: ['mimo-v2.5-asr'] }
+      image: { protocol: 'openai-images', baseUrl: 'https://api.example.com/v1', models: ['image-01'] }
     }))
 
     expect(html).toContain('chat-model')
     expect(html).toContain('Text chat')
     expect(html).toContain('image-01')
     expect(html).toContain('Image generation')
-    expect(html).toContain('mimo-v2.5-asr')
-    expect(html).toContain('Speech to text')
   })
 
   it('renders media generation capability models in the unified list', () => {

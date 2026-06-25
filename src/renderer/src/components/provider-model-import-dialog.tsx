@@ -14,7 +14,6 @@ type Translate = (key: string, params?: Record<string, unknown>) => string
 const KIND_LABEL_KEYS: Record<ProviderModelKind, string> = {
   chat: 'providerModelKindChat',
   image: 'providerModelKindImage',
-  speech: 'providerModelKindSpeech',
   tts: 'providerModelKindTts',
   music: 'providerModelKindMusic',
   video: 'providerModelKindVideo'
@@ -29,7 +28,6 @@ type FetchedEntry = {
 export type ProviderModelImportResult = {
   chat: string[]
   image: string[]
-  speech: string[]
   tts: string[]
   music: string[]
   video: string[]
@@ -111,7 +109,7 @@ export function ProviderModelImportDialog({
 
   const kindCounts = useMemo(() => {
     const counts: Record<ProviderModelKind, number> = {
-      chat: 0, image: 0, speech: 0, tts: 0, music: 0, video: 0
+      chat: 0, image: 0, tts: 0, music: 0, video: 0
     }
     for (const entry of entries) counts[entry.kind] += 1
     return counts
@@ -149,7 +147,7 @@ export function ProviderModelImportDialog({
 
   const handleConfirm = (): void => {
     const result: ProviderModelImportResult = {
-      chat: [], image: [], speech: [], tts: [], music: [], video: []
+      chat: [], image: [], tts: [], music: [], video: []
     }
     for (const entry of entries) {
       if (selected.has(entryKey(entry.kind, entry.modelId))) {

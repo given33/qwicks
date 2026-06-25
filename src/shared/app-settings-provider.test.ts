@@ -10,7 +10,6 @@ import {
   isComposerChatModelId,
   isImageGenerationModelId,
   isMusicGenerationModelId,
-  isSpeechToTextModelId,
   isTextToSpeechModelId,
   isVideoGenerationModelId,
   modelProviderPresetProfile,
@@ -19,7 +18,6 @@ import {
   defaultWorkflowSettings,
   defaultWriteSettings,
   listMusicGenerationProviderProfiles,
-  listSpeechToTextProviderProfiles,
   listTextToSpeechProviderProfiles,
   listVideoGenerationProviderProfiles,
   modelProviderModelProfilesForSettings,
@@ -31,7 +29,6 @@ import {
   resolveModelProviderBaseUrl,
   resolveModelProviderProxyUrl,
   resolveQWicksRuntimeSettings,
-  resolveQWicksSpeechToTextSettings,
   resolveQWicksTextToSpeechSettings,
   resolveQWicksVideoGenerationSettings,
   type AppSettingsV1
@@ -595,11 +592,6 @@ describe('model provider settings', () => {
     const xiaomi = getModelProviderPreset('xiaomi')
     expect(xiaomi && modelProviderPresetProfile(xiaomi)).toMatchObject({
       id: 'xiaomi',
-      speech: {
-        protocol: 'mimo-asr',
-        baseUrl: 'https://api.xiaomimimo.com/v1',
-        models: ['mimo-v2.5-asr']
-      },
       textToSpeech: {
         protocol: 'mimo-tts',
         baseUrl: 'https://api.xiaomimimo.com/v1',
@@ -608,41 +600,8 @@ describe('model provider settings', () => {
     })
   })
 
-  it('keeps speech-only models out of the composer model list', () => {
-    const base = settings()
-    const resolved = listModelProviderModelIds({
-      ...base,
-      provider: {
-        ...base.provider,
-        providers: [
-          ...base.provider.providers,
-          {
-            id: 'voice-lab',
-            name: 'Voice Lab',
-            apiKey: 'sk-voice',
-            baseUrl: 'https://voice.example/v1',
-            endpointFormat: 'chat_completions',
-            models: ['voice-chat', 'mimo-v2.5-asr', 'whisper-1'],
-            modelProfiles: {},
-            speech: {
-              protocol: 'openai-transcriptions',
-              baseUrl: 'https://voice.example/v1',
-              models: ['whisper-1']
-            }
-          }
-        ]
-      }
-    })
 
-    expect(resolved).toContain('voice-chat')
-    expect(resolved).not.toContain('mimo-v2.5-asr')
-    expect(resolved).not.toContain('whisper-1')
-  })
-
-  it('classifies speech and image model ids without treating TTS as ASR', () => {
-    expect(isSpeechToTextModelId('mimo-v2.5-asr')).toBe(true)
-    expect(isSpeechToTextModelId('whisper-1')).toBe(true)
-    expect(isSpeechToTextModelId('mimo-v2.5-tts')).toBe(false)
+  it('classifies image/tts/music/video model ids', () => {
     expect(isTextToSpeechModelId('mimo-v2.5-tts')).toBe(true)
     expect(isTextToSpeechModelId('speech-2.8-hd')).toBe(true)
     expect(isMusicGenerationModelId('music-cover')).toBe(true)
@@ -728,43 +687,7 @@ describe('model provider settings', () => {
     expect(resolved.modelProfiles['mimo-v2.5-pro']).toBeDefined()
   })
 
-  it('resolves Xiaomi speech-to-text through provider speech capability', () => {
-    const xiaomi = getModelProviderPreset('xiaomi')
-    expect(xiaomi).not.toBeNull()
-    const xiaomiProfile = modelProviderPresetProfile(xiaomi!, 'sk-xiaomi')
-    const base = {
-      ...settings(),
-      provider: {
-        ...defaultModelProviderSettings(),
-        providers: [
-          ...defaultModelProviderSettings().providers,
-          xiaomiProfile
-        ]
-      },
-      agents: {
-        qwicks: {
-          ...defaultQWicksRuntimeSettings(),
-          speechToText: {
-            ...defaultQWicksRuntimeSettings().speechToText,
-            enabled: true,
-            providerId: xiaomiProfile.id
-          }
-        }
-      }
-    }
-
-    expect(listSpeechToTextProviderProfiles(base).map((profile) => profile.id)).toEqual(['xiaomi'])
-    expect(resolveQWicksSpeechToTextSettings(base)).toEqual(expect.objectContaining({
-      enabled: true,
-      providerId: 'xiaomi',
-      protocol: 'mimo-asr',
-      baseUrl: 'https://api.xiaomimimo.com/v1',
-      apiKey: 'sk-xiaomi',
-      model: 'mimo-v2.5-asr'
-    }))
-  })
-
-  it('resolves provider-backed speech, music and video generation settings', () => {
+  it('resolves provider-backed text-to-speech, music and video generation settings', () => {
     const minimax = getModelProviderPreset('minimax')
     const xiaomi = getModelProviderPreset('xiaomi')
     expect(minimax).not.toBeNull()
@@ -841,34 +764,27 @@ describe('model provider settings', () => {
     }))
   })
 
-  it('repairs stale Xiaomi token plan speech endpoint and TTS model overrides', () => {
+  it('repairs stale Xiaomi token plan TTS model overrides', () => {
     const xiaomi = getModelProviderPreset('xiaomi')
     expect(xiaomi).not.toBeNull()
     const xiaomiTokenPlanProfile = modelProviderTokenPlanProfile(xiaomi!, 'tp-xiaomi')
     expect(xiaomiTokenPlanProfile).not.toBeNull()
-    const staleTokenPlanProfile = {
-      ...xiaomiTokenPlanProfile!,
-      speech: {
-        ...xiaomiTokenPlanProfile!.speech!,
-        baseUrl: 'https://api.xiaomimimo.com/v1'
-      }
-    }
-    const resolved = resolveQWicksSpeechToTextSettings({
+    const resolved = resolveQWicksTextToSpeechSettings({
       ...settings(),
       provider: {
         ...defaultModelProviderSettings(),
         providers: [
           ...defaultModelProviderSettings().providers,
-          staleTokenPlanProfile
+          xiaomiTokenPlanProfile!
         ]
       },
       agents: {
         qwicks: {
           ...defaultQWicksRuntimeSettings(),
-          speechToText: {
-            ...defaultQWicksRuntimeSettings().speechToText,
+          textToSpeech: {
+            ...defaultQWicksRuntimeSettings().textToSpeech,
             enabled: true,
-            providerId: staleTokenPlanProfile.id,
+            providerId: xiaomiTokenPlanProfile!.id,
             model: 'mimo-v2.5-tts'
           }
         }
@@ -878,41 +794,7 @@ describe('model provider settings', () => {
     expect(resolved).toEqual(expect.objectContaining({
       enabled: true,
       providerId: 'xiaomi-token-plan',
-      protocol: 'mimo-asr',
-      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-      apiKey: 'tp-xiaomi',
-      model: 'mimo-v2.5-asr'
-    }))
-  })
-
-  it('keeps custom speech-to-text settings when no provider is selected', () => {
-    const resolved = resolveQWicksSpeechToTextSettings({
-      ...settings(),
-      agents: {
-        qwicks: {
-          ...defaultQWicksRuntimeSettings(),
-          speechToText: {
-            enabled: true,
-            providerId: '',
-            protocol: 'openai-transcriptions',
-            baseUrl: 'https://speech.example/v1',
-            apiKey: 'sk-speech',
-            model: 'whisper-1',
-            language: 'zh',
-            timeoutMs: 30_000
-          }
-        }
-      }
-    })
-
-    expect(resolved).toEqual(expect.objectContaining({
-      enabled: true,
-      providerId: '',
-      protocol: 'openai-transcriptions',
-      baseUrl: 'https://speech.example/v1',
-      apiKey: 'sk-speech',
-      model: 'whisper-1',
-      language: 'zh'
+      protocol: 'mimo-tts'
     }))
   })
 

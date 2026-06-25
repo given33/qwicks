@@ -37,10 +37,6 @@ export const CUSTOM_IMAGE_GENERATION_PROVIDER_ID = 'custom'
 export const IMAGE_GENERATION_PROTOCOLS = ['openai-images', 'minimax-image'] as const
 export type ImageGenerationProtocol = (typeof IMAGE_GENERATION_PROTOCOLS)[number]
 export const DEFAULT_IMAGE_GENERATION_PROTOCOL: ImageGenerationProtocol = 'openai-images'
-export const CUSTOM_SPEECH_TO_TEXT_PROVIDER_ID = 'custom'
-export const SPEECH_TO_TEXT_PROTOCOLS = ['openai-transcriptions', 'mimo-asr'] as const
-export type SpeechToTextProtocol = (typeof SPEECH_TO_TEXT_PROTOCOLS)[number]
-export const DEFAULT_SPEECH_TO_TEXT_PROTOCOL: SpeechToTextProtocol = 'openai-transcriptions'
 export const CUSTOM_TEXT_TO_SPEECH_PROVIDER_ID = 'custom'
 export const TEXT_TO_SPEECH_PROTOCOLS = ['openai-speech', 'minimax-t2a', 'mimo-tts'] as const
 export type TextToSpeechProtocol = (typeof TEXT_TO_SPEECH_PROTOCOLS)[number]
@@ -121,11 +117,6 @@ export type ModelProviderImageCapabilityV1 = {
   baseUrl: string
   models: string[]
 }
-export type ModelProviderSpeechCapabilityV1 = {
-  protocol: SpeechToTextProtocol
-  baseUrl: string
-  models: string[]
-}
 export type ModelProviderTextToSpeechCapabilityV1 = {
   protocol: TextToSpeechProtocol
   baseUrl: string
@@ -150,7 +141,6 @@ export type ModelProviderProfileV1 = {
   models: string[]
   modelProfiles: Record<string, ModelProviderModelProfileV1>
   image?: ModelProviderImageCapabilityV1
-  speech?: ModelProviderSpeechCapabilityV1
   textToSpeech?: ModelProviderTextToSpeechCapabilityV1
   music?: ModelProviderMusicCapabilityV1
   video?: ModelProviderVideoCapabilityV1
@@ -163,15 +153,13 @@ export type ModelProviderSettingsV1 = {
 }
 
 export type ModelProviderImageCapabilityPatchV1 = Partial<ModelProviderImageCapabilityV1>
-export type ModelProviderSpeechCapabilityPatchV1 = Partial<ModelProviderSpeechCapabilityV1>
 export type ModelProviderTextToSpeechCapabilityPatchV1 = Partial<ModelProviderTextToSpeechCapabilityV1>
 export type ModelProviderMusicCapabilityPatchV1 = Partial<ModelProviderMusicCapabilityV1>
 export type ModelProviderVideoCapabilityPatchV1 = Partial<ModelProviderVideoCapabilityV1>
 export type ModelProviderModelProfilePatchV1 = Partial<ModelProviderModelProfileV1>
-export type ModelProviderProfilePatchV1 = Partial<Omit<ModelProviderProfileV1, 'image' | 'speech' | 'textToSpeech' | 'music' | 'video' | 'modelProfiles'>> & {
+export type ModelProviderProfilePatchV1 = Partial<Omit<ModelProviderProfileV1, 'image' | 'textToSpeech' | 'music' | 'video' | 'modelProfiles'>> & {
   modelProfiles?: Record<string, ModelProviderModelProfilePatchV1 | null>
   image?: ModelProviderImageCapabilityPatchV1 | null
-  speech?: ModelProviderSpeechCapabilityPatchV1 | null
   textToSpeech?: ModelProviderTextToSpeechCapabilityPatchV1 | null
   music?: ModelProviderMusicCapabilityPatchV1 | null
   video?: ModelProviderVideoCapabilityPatchV1 | null
@@ -217,8 +205,6 @@ export type QWicksRuntimeSettingsV1 = {
   /** OpenAI-compatible image generation provider shared by chat agents and Write image tools. */
   imageGeneration: QWicksImageGenerationSettingsV1
   /** Speech-to-text provider used for voice input in the composer. */
-  speechToText: QWicksSpeechToTextSettingsV1
-  /** Text-to-speech provider exposed to agents as generate_speech. */
   textToSpeech: QWicksTextToSpeechSettingsV1
   /** Music generation provider exposed to agents as generate_music. */
   musicGeneration: QWicksMusicGenerationSettingsV1
@@ -290,22 +276,6 @@ export type QWicksImageGenerationSettingsV1 = {
   model: string
   /** Default "WxH" or "auto" used when the model omits aspect ratio and size. Empty means provider default. */
   defaultSize: string
-  timeoutMs: number
-}
-
-export type QWicksSpeechToTextSettingsV1 = {
-  enabled: boolean
-  /** Existing provider profile to use for speech recognition. Empty or "custom" uses the fields below. */
-  providerId: string
-  /** Request protocol used when providerId is custom. Provider presets override this with their speech capability. */
-  protocol: SpeechToTextProtocol
-  /** Custom speech API root, or an override for the selected provider speech API root. */
-  baseUrl: string
-  /** Custom speech API key override. Empty inherits the selected provider API key when providerId is set. */
-  apiKey: string
-  model: string
-  /** Language hint sent to the provider ("zh", "en", ...). Empty means auto-detect. */
-  language: string
   timeoutMs: number
 }
 
@@ -464,7 +434,7 @@ export type QWicksTokenEconomySettingsPatchV1 = Partial<
 export type QWicksRuntimeSettingsPatchV1 = Partial<
   Omit<
     QWicksRuntimeSettingsV1,
-    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'computerUse' | 'quality' | 'modelProfiles'
+    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'imageGeneration' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'computerUse' | 'quality' | 'modelProfiles'
   >
 > & {
   mcpSearch?: Partial<QWicksMcpSearchSettingsV1>
@@ -473,7 +443,6 @@ export type QWicksRuntimeSettingsPatchV1 = Partial<
   contextCompaction?: Partial<QWicksContextCompactionSettingsV1>
   runtimeTuning?: QWicksRuntimeTuningSettingsPatchV1
   imageGeneration?: Partial<QWicksImageGenerationSettingsV1>
-  speechToText?: Partial<QWicksSpeechToTextSettingsV1>
   textToSpeech?: Partial<QWicksTextToSpeechSettingsV1>
   musicGeneration?: Partial<QWicksMusicGenerationSettingsV1>
   videoGeneration?: Partial<QWicksVideoGenerationSettingsV1>

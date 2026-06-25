@@ -5,13 +5,11 @@ import {
   DEFAULT_MODEL_ENDPOINT_FORMAT,
   DEFAULT_MODEL_PROVIDER_ID,
   NETWORK_PROXY_PROTOCOLS,
-  DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
   DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
   DEFAULT_VIDEO_GENERATION_PROTOCOL,
   MODEL_REASONING_EFFORTS,
   MODEL_REASONING_REQUEST_PROTOCOLS,
   CUSTOM_IMAGE_GENERATION_PROVIDER_ID,
-  CUSTOM_SPEECH_TO_TEXT_PROVIDER_ID,
   CUSTOM_TEXT_TO_SPEECH_PROVIDER_ID,
   CUSTOM_MUSIC_GENERATION_PROVIDER_ID,
   CUSTOM_VIDEO_GENERATION_PROVIDER_ID,
@@ -21,7 +19,6 @@ import {
   type QWicksMusicGenerationSettingsV1,
   type QWicksRuntimeSettingsV1,
   type QWicksRuntimeSettingsPatchV1,
-  type QWicksSpeechToTextSettingsV1,
   type QWicksTextToSpeechSettingsV1,
   type QWicksVideoGenerationSettingsV1,
   type MusicGenerationProtocol,
@@ -39,13 +36,10 @@ import {
   type ModelProviderSettingsPatchV1,
   type ModelProviderSettingsV1,
   type NetworkProxySettingsV1,
-  type ModelProviderSpeechCapabilityPatchV1,
-  type ModelProviderSpeechCapabilityV1,
   type ModelProviderTextToSpeechCapabilityPatchV1,
   type ModelProviderTextToSpeechCapabilityV1,
   type ModelProviderVideoCapabilityPatchV1,
   type ModelProviderVideoCapabilityV1,
-  type SpeechToTextProtocol,
   type TextToSpeechProtocol,
   type VideoGenerationProtocol
 } from './app-settings-types'
@@ -69,8 +63,6 @@ const DEFAULT_TEXT_MODEL_PROFILE: ModelProviderModelProfileV1 = {
   supportsToolCalling: true,
   messageParts: ['text']
 }
-const SPEECH_TO_TEXT_MODEL_PATTERN =
-  /(^|[/_.:-])(asr|stt|whisper|transcription|transcriptions)([/_.:-]|$)|speech[-_.:/]?to[-_.:/]?text|audio[-_.:/]?transcription/i
 const TEXT_TO_SPEECH_MODEL_PATTERN =
   /(^|[/_.:-])tts([/_.:-]|$)|(^|[/_.:-])speech[-_.:/]?\d|text[-_.:/]?to[-_.:/]?speech|speech[-_.:/]?synthesis|voiceclone|voicedesign/i
 const SPEECH_ONLY_MODEL_PATTERN =
@@ -189,17 +181,6 @@ export function listModelProviderModelIds(settings: AppSettingsV1): string[] {
   return [...ids].sort((a, b) => a.localeCompare(b))
 }
 
-export function listSpeechToTextModelIds(settings: AppSettingsV1): string[] {
-  const ids = new Set<string>()
-  for (const provider of getModelProviderSettings(settings).providers) {
-    for (const model of provider.speech?.models ?? []) {
-      const trimmed = model.trim()
-      if (trimmed) ids.add(trimmed)
-    }
-  }
-  return [...ids].sort((a, b) => a.localeCompare(b))
-}
-
 export function listImageGenerationModelIds(settings: AppSettingsV1): string[] {
   const ids = new Set<string>()
   for (const provider of getModelProviderSettings(settings).providers) {
@@ -246,7 +227,6 @@ export function listVideoGenerationModelIds(settings: AppSettingsV1): string[] {
 
 export function listNonTextModelIds(settings: AppSettingsV1): string[] {
   return [...new Set([
-    ...listSpeechToTextModelIds(settings),
     ...listImageGenerationModelIds(settings),
     ...listTextToSpeechModelIds(settings),
     ...listMusicGenerationModelIds(settings),
@@ -263,11 +243,6 @@ export function isComposerChatModelId(
   const excludedIds = new Set(nonTextModelIds.map((id) => id.trim().toLowerCase()).filter(Boolean))
   if (excludedIds.has(normalized)) return false
   return !SPEECH_ONLY_MODEL_PATTERN.test(normalized) && !NON_TEXT_MODEL_PATTERN.test(normalized)
-}
-
-export function isSpeechToTextModelId(modelId: string): boolean {
-  const normalized = modelId.trim().toLowerCase()
-  return Boolean(normalized) && SPEECH_TO_TEXT_MODEL_PATTERN.test(normalized)
 }
 
 export function isImageGenerationModelId(modelId: string): boolean {
@@ -341,10 +316,6 @@ export function listImageGenerationProviderProfiles(settings: AppSettingsV1): Mo
   return getModelProviderSettings(settings).providers.filter((provider) => Boolean(provider.image))
 }
 
-export function listSpeechToTextProviderProfiles(settings: AppSettingsV1): ModelProviderProfileV1[] {
-  return getModelProviderSettings(settings).providers.filter((provider) => Boolean(provider.speech))
-}
-
 export function listTextToSpeechProviderProfiles(settings: AppSettingsV1): ModelProviderProfileV1[] {
   return getModelProviderSettings(settings).providers.filter((provider) => Boolean(provider.textToSpeech))
 }
@@ -362,7 +333,7 @@ type MiniMaxMediaCapability =
   | ModelProviderTextToSpeechCapabilityV1
   | ModelProviderMusicCapabilityV1
   | ModelProviderVideoCapabilityV1
-type TokenPlanCapabilityKey = 'image' | 'speech' | 'textToSpeech' | 'music' | 'video'
+type TokenPlanCapabilityKey = 'image' | 'textToSpeech' | 'music' | 'video'
 type ProviderCapabilityWithBaseUrl = {
   protocol: string
   baseUrl: string
@@ -473,14 +444,12 @@ function providerWithPresetCapabilities(provider: ModelProviderProfileV1): Model
     : modelProviderPresetProfileForProvider(provider)
   if (!presetProfile) return provider
   const image = mergePresetCapability(provider.image, presetProfile.image)
-  const speech = mergePresetCapability(provider.speech, presetProfile.speech)
   const textToSpeech = mergePresetCapability(provider.textToSpeech, presetProfile.textToSpeech)
   const music = mergePresetCapability(provider.music, presetProfile.music)
   const video = mergePresetCapability(provider.video, presetProfile.video)
   return {
     ...provider,
     ...(image ? { image } : {}),
-    ...(speech ? { speech } : {}),
     ...(textToSpeech ? { textToSpeech } : {}),
     ...(music ? { music } : {}),
     ...(video ? { video } : {})
@@ -508,43 +477,6 @@ function mergePresetCapability<T extends { baseUrl: string; models: string[] }>(
 
 function firstCapabilityModel(models: readonly string[]): string {
   return models.map((model) => model.trim()).find(Boolean) ?? ''
-}
-
-export function resolveQWicksSpeechToTextSettings(settings: AppSettingsV1): QWicksSpeechToTextSettingsV1 {
-  const runtime = getQWicksRuntimeSettings(settings)
-  const speechToText = runtime.speechToText
-  const providerId = normalizeModelProviderId(speechToText.providerId)
-  if (!providerId || providerId === CUSTOM_SPEECH_TO_TEXT_PROVIDER_ID) {
-    return {
-      ...speechToText,
-      providerId,
-      protocol: normalizeSpeechToTextProtocol(speechToText.protocol)
-    }
-  }
-  const provider = getModelProviderProfile(settings, providerId)
-  const speech = provider.speech
-  if (!speech) {
-    return {
-      ...speechToText,
-      providerId,
-      protocol: normalizeSpeechToTextProtocol(speechToText.protocol)
-    }
-  }
-  return {
-    ...speechToText,
-    providerId: provider.id,
-    protocol: speech.protocol,
-    baseUrl: resolveProviderSpeechBaseUrl(provider, speech),
-    apiKey: provider.apiKey.trim(),
-    model: resolveProviderSpeechModel(speechToText.model, speech.models)
-  }
-}
-
-function resolveProviderSpeechBaseUrl(
-  provider: ModelProviderProfileV1,
-  speech: ModelProviderSpeechCapabilityV1
-): string {
-  return resolveProviderCapabilityBaseUrl(provider, speech, 'speech')
 }
 
 function resolveProviderCapabilityBaseUrl(
@@ -584,8 +516,6 @@ function tokenPlanCapabilityForKey(
   switch (key) {
     case 'image':
       return tokenPlan.image
-    case 'speech':
-      return tokenPlan.speech
     case 'textToSpeech':
       return tokenPlan.textToSpeech
     case 'music':
@@ -602,8 +532,6 @@ function presetCapabilityForKey(
   switch (key) {
     case 'image':
       return preset.image
-    case 'speech':
-      return preset.speech
     case 'textToSpeech':
       return preset.textToSpeech
     case 'music':
@@ -665,16 +593,6 @@ function replaceUrlOrigin(value: string, origin: string): string {
   } catch {
     return value.trim()
   }
-}
-
-function resolveProviderSpeechModel(configuredModel: string, providerModels: readonly string[]): string {
-  const model = configuredModel.trim()
-  if (!model) return providerModels[0] ?? ''
-  if (providerModels.length === 0) return model
-  if (providerModels.some((providerModel) => providerModel.trim().toLowerCase() === model.toLowerCase())) {
-    return model
-  }
-  return TEXT_TO_SPEECH_MODEL_PATTERN.test(model) ? providerModels[0] ?? model : model
 }
 
 export function resolveQWicksTextToSpeechSettings(settings: AppSettingsV1): QWicksTextToSpeechSettingsV1 {
@@ -852,7 +770,6 @@ export function resolveQWicksRuntimeSettings(settings: AppSettingsV1): QWicksRun
         : normalizeDeepseekBaseUrl(providerBaseUrl),
     endpointFormat: provider.endpointFormat,
     imageGeneration: resolveQWicksImageGenerationSettings(settings),
-    speechToText: resolveQWicksSpeechToTextSettings(settings),
     textToSpeech: resolveQWicksTextToSpeechSettings(settings),
     musicGeneration: resolveQWicksMusicGenerationSettings(settings),
     videoGeneration: resolveQWicksVideoGenerationSettings(settings),
@@ -893,7 +810,6 @@ function normalizeModelProviderProfile(
     normalizeModelProviderModelProfiles(input?.modelProfiles, models)
   )
   const image = normalizeModelProviderImageCapability(input?.image)
-  const speech = normalizeModelProviderSpeechCapability(input?.speech)
   const textToSpeech = normalizeModelProviderTextToSpeechCapability(input?.textToSpeech)
   const music = normalizeModelProviderMusicCapability(input?.music)
   const video = normalizeModelProviderVideoCapability(input?.video)
@@ -906,7 +822,6 @@ function normalizeModelProviderProfile(
     models,
     modelProfiles,
     ...(image ? { image } : {}),
-    ...(speech ? { speech } : {}),
     ...(textToSpeech ? { textToSpeech } : {}),
     ...(music ? { music } : {}),
     ...(video ? { video } : {})
@@ -1118,26 +1033,6 @@ function normalizeModelProviderImageCapability(
 
 export function normalizeImageGenerationProtocol(value: unknown): ImageGenerationProtocol {
   return value === 'minimax-image' ? 'minimax-image' : DEFAULT_IMAGE_GENERATION_PROTOCOL
-}
-
-function normalizeModelProviderSpeechCapability(
-  input: ModelProviderSpeechCapabilityPatchV1 | null | undefined
-): ModelProviderSpeechCapabilityV1 | undefined {
-  if (!input || typeof input !== 'object') return undefined
-  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.trim()
-    ? normalizeDeepseekBaseUrl(input.baseUrl)
-    : ''
-  const models = normalizeProviderModels(input.models)
-  if (!baseUrl && models.length === 0) return undefined
-  return {
-    protocol: normalizeSpeechToTextProtocol(input.protocol),
-    baseUrl,
-    models
-  }
-}
-
-export function normalizeSpeechToTextProtocol(value: unknown): SpeechToTextProtocol {
-  return value === 'mimo-asr' ? 'mimo-asr' : DEFAULT_SPEECH_TO_TEXT_PROTOCOL
 }
 
 function normalizeModelProviderTextToSpeechCapability(

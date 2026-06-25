@@ -113,8 +113,8 @@ describe('ArchivedThreadsSettingsSection', () => {
     expect(agentsIndex).toBeGreaterThanOrEqual(0)
     expect(permissionsIndex).toBeGreaterThan(agentsIndex)
     expect(archivesIndex).toBeGreaterThan(permissionsIndex)
-    // mediaGeneration + speechToText merged into one media tab → 17 baseline minus 1.
-    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(16)
+    // media tab removed (media config moved to Skills page) → 15 buttons.
+    expect(html.match(/data-cursor-spotlight-target/g)?.length).toBe(15)
   })
 
   it('keeps settings tabs scrollable without pushing the footer away', () => {
