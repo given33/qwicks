@@ -48,6 +48,75 @@ jobs:
         shell: pwsh
         run: npm --prefix qwicks run test -- tests/mesh
 
+  # Dream memory system — full suite (hard gate). Covers extraction, retrieval,
+  # persistence, sensitivity tiering, capacity, share/export sanitization,
+  # connectors, capacity-guard, and the evaluation harness. This is the gate for
+  # all Dream memory productization work (batches A–H).
+  dream-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: qwicks/package-lock.json
+
+      - name: "Setup Python (native modules: better-sqlite3)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install qwicks runtime deps
+        shell: pwsh
+        run: npm --prefix qwicks ci
+
+      - name: Typecheck
+        shell: pwsh
+        run: npm --prefix qwicks run typecheck
+
+      - name: Run dream test suite (hard gate)
+        shell: pwsh
+        run: npm --prefix qwicks run test:dream
+
+  # Dream evaluation Tier-A gate. Runs the eval harness against the full 540-case
+  # dataset when DREAM_EVAL_DATASET is provided (e.g. via a CI secret/artifact);
+  # otherwise exits 77 (SKIP) so this job is informational until the dataset is wired.
+  # Asserts f1≥0.85, recall≥0.85, staleRate≤0.01 (per verification_tiers.md).
+  dream-eval-gate:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: qwicks/package-lock.json
+
+      - name: "Setup Python (native modules: better-sqlite3)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install qwicks runtime deps
+        shell: pwsh
+        run: npm --prefix qwicks ci
+
+      - name: Run eval Tier-A gate
+        shell: pwsh
+        env:
+          DREAM_EVAL_DATASET: ${{ secrets.DREAM_EVAL_DATASET }}
+        run: npm --prefix qwicks run eval:gate
+
   # Quality gate for the Electron GUI shell (src/). Typecheck is a hard gate;
   # test:ci runs the stable test suite. A handful of pre-existing tests are
   # excluded (see package.json test:ci) because they depend on a real git

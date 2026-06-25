@@ -190,6 +190,13 @@ export class DreamMemorySystem {
   readonly observableGate: ObservableGate
   readonly promptBuilder = new NaturalPromptBuilder()
   readonly controls = new DreamControls()
+  /**
+   * Batch H(spec §8.5):实例级 fail-open ring-buffer —— 累积各 turn 的 failures,
+   * 供运行时可观测面板(recentFailures())展示"近 N 次 Dream 失败"。
+   * 上限 200,超出自动丢弃最旧(对齐 runbook 的"近 N 次"语义)。
+   */
+  private readonly recentFailuresBuf: string[] = []
+  private static readonly RECENT_FAILURES_MAX = 200
   /** Phase 3:用户控制(list/edit/delete/suppress/opt-out/export/purge/versions)。 */
   readonly controls2: MemoryControls
   /** Batch B:高敏感待确认草稿存储(物理隔离)。 */
@@ -580,6 +587,7 @@ export class DreamMemorySystem {
       rewrittenQueryFromMemory
     }
 
+    this.mergeRecentFailures(failures)
     return {
       reply,
       systemBlock: built?.system ?? '',
@@ -794,12 +802,23 @@ export class DreamMemorySystem {
 
   /**
    * Batch H(spec §8.5):近 N 次 Dream 失败(供 fail-open 可观测面板)。
-   * 注:failures 目前是 per-turn 局部数组(在 beforeTurn/afterTurn 返回值里)。
-   * 运行时聚合面板需要时,在实例上增加 ring-buffer 并在各 catch 处 push;此处先暴露
-   * 空数组占位,避免误读为"无失败"。真实近期失败由调用方从 turn 结果累积。
+   * 各 turn 的 failures 在 beforeTurn/afterTurn 返回前经 mergeRecentFailures 累积到
+   * 实例 ring-buffer(上限 200);此处读取副本。空 = 近期无失败。
    */
   recentFailures(): string[] {
-    return []
+    return [...this.recentFailuresBuf]
+  }
+
+  /** Batch H:把单 turn 的 failures 并入实例 ring-buffer(带时间戳)。 */
+  private mergeRecentFailures(failures: string[]): void {
+    if (failures.length === 0) return
+    const at = nowIso()
+    for (const f of failures) {
+      this.recentFailuresBuf.push(`[${at}] ${f}`)
+    }
+    if (this.recentFailuresBuf.length > DreamMemorySystem.RECENT_FAILURES_MAX) {
+      this.recentFailuresBuf.splice(0, this.recentFailuresBuf.length - DreamMemorySystem.RECENT_FAILURES_MAX)
+    }
   }
 
   /** Batch H(spec §8.3):当前 embedding 后端(http vs hash fallback),供诊断面板显示"是否真语义检索"。 */
@@ -1041,6 +1060,7 @@ export class DreamMemorySystem {
       void Promise.resolve().then(() => { try { this.scheduler.tick({ userId }) } catch { /* non-blocking */ } })
     }
 
+    this.mergeRecentFailures(failures)
     return { newMemories, sourceId: chatSourceId, failures, dreamingTriggered }
   }
 
