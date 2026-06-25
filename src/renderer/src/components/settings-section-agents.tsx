@@ -14,13 +14,23 @@ import {
   DEFAULT_QWICKS_DATA_DIR,
   WRITE_INLINE_COMPLETION_MODEL_IDS,
   defaultModelProviderSettings,
-  isQWicksRuntimeInsecure
+  isQWicksRuntimeInsecure,
+  CUSTOM_IMAGE_GENERATION_PROVIDER_ID,
+  CUSTOM_TEXT_TO_SPEECH_PROVIDER_ID,
+  CUSTOM_MUSIC_GENERATION_PROVIDER_ID,
+  CUSTOM_VIDEO_GENERATION_PROVIDER_ID,
+  IMAGE_GENERATION_PROTOCOLS,
+  TEXT_TO_SPEECH_PROTOCOLS,
+  MUSIC_GENERATION_PROTOCOLS,
+  VIDEO_GENERATION_PROTOCOLS
 } from '@shared/app-settings'
 import type { GuiUpdateChannel } from '@shared/gui-update'
 import type {
   ComputerUsePermissionKind,
   ComputerUsePermissions,
   ComputerUsePermissionState,
+  SkillConfigField,
+  SkillListItem,
   SkillRootListItem
 } from '@shared/qwicks-gui-api'
 import { Ban, FolderOpen, Loader2, RefreshCw, Settings, Trash2 } from 'lucide-react'
@@ -194,6 +204,7 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
     permissionsSectionRef,
     skillRoots,
     skillRootsLoading,
+    builtinSkills = [],
     toggleSkillRoot,
     skillNotice,
     openSkillRoot,
@@ -828,6 +839,27 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
                       </div>
                     }
                   />
+                  {builtinSkills.length > 0 ? (
+                    <SettingRow
+                      title={t('builtinSkillConfig')}
+                      description={t('builtinSkillConfigDesc')}
+                      wideControl
+                      control={
+                        <div className="flex w-full flex-col gap-3">
+                          {builtinSkills.map((skill: SkillListItem) => (
+                            <BuiltinSkillConfigCard
+                              key={skill.id}
+                              skill={skill}
+                              qwicks={qwicks}
+                              providers={modelProviders}
+                              t={t}
+                              updateQWicks={updateQWicks}
+                            />
+                          ))}
+                        </div>
+                      }
+                    />
+                  ) : null}
                 </SettingsCard>
               </div>
 
@@ -1613,5 +1645,267 @@ function ComputerUsePermissionRow({ t }: { t: (key: string) => string }): ReactE
         </div>
       }
     />
+  )
+}
+
+// --- Built-in skill config panel -------------------------------------------------
+
+const PROTOCOL_SOURCES: Record<string, readonly string[]> = {
+  'imageGeneration.protocol': IMAGE_GENERATION_PROTOCOLS,
+  'textToSpeech.protocol': TEXT_TO_SPEECH_PROTOCOLS,
+  'musicGeneration.protocol': MUSIC_GENERATION_PROTOCOLS,
+  'videoGeneration.protocol': VIDEO_GENERATION_PROTOCOLS
+}
+
+const CUSTOM_PROVIDER_IDS: Record<string, string> = {
+  imageGeneration: CUSTOM_IMAGE_GENERATION_PROVIDER_ID,
+  textToSpeech: CUSTOM_TEXT_TO_SPEECH_PROVIDER_ID,
+  musicGeneration: CUSTOM_MUSIC_GENERATION_PROVIDER_ID,
+  videoGeneration: CUSTOM_VIDEO_GENERATION_PROVIDER_ID
+}
+
+function mediaTypeFromSettingsPath(settingsPath: string): string | undefined {
+  const match = /^agents\.qwicks\.(imageGeneration|textToSpeech|musicGeneration|videoGeneration)\./.exec(settingsPath)
+  return match?.[1]
+}
+
+/**
+ * Current value of a config field. `settingsPath` (e.g.
+ * "agents.qwicks.imageGeneration.apiKey") resolves against ctx.qwicks, which is
+ * settings.agents.qwicks, so the "agents.qwicks." prefix is stripped. Without a
+ * settingsPath the value is read from the generic skillConfigs store, falling
+ * back to the field default.
+ */
+function readFieldValue(
+  qwicks: Record<string, unknown>,
+  skillId: string,
+  field: SkillConfigField
+): string | number | boolean | undefined {
+  if (field.settingsPath) {
+    const localPath = field.settingsPath.replace(/^agents\.qwicks\./, '')
+    const parts = localPath.split('.')
+    let node: unknown = qwicks
+    for (const part of parts) {
+      node = (node as Record<string, unknown>)?.[part]
+      if (node === undefined) break
+    }
+    if (node !== undefined) return node as string | number | boolean
+  } else {
+    const store = (qwicks.skillConfigs ?? {}) as Record<string, Record<string, string | number | boolean>>
+    const stored = store[skillId]?.[field.key]
+    if (stored !== undefined) return stored
+  }
+  return field.default
+}
+
+/**
+ * Build a qwicks-level patch that writes the field value back to its source:
+ * settingsPath -> nested qwicks object; otherwise -> skillConfigs[skillId][key].
+ */
+function buildFieldPatch(
+  qwicks: Record<string, unknown>,
+  skillId: string,
+  field: SkillConfigField,
+  value: string | number | boolean
+): Record<string, unknown> {
+  if (field.settingsPath) {
+    const localPath = field.settingsPath.replace(/^agents\.qwicks\./, '')
+    const parts = localPath.split('.')
+    const patch: Record<string, unknown> = {}
+    let node: Record<string, unknown> = patch
+    for (let i = 0; i < parts.length - 1; i++) {
+      const next: Record<string, unknown> = {}
+      node[parts[i] as string] = next
+      node = next
+    }
+    node[parts[parts.length - 1] as string] = value
+    return patch
+  }
+  const existing = (qwicks.skillConfigs ?? {}) as Record<string, Record<string, string | number | boolean>>
+  return {
+    skillConfigs: {
+      ...existing,
+      [skillId]: { ...(existing[skillId] ?? {}), [field.key]: value }
+    }
+  }
+}
+
+/**
+ * Enum options for a field. Static options win; otherwise derive from the
+ * settingsPath suffix (protocol constants / provider list / known media values).
+ */
+function resolveEnumOptions(
+  field: SkillConfigField,
+  providers: ModelProviderProfileV1[]
+): { value: string; label: string }[] {
+  if (field.options && field.options.length > 0) return field.options
+  if (!field.settingsPath) return []
+  const localPath = field.settingsPath.replace(/^agents\.qwicks\./, '')
+  const protocolSource = PROTOCOL_SOURCES[localPath]
+  if (protocolSource) {
+    return protocolSource.map((p) => ({ value: p, label: p }))
+  }
+  const mediaType = mediaTypeFromSettingsPath(field.settingsPath)
+  if (mediaType && localPath.endsWith('.providerId')) {
+    const opts = providers
+      .filter((p) => Boolean((p as Record<string, unknown>)[mediaType]))
+      .map((p) => ({ value: p.id, label: p.name }))
+    opts.push({ value: CUSTOM_PROVIDER_IDS[mediaType] ?? 'custom', label: 'custom' })
+    return opts
+  }
+  if (localPath.endsWith('.format')) {
+    return [{ value: 'mp3', label: 'mp3' }, { value: 'wav', label: 'wav' }, { value: 'flac', label: 'flac' }]
+  }
+  if (localPath.endsWith('.defaultResolution')) {
+    return [{ value: '768P', label: '768P' }, { value: '1080P', label: '1080P' }]
+  }
+  return []
+}
+
+/**
+ * Whether this media skill currently has a real provider selected (not custom),
+ * so credential fields (apiKey/baseUrl/model) render read-only as inherited.
+ */
+function isUsingRealProvider(qwicks: Record<string, unknown>, field: SkillConfigField): boolean {
+  if (!field.settingsPath) return false
+  const mediaType = mediaTypeFromSettingsPath(field.settingsPath)
+  if (!mediaType) return false
+  const providerId = ((qwicks[mediaType] as Record<string, unknown>)?.providerId ?? '') as string
+  const customId = CUSTOM_PROVIDER_IDS[mediaType]
+  return Boolean(providerId) && providerId !== customId
+}
+
+function SkillConfigFieldRow(input: {
+  field: SkillConfigField
+  skill: SkillListItem
+  qwicks: Record<string, unknown>
+  providers: ModelProviderProfileV1[]
+  providerName: string | undefined
+  t: (key: string, values?: Record<string, unknown>) => string
+  onWrite: (patch: Record<string, unknown>) => void
+}): ReactElement {
+  const { field, skill, qwicks, providers, providerName, t, onWrite } = input
+  const value = readFieldValue(qwicks, skill.id, field)
+  const label = t(field.label)
+  const description = field.description ? t(field.description) : undefined
+  const inheritedFromProvider =
+    isUsingRealProvider(qwicks, field) &&
+    (field.key === 'apiKey' || field.key === 'baseUrl' || field.key === 'model')
+
+  let control: ReactElement
+  if (inheritedFromProvider) {
+    control = (
+      <div className="flex items-center gap-2">
+        <code className="rounded bg-ds-main/60 px-2 py-1 font-mono text-[12px] text-ds-muted">
+          {field.type === 'secret' ? '••••' : String(value ?? '')}
+        </code>
+        <span className="text-[12px] text-ds-faint">
+          {t('skillConfigFromProvider', { provider: providerName ?? '' })}
+        </span>
+      </div>
+    )
+  } else if (field.type === 'boolean') {
+    control = <Toggle checked={value === true} onChange={(v) => onWrite(buildFieldPatch(qwicks, skill.id, field, v))} />
+  } else if (field.type === 'secret') {
+    control = (
+      <SecretInput
+        value={typeof value === 'string' ? value : ''}
+        onChange={(v) => onWrite(buildFieldPatch(qwicks, skill.id, field, v))}
+        visible={false}
+        onToggleVisibility={() => {}}
+        showLabel={t('showSecret')}
+        hideLabel={t('hideSecret')}
+        className="md:max-w-md"
+      />
+    )
+  } else if (field.type === 'number') {
+    control = (
+      <input
+        type="number"
+        className="w-40 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+        value={typeof value === 'number' ? value : Number(value ?? 0)}
+        onChange={(e) => onWrite(buildFieldPatch(qwicks, skill.id, field, Number(e.target.value)))}
+      />
+    )
+  } else if (field.type === 'enum') {
+    const options = resolveEnumOptions(field, providers)
+    control = (
+      <select
+        className="w-full rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30 md:max-w-md"
+        value={typeof value === 'string' ? value : ''}
+        onChange={(e) => onWrite(buildFieldPatch(qwicks, skill.id, field, e.target.value))}
+      >
+        <option value="">{t('modelSelectDefaultOption', { model: options[0]?.label ?? '' })}</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    )
+  } else {
+    control = (
+      <input
+        className="w-full rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30 md:max-w-md"
+        value={typeof value === 'string' ? value : ''}
+        placeholder={field.placeholder ?? ''}
+        onChange={(e) => onWrite(buildFieldPatch(qwicks, skill.id, field, e.target.value))}
+      />
+    )
+  }
+
+  return <SettingRow title={label} description={description} control={control} />
+}
+
+function BuiltinSkillConfigCard(input: {
+  skill: SkillListItem
+  qwicks: Record<string, unknown>
+  providers: ModelProviderProfileV1[]
+  t: (key: string, values?: Record<string, unknown>) => string
+  updateQWicks: (patch: Record<string, unknown>) => void
+}): ReactElement {
+  const { skill, qwicks, providers, t, updateQWicks } = input
+  const [open, setOpen] = useState(false)
+  const fields = skill.configSchema?.fields ?? []
+  const providerField = fields.find((f) => f.key === 'providerId')
+  const providerId = providerField ? String(readFieldValue(qwicks, skill.id, providerField) ?? '') : ''
+  const providerName = providers.find((p) => p.id === providerId)?.name
+  const requiredMissing = fields
+    .filter((f) => f.required)
+    .some((f) => {
+      const v = readFieldValue(qwicks, skill.id, f)
+      return v === undefined || v === '' || (typeof v === 'string' && !v.trim())
+    })
+
+  return (
+    <div className="rounded-xl border border-ds-border bg-ds-card px-3 py-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between"
+      >
+        <span className="flex items-center gap-2 text-[13px] font-medium text-ds-ink">
+          {skill.name}
+          {requiredMissing ? (
+            <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-200">
+              {t('skillConfigUnconfigured')}
+            </span>
+          ) : null}
+        </span>
+        <span className="text-[12px] text-ds-muted">{open ? t('collapse') : t('expand')}</span>
+      </button>
+      {open ? (
+        <div className="mt-3 divide-y divide-ds-border-muted">
+          {fields.map((field) => (
+            <SkillConfigFieldRow
+              key={field.key}
+              field={field}
+              skill={skill}
+              qwicks={qwicks}
+              providers={providers}
+              providerName={providerName}
+              t={t}
+              onWrite={updateQWicks}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }

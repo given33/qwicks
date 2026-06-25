@@ -1065,5 +1065,11 @@
   "memoryDataControl": "Data control",
   "memoryDataControlDesc": "Choose whether your memory data may be used to improve or train models. Both are off by default — this app is local-first and does not upload memory data. These toggles only affect data reporting; your local memory keeps working.",
   "memoryDataControlImprove": "Allow model improvement",
-  "memoryDataControlTrain": "Allow model training"
+  "memoryDataControlTrain": "Allow model training",
+  "builtinSkillConfig": "Built-in skill configuration",
+  "builtinSkillConfigDesc": "Configure credentials for built-in skills. Required fields must be filled before the skill works.",
+  "expand": "Expand",
+  "collapse": "Collapse",
+  "skillConfigFromProvider": "Inherited from provider {{provider}}",
+  "skillConfigUnconfigured": "Not configured"
 }

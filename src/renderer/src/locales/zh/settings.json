@@ -1065,5 +1065,11 @@
   "memoryDataControl": "数据控制",
   "memoryDataControlDesc": "选择你的记忆数据是否可用于改进或训练模型。默认全部关闭——本应用本地优先，不上传记忆数据。这些开关只影响数据上报，本地记忆功能不受影响。",
   "memoryDataControlImprove": "允许模型改进",
-  "memoryDataControlTrain": "允许模型训练"
+  "memoryDataControlTrain": "允许模型训练",
+  "builtinSkillConfig": "内置技能配置",
+  "builtinSkillConfigDesc": "为内置技能配置凭据。必填字段在技能可用前必须填写。",
+  "expand": "展开",
+  "collapse": "收起",
+  "skillConfigFromProvider": "来自供应商 {{provider}}",
+  "skillConfigUnconfigured": "未配置"
 }

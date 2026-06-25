@@ -8,22 +8,14 @@ import {
   COMMON_WORKSPACE_SKILL_DIRS,
   type CommonSkillDir
 } from '../../shared/skill-dirs'
+import type { SkillConfigField, SkillConfigSchema } from '../../shared/qwicks-gui-api'
 import { expandHomePath } from './workspace-service'
 import { builtinSkillsTargetDir } from './builtin-skills-service'
 
 export type GuiSkillScope = 'project' | 'global'
 
-export type GuiSkillConfigField = {
-  key: string
-  type: 'string' | 'secret' | 'number' | 'enum' | 'boolean'
-  label: string
-  description?: string
-  required: boolean
-  default?: string | number | boolean
-  options?: Array<{ value: string; label: string }>
-  placeholder?: string
-  settingsPath?: string
-}
+/** Re-exported so existing importers keep working; single source of truth is qwicks-gui-api. */
+export type GuiSkillConfigField = SkillConfigField
 
 export type GuiSkillSummary = {
   id: string
@@ -36,7 +28,7 @@ export type GuiSkillSummary = {
   /** True for skills materialized from the app's built-in media skill packages. */
   builtin?: boolean
   /** Optional config fields declared in skill.json; surfaced for the GUI to render a config panel. */
-  configSchema?: { fields: GuiSkillConfigField[] }
+  configSchema?: SkillConfigSchema
 }
 
 export type GuiSkillListResult =
@@ -440,7 +432,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * defensively (skill.json is static but third-party skills may be malformed).
  * Returns undefined when the schema is absent, empty, or contains no valid fields.
  */
-function parseSkillConfigSchema(raw: unknown): { fields: GuiSkillConfigField[] } | undefined {
+function parseSkillConfigSchema(raw: unknown): SkillConfigSchema | undefined {
   if (!isObject(raw) || !Array.isArray(raw.fields)) return undefined
   const fields = raw.fields
     .map(parseConfigField)

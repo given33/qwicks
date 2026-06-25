@@ -26,7 +26,7 @@ import type {
 import type { WriteInlineCompletionDebugEntry } from '@shared/write-inline-completion'
 import { applyCursorSpotlight, applyTheme, applyUiFontScale, applyWriteTypography } from '../lib/apply-theme'
 import { formatWorkspacePickerError } from '../lib/format-workspace-picker-error'
-import type { SkillRootListItem } from '@shared/qwicks-gui-api'
+import type { SkillListItem, SkillRootListItem } from '@shared/qwicks-gui-api'
 import { normalizeWorkspaceRoot } from '../lib/workspace-path'
 import {
   compactHomePathForSettingsDisplay,
@@ -108,6 +108,7 @@ export function SettingsView(): ReactElement {
   const [logDirOpenError, setLogDirOpenError] = useState<string | null>(null)
   const [skillRoots, setSkillRoots] = useState<SkillRootListItem[]>([])
   const [skillRootsLoading, setSkillRootsLoading] = useState(false)
+  const [builtinSkills, setBuiltinSkills] = useState<SkillListItem[]>([])
   const [skillNotice, setSkillNotice] = useState<InlineNotice | null>(null)
   const [mcpConfigPath, setMcpConfigPath] = useState('~/.qwicks/mcp.json')
   const [mcpConfigText, setMcpConfigText] = useState('')
@@ -396,6 +397,25 @@ export function SettingsView(): ReactElement {
     if (category !== 'agents') return
     void refreshSkillRoots()
   }, [category, refreshSkillRoots])
+
+  // Load built-in skills that declare a configSchema, so the Skills page can
+  // render a per-skill config panel for them. Best-effort: failures keep the
+  // last known list.
+  const refreshBuiltinSkills = useCallback(async (): Promise<void> => {
+    if (typeof window.qwicksGui?.listSkills !== 'function') return
+    try {
+      const workspaceRoot = normalizeWorkspaceRoot(expandHomePath(formWorkspaceRoot ?? ''))
+      const result = await window.qwicksGui.listSkills(workspaceRoot || undefined)
+      if (result.ok) setBuiltinSkills(result.skills.filter((s) => s.builtin && s.configSchema))
+    } catch {
+      /* best-effort */
+    }
+  }, [expandHomePath, formWorkspaceRoot])
+
+  useEffect(() => {
+    if (category !== 'agents') return
+    void refreshBuiltinSkills()
+  }, [category, refreshBuiltinSkills])
 
   const loadMcpConfig = async (): Promise<void> => {
     if (typeof window.qwicksGui?.getQWicksConfigFile !== 'function') return
@@ -925,6 +945,7 @@ export function SettingsView(): ReactElement {
     permissionsSectionRef,
     skillRoots,
     skillRootsLoading,
+    builtinSkills,
     toggleSkillRoot,
     skillNotice,
     openSkillRoot,

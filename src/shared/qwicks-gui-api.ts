@@ -120,6 +120,20 @@ export const DESKTOP_COMMANDS = [
 ] as const
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
 export type SkillSaveResult = { ok: true; path: string } | { ok: false; message: string }
+export type SkillConfigField = {
+  key: string
+  type: 'string' | 'secret' | 'number' | 'enum' | 'boolean'
+  label: string
+  description?: string
+  required: boolean
+  default?: string | number | boolean
+  options?: Array<{ value: string; label: string }>
+  placeholder?: string
+  settingsPath?: string
+}
+
+export type SkillConfigSchema = { fields: SkillConfigField[] }
+
 export type SkillListItem = {
   id: string
   name: string
@@ -130,6 +144,8 @@ export type SkillListItem = {
   legacy: boolean
   /** True for skills materialized from the app's built-in media skill packages. */
   builtin?: boolean
+  /** Optional config fields declared in skill.json; surfaced for the GUI to render a config panel. */
+  configSchema?: SkillConfigSchema
 }
 export type SkillListResult =
   | { ok: true; skills: SkillListItem[]; validationErrors: Array<{ root: string; message: string }> }
