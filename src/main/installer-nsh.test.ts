@@ -18,15 +18,21 @@ describe('build/installer.nsh structure (problem 2 regression guard)', () => {
     expect(content).toMatch(/!macro\s+customCheckAppRunning\b/)
   })
 
-  it('does the taskkill + tasklist poll loop inside customInit (runs under /S)', () => {
+  it('kills QWicks in customInit and judges completion by taskkill exit code (locale-independent)', () => {
     const customInitMatch = content.match(/!macro\s+customInit([\s\S]*?)!macroend/i)
     expect(customInitMatch, 'customInit macro not found').not.toBeNull()
     const customInitBody = customInitMatch![1]
-    // Kill + verify-until-gone: both taskkill and the tasklist liveness check
-    // must be inside customInit so silent installs clean up processes.
+    // taskkill must run inside customInit so silent installs clean up processes.
     expect(customInitBody).toMatch(/taskkill\s+\/F\s+\/IM\s+QWicks\.exe/)
-    expect(customInitBody).toMatch(/tasklist/)
-    expect(customInitBody).toMatch(/INFO/) // the "No tasks running" sentinel
+    // Completion MUST be judged by taskkill's exit code (0 = killed,
+    // 128 = nothing to kill), NOT by matching tasklist's stdout text. On
+    // non-English Windows tasklist prints localized text (中文: "信息:...")
+    // instead of "INFO:", so a text match never succeeds and the loop spins
+    // forever → false "please close QWicks" dialog.
+    expect(customInitBody).toMatch(/\$\{OrIf\}\s+\$0\s*==\s*128/)
+    // Must NOT fall back to the old locale-dependent tasklist/INFO check.
+    expect(customInitBody).not.toMatch(/tasklist/)
+    expect(customInitBody).not.toMatch(/\$\{If\}\s+\$2\s*==\s*"INFO"/)
   })
 
   it('does NOT rely on customCheckAppRunning as the only cleanup (it is skipped under /S)', () => {

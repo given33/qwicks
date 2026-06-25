@@ -27,13 +27,16 @@
 ;
 ; FIX: do ALL process cleanup inside customInit. customInit is called from
 ; .onInit which runs in EVERY install mode (including /S). The cleanup polls
-; tasklist until no QWicks.exe remains (taskkill returns before the OS
-; releases file handles, so we must wait for true process death), giving the
-; OS time to drop the app.asar lock before the installer starts copying files.
+; taskkill until no QWicks.exe remains, giving the OS time to drop the
+; app.asar lock before the installer starts copying files.
 ;
-; customCheckAppRunning is kept as a no-op fallback: in non-silent mode the
-; template still calls it, and an empty body means "do not show the close-app
-; dialog" (cleanup already happened in customInit).
+; IMPORTANT — locale independence: the kill loop MUST NOT match tasklist's
+; stdout text (e.g. "INFO: No tasks running"). On non-English Windows that
+; string is localized (中文系统输出"信息: 没有运行的任务..."), so a text
+; match never succeeds and the loop spins forever, falsely concluding the app
+; is still running → false "please close QWicks" dialog. Judge completion by
+; taskkill's EXIT CODE instead: 0 = killed, 128 = nothing to kill (both mean
+; "no QWicks left"); any other code = real failure (retry).
 ; ============================================================================
 
 !macro customInit
@@ -45,21 +48,20 @@
   killLoop:
     IntOp $R1 $R1 + 1
     ; /T kills the whole process tree (GUI + spawned runtime child).
+    ; nsExec::ExecToStack pushes the exit code on TOP, then the stdout output
+    ; beneath it. Exit code: 0 = killed something, 128 = no matching process,
+    ; anything else = transient failure (e.g. access denied while shutting down).
     nsExec::ExecToStack 'taskkill /F /IM QWicks.exe /T 2>&1'
-    Pop $0
-    Sleep 750
-    ; Is any QWicks.exe still alive?
-    nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq QWicks.exe" /FO CSV /NH 2>&1'
-    Pop $0
-    Pop $1                 ; stdout
-    ; tasklist prints "INFO: No tasks are running ..." when none found.
-    StrCpy $2 $1 4         ; first 4 chars
-    ${If} $2 == "INFO"
+    Pop $0                 ; exit code (top of stack)
+    Pop $R2                ; stdout output (discarded)
+    ; 0 (killed) or 128 (nothing to kill) → no QWicks.exe is left running.
+    ${If} $0 == 0
+    ${OrIf} $0 == 128
       Goto killDone
     ${EndIf}
-    ; Retry up to 12 times (~13s total). After the process exits, Windows
-    ; still needs a beat to release file handles on app.asar; the loop both
-    ; confirms process death AND covers that release window.
+    Sleep 750
+    ; Retry up to 12 times (~13s total) for transient access-denied while a
+    ; process is mid-shutdown, and to let Windows release app.asar handles.
     ${If} $R1 < 12
       Goto killLoop
     ${EndIf}
