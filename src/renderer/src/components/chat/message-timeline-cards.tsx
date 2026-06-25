@@ -12,6 +12,7 @@ import type {
 } from '../../write/quoted-selection'
 import { DiffView } from '../DiffView'
 import { formatDuration } from './message-timeline-tools'
+import type { TurnTimerState } from './turn-timer'
 
 /**
  * Inline "Review Plan" card rendered under a turn whose `create_plan`
@@ -319,48 +320,40 @@ export function TurnChangeSummary({
   )
 }
 
-/** Turn-level work-process summary. Details stay collapsed until the user opens them. */
+/** Turn-level work-process summary. Details stay collapsed until the user opens them.
+ * Consumes a TurnTimerState (derived by the parent from store data) so the
+ * thinking→processing→processed lifecycle is driven by a single continuous
+ * timer; reasoning content/duration is never surfaced here. */
 export function WorkMetaRow({
-  processing,
+  timer,
   stepCount,
-  durationMs,
-  reasoningDurationMs,
   expanded,
   onToggle,
   collapsible = true
 }: {
-  processing: boolean
+  timer: TurnTimerState
   stepCount: number
-  durationMs?: number
-  reasoningDurationMs?: number
   expanded: boolean
   onToggle: () => void
   collapsible?: boolean
 }): ReactElement {
   const { t } = useTranslation('common')
 
-  const mainLabel = processing
-    ? typeof durationMs === 'number'
-      ? `${t('processing')} ${formatDuration(durationMs)}`
-      : t('processing')
-    : typeof durationMs === 'number'
-      ? `${t('processed')} ${formatDuration(durationMs)}`
-      : t('processed')
-
-  const showThoughtSuffix =
-    !processing &&
-    typeof reasoningDurationMs === 'number' &&
-    reasoningDurationMs >= 1000
+  // THINKING_WAIT: 动画 + 无秒数。
+  // 其余态：标签 + 秒数（若有）。
+  // 可展开折叠条的条件：collapsible 且有工具步骤可回溯（THINKING_WAIT 自然
+  // stepCount===0 不可展开；一旦有工具运行/完成，运行中也可展开供 debug —— 对标
+  // Codex「动态时重过程」）。
+  const showSeconds = typeof timer.displayMs === 'number'
+  const labelText = showSeconds
+    ? t(timer.labelKey, { duration: formatDuration(timer.displayMs as number) })
+    : t('thinkingNow')
+  const interactive = collapsible && stepCount > 0
 
   const content = (
     <>
-      <span className={`tabular-nums ${processing ? 'ds-shiny-text' : ''}`}>{mainLabel}</span>
-      {showThoughtSuffix ? (
-        <span className="text-ds-faint">
-          · {t('thoughtFor', { duration: formatDuration(reasoningDurationMs!) })}
-        </span>
-      ) : null}
-      {collapsible ? (
+      <span className={`tabular-nums ${timer.phase !== 'done' ? 'ds-shiny-text' : ''}`}>{labelText}</span>
+      {interactive ? (
         expanded ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-45" strokeWidth={1.8} />
         ) : (
@@ -373,7 +366,7 @@ export function WorkMetaRow({
     </>
   )
 
-  if (!collapsible) {
+  if (!interactive) {
     return (
       <div className="flex w-fit max-w-full items-center gap-1.5 rounded-md py-1 text-left text-[15px] font-medium text-ds-muted">
         {content}

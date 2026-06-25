@@ -24,6 +24,7 @@ import {
   pickQWicksCelebration
 } from './AnimatedWorkLogo'
 import { WorkMetaRow } from './message-timeline-cards'
+import { deriveTurnTimer } from './turn-timer'
 
 describe('AnimatedWorkLogo', () => {
   it('ships the warm-yellow pet figure assets (M2 reskin)', async () => {
@@ -239,9 +240,16 @@ describe('AnimatedWorkLogo', () => {
   })
 
   it('keeps the processing work row as text-only status', () => {
+    const timer = deriveTurnTimer({
+      isProcessing: true,
+      hasLiveReasoning: true,
+      hasLiveAssistant: false,
+      reasoningStartedAt: 1000,
+      nowMs: 5000
+    })
     const html = renderToStaticMarkup(
       createElement(WorkMetaRow, {
-        processing: true,
+        timer,
         stepCount: 3,
         expanded: true,
         onToggle: () => undefined

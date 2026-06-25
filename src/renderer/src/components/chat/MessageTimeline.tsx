@@ -11,6 +11,8 @@ import { MessageTimelineEmptyHero, ThreadForkBanner, ThreadForkPoint } from './m
 import { GeneratedFilesPanel, MessageBubble } from './message-timeline-bubbles'
 import { ReviewPlanCard, ReviewSummaryCard, TurnChangeSummary, WorkMetaRow } from './message-timeline-cards'
 import { ProcessSectionRow, groupProcessSections } from './message-timeline-process'
+import { deriveTurnTimer } from './turn-timer'
+import type { TurnTimerState } from './turn-timer'
 import {
   AnimatedWorkLogo,
   IQWICKS_WORK_LOGO_VARIANT_LABEL_KEYS,
@@ -62,6 +64,15 @@ const AUTO_COLLAPSE_THRESHOLD = 24
 
 export function goalTimelinePaddingClass(route: 'chat' | 'claw', hasActiveGoal: boolean): string {
   return route === 'chat' && hasActiveGoal ? 'pb-32 md:pb-40' : 'pb-10'
+}
+
+/** A turn has "visible assistant content" once any assistant block carries non-empty
+ * content text (excluding <think>). Drives the THINKING→PROCESSING transition. */
+function assistantHasContent(blocks: ChatBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.kind !== 'assistant') return false
+    return splitThink(block.text).content.trim().length > 0
+  })
 }
 
 export function liveTurnProgressClass(hasActiveGoal: boolean): string {
@@ -324,14 +335,23 @@ export function MessageTimeline({
               ? Math.max(0, tickNow - startedAt)
               : undefined)
           const reasoningFirst = userId ? turnReasoningFirstAtByUserId[userId] : undefined
-          const reasoningLast = userId ? turnReasoningLastAtByUserId[userId] : undefined
-          const reasoningDurationMs =
-            typeof reasoningFirst === 'number' && typeof reasoningLast === 'number'
-              ? Math.max(0, reasoningLast - reasoningFirst)
-              : undefined
           const turnPending = threadHasPendingRuntimeWork(turn.blocks)
           const isLatestTurn = index === visibleTurns.length - 1
           const hasLiveStream = isLatestTurn && !!(liveReasoning.trim() || live.trim())
+          // Derive the turn timer state once here; MessageTurn consumes it.
+          // Live reasoning/assistant flags are only meaningful for the active turn.
+          const liveSplit = isLatestTurn ? splitThink(live) : null
+          const turnTimer = deriveTurnTimer({
+            isProcessing: (busy && isLatestTurn) || turnPending || hasLiveStream,
+            hasLiveReasoning: isLatestTurn && (!!liveReasoning.trim() || !!(liveSplit?.think.trim())),
+            hasLiveAssistant: isLatestTurn
+              ? !!(liveSplit?.content.trim())
+              : assistantHasContent(turn.blocks),
+            reasoningStartedAt: reasoningFirst,
+            turnStartedAt: startedAt,
+            recordedDurationMs: durationMs,
+            nowMs: tickNow
+          })
           const showForkPoint =
             forkBoundaryTurnCount !== undefined && absoluteTurnIndex === forkBoundaryTurnCount
           const turnKey = stableTurnKey(turn, absoluteTurnIndex)
@@ -353,8 +373,7 @@ export function MessageTimeline({
                 isProcessing={(busy && isLatestTurn) || turnPending || hasLiveStream}
                 liveReasoning={isLatestTurn ? liveReasoning : ''}
                 live={isLatestTurn ? live : ''}
-                durationMs={durationMs}
-                reasoningDurationMs={reasoningDurationMs}
+                turnTimer={turnTimer}
                 devPreviewCard={isLatestTurn ? devPreviewCard : null}
                 planActionsBusy={planActionsBusy}
                 onBuildPlan={onBuildPlan}
@@ -388,28 +407,34 @@ export function MessageTimeline({
         ) : null}
 
         {blocks.length === 0 && (live || liveReasoning || modelReconnecting) ? (
-          <MemoMessageTurn
-            turn={{ blocks: [] }}
-            isProcessing={busy}
-            liveReasoning={modelReconnecting ? '' : liveReasoning}
-            live={modelReconnecting ? t('modelReconnecting', { attempt: modelReconnecting.attempt, max: modelReconnecting.maxAttempts }) : live}
-            devPreviewCard={devPreviewCard}
-            viewportRef={containerRef}
-            compactCards={compactCards}
-            durationMs={
-              currentTurnUserId && typeof turnStartedAtByUserId[currentTurnUserId] === 'number'
-                ? Math.max(0, tickNow - turnStartedAtByUserId[currentTurnUserId])
-                : undefined
-            }
-            reasoningDurationMs={(() => {
-              if (!currentTurnUserId) return undefined
-              const first = turnReasoningFirstAtByUserId[currentTurnUserId]
-              const last = turnReasoningLastAtByUserId[currentTurnUserId]
-              if (typeof first !== 'number' || typeof last !== 'number') return undefined
-              return Math.max(0, last - first)
-            })()}
-            nowMs={tickNow}
-          />
+          (() => {
+            const liveSplit = splitThink(modelReconnecting ? '' : live)
+            const liveTurnTimer = deriveTurnTimer({
+              isProcessing: busy,
+              hasLiveReasoning: !modelReconnecting && (!!liveReasoning.trim() || !!liveSplit.think.trim()),
+              hasLiveAssistant: !modelReconnecting && !!liveSplit.content.trim(),
+              reasoningStartedAt: currentTurnUserId
+                ? turnReasoningFirstAtByUserId[currentTurnUserId]
+                : undefined,
+              turnStartedAt: currentTurnUserId
+                ? turnStartedAtByUserId[currentTurnUserId]
+                : undefined,
+              nowMs: tickNow
+            })
+            return (
+              <MemoMessageTurn
+                turn={{ blocks: [] }}
+                isProcessing={busy}
+                liveReasoning={modelReconnecting ? '' : liveReasoning}
+                live={modelReconnecting ? t('modelReconnecting', { attempt: modelReconnecting.attempt, max: modelReconnecting.maxAttempts }) : live}
+                devPreviewCard={devPreviewCard}
+                viewportRef={containerRef}
+                compactCards={compactCards}
+                turnTimer={liveTurnTimer}
+                nowMs={tickNow}
+              />
+            )
+          })()
         ) : null}
         <div ref={endRef} aria-hidden className="h-px w-full shrink-0" />
       </div>
@@ -422,8 +447,7 @@ function MessageTurn({
   isProcessing,
   liveReasoning,
   live,
-  durationMs,
-  reasoningDurationMs,
+  turnTimer,
   devPreviewCard,
   planActionsBusy,
   onBuildPlan,
@@ -436,8 +460,7 @@ function MessageTurn({
   isProcessing: boolean
   liveReasoning: string
   live: string
-  durationMs?: number
-  reasoningDurationMs?: number
+  turnTimer: TurnTimerState
   devPreviewCard?: ReactElement | null
   planActionsBusy?: boolean
   onBuildPlan?: () => void
@@ -541,10 +564,8 @@ function MessageTurn({
       {hasProcess ? (
         <div className="flex flex-col gap-1 pb-2">
           <WorkMetaRow
-            processing={isProcessing}
+            timer={turnTimer}
             stepCount={workProcessBlocks.length}
-            durationMs={durationMs}
-            reasoningDurationMs={reasoningDurationMs}
             expanded={workExpanded}
             collapsible={!hasProcessError}
             onToggle={() => setWorkExpandedOverride((value) => !(value ?? isProcessing))}
@@ -656,8 +677,7 @@ const MemoMessageTurn = memo(MessageTurn, (prev, next) => (
   prev.isProcessing === next.isProcessing &&
   prev.liveReasoning === next.liveReasoning &&
   prev.live === next.live &&
-  prev.durationMs === next.durationMs &&
-  prev.reasoningDurationMs === next.reasoningDurationMs &&
+  prev.turnTimer === next.turnTimer &&
   prev.devPreviewCard === next.devPreviewCard &&
   prev.planActionsBusy === next.planActionsBusy &&
   prev.onBuildPlan === next.onBuildPlan &&
