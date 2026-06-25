@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { createRequire } from 'node:module'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import type { GuiUpdateChannel } from '../shared/gui-update'
@@ -216,36 +216,98 @@ export function resolveHotCodeRendererIndexPath(): string | null {
   return fileExists(indexPath) ? indexPath : null
 }
 
+/**
+ * The bundled app.asar.unpacked root for the *currently running* install.
+ * Resolved at call time (not cached) so it is always correct for THIS machine —
+ * critical because a hot update may have been installed on a different machine
+ * (e.g. a dev build) and its recorded absolute paths would be wrong here.
+ */
+function bundledUnpackedRoot(): string {
+  return app.isPackaged
+    ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
+    : app.getAppPath()
+}
+
+/**
+ * Synchronously ensure the hot-code version root has working node_modules
+ * junctions into the CURRENT install's app.asar.unpacked.
+ *
+ * The qwicks runtime is ESM ("type": "module"). ESM bare-specifier resolution
+ * does NOT honor NODE_PATH — it only walks up from the importing file looking
+ * for node_modules directories. So the hot-code version root must expose, via
+ * real node_modules directories reachable by walking up from
+ * `versions/<id>/qwicks/dist/cli/serve-entry.js`:
+ *   - qwicks-scoped deps  -> versions/<id>/qwicks/node_modules
+ *   - hoisted native addons (better-sqlite3, node-pty, @computer-use/*, ...)
+ *     -> versions/<id>/node_modules
+ *
+ * These junctions are created at install time too, but an install recorded the
+ * install machine's absolute path; on a different machine (or after the app was
+ * moved) they point nowhere. Recreate them here from the live install path so
+ * the runtime can always resolve native modules. Returns true on success.
+ */
+function ensureHotCodeNodeModulesLinks(activeRoot: string): boolean {
+  const unpackedRoot = bundledUnpackedRoot()
+  const scopedSource = join(unpackedRoot, 'qwicks', 'node_modules')
+  const hoistedSource = join(unpackedRoot, 'node_modules')
+  if (!directoryExists(scopedSource) && !directoryExists(hoistedSource)) return false
+
+  const recreateJunction = (linkPath: string, source: string): void => {
+    if (!directoryExists(source)) return
+    // Remove a broken/stale link (rmSync follows the link target only for
+    // 'file'/'dir' symlinks; junctions are removed, not their target).
+    try {
+      rmSync(linkPath, { force: true, recursive: true })
+    } catch {
+      /* may not exist */
+    }
+    try {
+      symlinkSync(source, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+    } catch (error) {
+      console.warn(
+        '[qwicks-gui code-update] failed to recreate node_modules junction at',
+        linkPath,
+        '->',
+        source,
+        ':',
+        error instanceof Error ? error.message : String(error)
+      )
+    }
+  }
+
+  // versions/<id>/qwicks/node_modules  -> app.asar.unpacked/qwicks/node_modules
+  recreateJunction(join(activeRoot, 'qwicks', 'node_modules'), scopedSource)
+  // versions/<id>/node_modules         -> app.asar.unpacked/node_modules (hoisted)
+  recreateJunction(join(activeRoot, 'node_modules'), hoistedSource)
+  return true
+}
+
 export function resolveHotCodeQWicksRoot(defaultRoot: string): string {
   const active = getActiveCodePackageSync()
   if (!active) return defaultRoot
   const serveEntry = join(active.root, 'qwicks', 'dist', 'cli', 'serve-entry.js')
-  const nodeModules = join(active.root, 'qwicks', 'node_modules')
-  if (!fileExists(serveEntry) || !directoryExists(nodeModules)) return defaultRoot
+  if (!fileExists(serveEntry)) return defaultRoot
 
-  // The node_modules in the hot-code root is a symlink to the bundled
-  // installation. On Windows the junction can silently break (permission
-  // issues, moved install dir, etc.). Verify that a key native module
-  // is accessible through the symlink before trusting it.
-  //
-  // createRequire resolves relative to the importing file's physical
-  // directory tree, so it won't walk into symlinked directories above
-  // the junction point. Instead, probe the bundled app.asar.unpacked
-  // directly — it must contain every native module the qwicks runtime
-  // needs (better-sqlite3, node-pty, etc.).
+  // The bundled install must actually carry the native addons the runtime
+  // needs. If even the bundled install can't resolve better-sqlite3, the
+  // hot-code version can't either — fall back to the bundled qwicks runtime.
   try {
-    const unpackedRoot = app.isPackaged
-      ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
-      : app.getAppPath()
+    const unpackedRoot = bundledUnpackedRoot()
     const bundledRequire = createRequire(join(unpackedRoot, 'qwicks', 'package.json'))
     bundledRequire.resolve('better-sqlite3')
   } catch {
     console.warn(
-      '[qwicks-gui code-update] hot-code node_modules symlink appears broken;',
+      '[qwicks-gui code-update] bundled install cannot resolve better-sqlite3;',
       'falling back to bundled qwicks runtime'
     )
     return defaultRoot
   }
+
+  // Recreate the node_modules junctions from the live install path. This fixes
+  // links that were recorded with a different machine's absolute path (the
+  // "restart-to-update installed, then runtime crashes on missing
+  // better-sqlite3" bug) and is a no-op when they are already correct.
+  ensureHotCodeNodeModulesLinks(active.root)
 
   return active.root
 }
@@ -282,35 +344,34 @@ function validateInstalledCodeRoot(root: string): boolean {
   )
 }
 
-function bundledQWicksNodeModulesDir(): string {
-  const root = app.isPackaged
-    ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked')
-    : app.getAppPath()
-  return join(root, 'qwicks', 'node_modules')
-}
-
 async function linkBundledQWicksNodeModules(targetRoot: string): Promise<void> {
   const runtimeRoot = join(targetRoot, 'qwicks')
-  const target = join(runtimeRoot, 'node_modules')
-  if (!directoryExists(runtimeRoot) || directoryExists(target)) return
+  const scopedTarget = join(runtimeRoot, 'node_modules')
+  if (!directoryExists(runtimeRoot) || directoryExists(scopedTarget)) return
 
-  const source = bundledQWicksNodeModulesDir()
-  if (!directoryExists(source)) {
-    console.warn('[qwicks-gui code-update] bundled qwicks/node_modules not found at', source)
-    return
+  const unpackedRoot = bundledUnpackedRoot()
+  const linkInto = async (linkPath: string, source: string): Promise<void> => {
+    if (!directoryExists(source) || directoryExists(linkPath)) return
+    try {
+      await symlink(source, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+    } catch (error) {
+      console.warn(
+        '[qwicks-gui code-update] failed to link bundled node_modules:',
+        error instanceof Error ? error.message : String(error)
+      )
+      console.warn('[qwicks-gui code-update] source:', source)
+      console.warn('[qwicks-gui code-update] target:', linkPath)
+    }
   }
-  try {
-    await symlink(source, target, process.platform === 'win32' ? 'junction' : 'dir')
-  } catch (error) {
-    console.warn(
-      '[qwicks-gui code-update] failed to link bundled node_modules:',
-      error instanceof Error ? error.message : String(error)
-    )
-    console.warn('[qwicks-gui code-update] source:', source)
-    console.warn('[qwicks-gui code-update] target:', target)
-    console.warn('[qwicks-gui code-update] hot-code qwicks runtime will use NODE_PATH fallback')
-  }
+  // Two junctions so ESM bare-specifier resolution (which walks up from the
+  // importing file and ignores NODE_PATH) finds both the qwicks-scoped deps
+  // and the hoisted native addons (better-sqlite3, node-pty, ...). These record
+  // THIS machine's path; resolveHotCodeQWicksRoot re-points them at runtime if
+  // the app later runs from a different install location.
+  await linkInto(scopedTarget, join(unpackedRoot, 'qwicks', 'node_modules'))
+  await linkInto(join(targetRoot, 'node_modules'), join(unpackedRoot, 'node_modules'))
 }
+
 
 function resolveExtractedPackageRoot(extractDir: string): string {
   if (validateInstalledCodeRoot(extractDir)) return extractDir
