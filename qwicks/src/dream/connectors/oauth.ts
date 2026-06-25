@@ -142,6 +142,18 @@ export class OAuthTokenStore {
     return this.usingDefaultKey
   }
 
+  /**
+   * Batch E(spec §5.2):能否在当前环境启动 connector。
+   * 生产模式 + 默认密钥 → 拒绝(明文存 token 不可接受)。
+   * 默认 key 仅在非生产(dev/test)放行。与 save() 的守卫互补:save 守单次写入,
+   * canStartConnectors 守整个能力是否可用(供 capability 标 unavailable)。
+   */
+  canStartConnectors(): boolean {
+    const isProduction = process.env.DREAM_OAUTH_PRODUCTION === 'true'
+    if (isProduction && this.usingDefaultKey) return false
+    return true
+  }
+
   save(account: string, token: OAuthToken): void {
     // 1.4(工业级):production 模式(DREAM_OAUTH_PRODUCTION=true)下,
     // 用默认密钥写入 OAuth token 是安全违规 —— 拒绝。
