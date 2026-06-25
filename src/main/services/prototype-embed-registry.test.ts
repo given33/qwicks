@@ -12,7 +12,10 @@ let workspace: string
 
 describe('prototype embed registry', () => {
   beforeEach(() => {
-    workspace = realpathSync(mkdtempSync(join(tmpdir(), 'proto-registry-')))
+    // realpath.native: matches how the service canonicalizes paths. On Windows
+    // CI the runner home has an 8.3 short name (RUNNER~1); the native call
+    // expands it to the long form the service uses, keeping assertions stable.
+    workspace = realpathSync.native(mkdtempSync(join(tmpdir(), 'proto-registry-')))
     mkdirSync(join(workspace, '.qwickssdd', 'proto'), { recursive: true })
     writeFileSync(join(workspace, '.qwickssdd', 'proto', 'page.html'), '<html></html>')
   })
