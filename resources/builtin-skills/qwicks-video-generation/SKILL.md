@@ -33,7 +33,7 @@ generate_video(prompt: "画面中的人物缓缓转头微笑", first_frame_image
 - 在回复里告知用户视频已生成，并可引用文件路径。
 
 ## 失败处理
-- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：告诉用户前往「设置 → 媒体能力 → 视频生成」配置后重试。
+- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：这是内置技能尚未配置。告诉用户前往「设置 → Skills → 内置技能配置」，展开「视频生成」填写 API 凭据后重试；或在 providerId 字段选择已配置凭据的服务商。
 - 首尾帧图片格式/路径无效：检查路径是否为工作区相对路径、格式是否为 png/jpeg/webp。
 - 生成耗时较长：提示用户视频生成需排队轮询，请耐心等待。
 - 网络/超时错误：简要说明并建议重试。

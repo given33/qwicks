@@ -27,6 +27,6 @@ generate_speech(text: "欢迎使用语音合成功能，这是生成的朗读音
 - 在回复里告知用户音频已生成，并可引用文件路径。
 
 ## 失败处理
-- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：告诉用户前往「设置 → 媒体能力 → 语音合成」配置后重试。
+- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：这是内置技能尚未配置。告诉用户前往「设置 → Skills → 内置技能配置」，展开「语音合成」填写 API 凭据后重试；或在 providerId 字段选择已配置凭据的服务商。
 - 文本过长导致超限：建议分段合成。
 - 网络/超时错误：简要说明并建议重试。

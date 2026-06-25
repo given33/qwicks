@@ -36,6 +36,6 @@ generate_music(prompt: "流行抒情，钢琴伴奏", lyrics: "夜色温柔...\n
 - 在回复里告知用户音乐已生成，并可引用文件路径。
 
 ## 失败处理
-- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：告诉用户前往「设置 → 媒体能力 → 音乐生成」配置后重试。
+- 若提示「provider 未配置 / missing baseUrl / apiKey / model」：这是内置技能尚未配置。告诉用户前往「设置 → Skills → 内置技能配置」，展开「音乐生成」填写 API 凭据后重试；或在 providerId 字段选择已配置凭据的服务商。
 - 同时传了 `lyrics` 又设 `instrumental: true` 可能冲突：以纯音乐为准或去掉歌词重试。
 - 网络/超时错误：简要说明并建议重试。

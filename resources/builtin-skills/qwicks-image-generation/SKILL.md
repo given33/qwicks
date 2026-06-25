@@ -32,6 +32,6 @@ generate_image(prompt: "把这张人物改成水彩画风格", reference_image_p
 - 在回复里用 markdown 图片语法引用返回的文件路径，让用户直接看到结果。
 
 ## 失败处理
-- 若工具返回「provider 未配置 / missing baseUrl / apiKey / model」类错误：告诉用户前往「设置 → 媒体能力 → 图像生成」填写服务商凭证后重试。
+- 若工具返回「provider 未配置 / missing baseUrl / apiKey / model」类错误：这是内置技能尚未配置。告诉用户前往「设置 → Skills → 内置技能配置」，展开「图像生成」填写 API 凭据后重试；或在 providerId 字段选择已配置凭据的服务商。
 - 若提示不支持参考图（`/images/edits` 不支持）：去掉 `reference_image_paths` 后重试纯文生图。
 - 其他网络/超时错误：简要说明并建议重试。
