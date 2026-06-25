@@ -435,7 +435,15 @@ const qwicksRuntimePatchSchema = z.object({
     z.string().trim().min(1).max(128),
     modelProfilePatchSchema.nullable()
   ).optional(),
-  memoryEnabled: z.boolean().optional()
+  memoryEnabled: z.boolean().optional(),
+  // Dream 记忆:引擎选择与数据控制开关。类型/UI/运行时均已使用,必须能在
+  // settings:set patch 里通过,否则用户切换这些开关会被 .strict() 拒绝并
+  // 在界面报 "Error invoking remote method SETTING"(回归 #397 同类问题)。
+  memoryBackend: z.enum(['file', 'dream']).optional(),
+  dataControl: z.object({
+    allowModelImprovement: z.boolean().optional(),
+    allowTraining: z.boolean().optional()
+  }).strict().optional()
 }).strict()
 
 const logPatchSchema = z.object({

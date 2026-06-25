@@ -461,6 +461,29 @@ describe('app-ipc-schemas', () => {
     ).toThrow(/Unrecognized key/)
   })
 
+  // Regression: dream branch added memoryBackend + dataControl to the runtime
+  // type and settings UI but not the patch schema, so every memory-engine /
+  // data-control toggle in settings was rejected by `settings:set` and surfaced
+  // to the user as "Error invoking remote method SETTING".
+  it('accepts qwicks memoryBackend in a settings patch', () => {
+    const payload = settingsPatchSchema.parse({
+      agents: { qwicks: { memoryBackend: 'dream' } }
+    })
+    expect(payload.agents?.qwicks?.memoryBackend).toBe('dream')
+  })
+
+  it('accepts qwicks dataControl flags in a settings patch', () => {
+    const payload = settingsPatchSchema.parse({
+      agents: {
+        qwicks: { dataControl: { allowModelImprovement: true, allowTraining: false } }
+      }
+    })
+    expect(payload.agents?.qwicks?.dataControl).toEqual({
+      allowModelImprovement: true,
+      allowTraining: false
+    })
+  })
+
   it('rejects unknown schedule patch fields', () => {
     expect(() =>
       settingsPatchSchema.parse({
