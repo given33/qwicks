@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -323,9 +324,26 @@ async function ensureClawChannelWorkspaceRootsExist(settings: AppSettingsV1): Pr
   }
 }
 
+/**
+ * Pick the default UI locale from the OS language. A fresh install (no settings
+ * file yet) follows the system locale so a Chinese Windows boots QWicks in
+ * Chinese instead of English. An existing user's saved locale always wins —
+ * this only seeds the initial value before the user picks anything.
+ *
+ * getLocale() can throw before app.whenReady(); guard it so a transient
+ * failure never blocks first-run settings creation.
+ */
+function detectDefaultLocale(): 'en' | 'zh' {
+  try {
+    return app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  } catch {
+    return 'en'
+  }
+}
+
 const defaultSettings = (): AppSettingsV1 => ({
   version: 1,
-  locale: 'en',
+  locale: detectDefaultLocale(),
   theme: 'system',
   uiFontScale: 'small',
   cursorSpotlight: true,

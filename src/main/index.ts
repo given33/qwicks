@@ -1732,7 +1732,12 @@ app.on('before-quit', (event) => {
   stopRuntimeWatchdog()
   // M4: flush 宠物状态到盘（防丢）
   void getPetStateStore().stop().catch(() => {})
-  // 更新安装触发的退出：runtime 已停止，立即放行（见 gui-updater installGuiUpdate）。
+  // 更新安装触发的退出：QWicks runtime 子进程已在 installGuiUpdate 的
+  // runBeforeInstallUpdate()（即 stopManagedRuntimesForQuit）里停止过，立即放行，
+  // 否则下面的 preventDefault 会阻止 app 退出，electron-updater 的 will-quit
+  // 安装钩子不触发 → 安装器不启动 → "点重启安装没反应"。
+  // 注意：即使此处放行，NSIS 静默安装（/S）仍会在 customInit 里再次 taskkill 兜底
+  // （见 build/installer.nsh），防止任何残留进程锁住 app.asar。
   if ((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall) return
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()

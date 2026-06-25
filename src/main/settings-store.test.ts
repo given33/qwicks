@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APPROVAL_POLICY, defaultQWicksRuntimeSettings, defaultModelProviderSettings } from '../shared/app-settings'
 import { DEFAULT_GUI_UPDATE_CHANNEL } from '../shared/gui-update'
 import { JsonSettingsStore, type SettingsSecretCipher } from './settings-store'
@@ -610,6 +610,74 @@ describe('JsonSettingsStore', () => {
       expect(entries.filter((entry) => entry.includes('.tmp'))).toEqual([])
     } finally {
       await rm(userDataDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('JsonSettingsStore default locale', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.doUnmock('electron')
+    vi.resetModules()
+  })
+
+  it('seeds the locale from the OS language (Chinese system → zh)', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        getLocale: () => 'zh-CN',
+        getPath: () => '/tmp/qwicks-locale-zh',
+        isPackaged: false
+      }
+    }))
+    const module = await import('./settings-store')
+    const dir = await mkdtemp(join(tmpdir(), 'qwicks-locale-zh-'))
+    try {
+      const loaded = await new module.JsonSettingsStore(dir).load()
+      expect(loaded.locale).toBe('zh')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to English for a non-Chinese OS locale', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        getLocale: () => 'en-US',
+        getPath: () => '/tmp/qwicks-locale-en',
+        isPackaged: false
+      }
+    }))
+    const module = await import('./settings-store')
+    const dir = await mkdtemp(join(tmpdir(), 'qwicks-locale-en-'))
+    try {
+      const loaded = await new module.JsonSettingsStore(dir).load()
+      expect(loaded.locale).toBe('en')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the user-saved locale instead of re-detecting it', async () => {
+    vi.doMock('electron', () => ({
+      app: {
+        getLocale: () => 'en-US',
+        getPath: () => '/tmp/qwicks-locale-saved',
+        isPackaged: false
+      }
+    }))
+    const module = await import('./settings-store')
+    const dir = await mkdtemp(join(tmpdir(), 'qwicks-locale-saved-'))
+    try {
+      const settingsPath = join(dir, 'qwicks-settings.json')
+      await writeFile(settingsPath, JSON.stringify({ version: 1, locale: 'zh' }), 'utf8')
+      const loaded = await new module.JsonSettingsStore(dir).load()
+      // Detect would return 'en', but the saved 'zh' must win.
+      expect(loaded.locale).toBe('zh')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
   })
 })

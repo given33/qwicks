@@ -339,6 +339,24 @@ describe('installGuiUpdate', () => {
     expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
   })
 
+  it('marks process.qwicksUpdateInstall so before-quit lets the NSIS installer run', async () => {
+    // The full-package installer branch must set this flag: app-main's
+    // before-quit handler checks it to decide whether to block the quit. If
+    // the flag is never set, preventDefault keeps the app alive and the
+    // silent NSIS installer never launches — the "downloaded but won't
+    // install/restart" symptom. (build/installer.nsh then re-kill-alls in
+    // customInit as a backstop for any lingering process holding app.asar.)
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable', () => undefined)
+    updater.emit('update-downloaded', { version: '0.2.0', releaseDate: '2026-06-06T00:00:00.000Z' })
+
+    const flagKey = 'qwicksUpdateInstall' as keyof NodeJS.Process
+    delete (process as unknown as Record<string, unknown>)[flagKey]
+    await expect(module.installGuiUpdate()).resolves.toEqual({ ok: true })
+    expect((process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall).toBe(true)
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
+  })
+
   it('reuses the same cleanup when the native updater emits before-quit-for-update', async () => {
     const module = await import('./gui-updater')
     let finishCleanup = (): void => {
