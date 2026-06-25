@@ -17,8 +17,11 @@ import { guiSkillRootsForRuntime, listGuiSkillRoots, listGuiSkills } from './ski
 // Built-in media skills materialize into userData/builtin-skills at runtime; in
 // unit tests there is no real Electron userData dir, so point the built-in root
 // at a temp path that does not exist (the scan tolerates a missing root).
+// Tests that exercise the built-in skill scan set QWICKS_BUILTIN_TEST_DIR to a
+// real temp directory before calling listGuiSkills.
 vi.mock('./builtin-skills-service', () => ({
-  builtinSkillsTargetDir: () => join(tmpdir(), 'gui-skills-builtin-does-not-exist')
+  builtinSkillsTargetDir: () => process.env.QWICKS_BUILTIN_TEST_DIR
+    || join(tmpdir(), 'gui-skills-builtin-does-not-exist')
 }))
 
 vi.mock('node:os', async (importOriginal) => {
@@ -39,6 +42,7 @@ describe('skill-service', () => {
 
   afterEach(async () => {
     delete process.env.QWICKS_SKILL_TEST_HOME
+    delete process.env.QWICKS_BUILTIN_TEST_DIR
     await rm(tempRoot, { recursive: true, force: true })
   })
 
@@ -214,6 +218,60 @@ describe('skill-service', () => {
     settings.claw.skills.disabledDirs = [pluginRoot]
     expect((await guiSkillRootsForRuntime(settings, workspaceRoot)).map((root) => comparable(root.path)))
       .not.toContain(comparable(pluginRoot))
+  })
+
+  it('surfaces configSchema from a built-in skill.json', async () => {
+    const builtinDir = join(tempRoot, 'builtin-skills')
+    const demoDir = join(builtinDir, 'demo')
+    await mkdir(demoDir, { recursive: true })
+    await writeFile(join(demoDir, 'skill.json'), JSON.stringify({
+      id: 'demo',
+      name: 'Demo',
+      version: '1.0.0',
+      entry: 'SKILL.md',
+      configSchema: {
+        fields: [
+          { key: 'apiKey', type: 'secret', label: 'Key', required: true, settingsPath: 'agents.qwicks.imageGeneration.apiKey' },
+          { key: 'model', type: 'string', label: 'Model', required: false }
+        ]
+      }
+    }), 'utf8')
+    await writeFile(join(demoDir, 'SKILL.md'), 'Demo body', 'utf8')
+    process.env.QWICKS_BUILTIN_TEST_DIR = builtinDir
+
+    const result = await listGuiSkills(createSettings(tempRoot), tempRoot)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const demo = result.skills.find((s) => s.id === 'demo')
+    expect(demo?.builtin).toBe(true)
+    expect(demo?.configSchema?.fields).toHaveLength(2)
+    expect(demo?.configSchema?.fields[0]).toMatchObject({
+      key: 'apiKey',
+      type: 'secret',
+      settingsPath: 'agents.qwicks.imageGeneration.apiKey'
+    })
+  })
+
+  it('omits configSchema when a skill.json has none', async () => {
+    const builtinDir = join(tempRoot, 'builtin-skills-plain')
+    const plainDir = join(builtinDir, 'plain')
+    await mkdir(plainDir, { recursive: true })
+    await writeFile(join(plainDir, 'skill.json'), JSON.stringify({
+      id: 'plain',
+      name: 'Plain',
+      version: '1.0.0',
+      entry: 'SKILL.md'
+    }), 'utf8')
+    await writeFile(join(plainDir, 'SKILL.md'), 'Plain body', 'utf8')
+    process.env.QWICKS_BUILTIN_TEST_DIR = builtinDir
+
+    const result = await listGuiSkills(createSettings(tempRoot), tempRoot)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const plain = result.skills.find((s) => s.id === 'plain')
+    expect(plain?.configSchema).toBeUndefined()
   })
 
   function comparable(path: string): string {

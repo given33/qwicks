@@ -13,6 +13,18 @@ import { builtinSkillsTargetDir } from './builtin-skills-service'
 
 export type GuiSkillScope = 'project' | 'global'
 
+export type GuiSkillConfigField = {
+  key: string
+  type: 'string' | 'secret' | 'number' | 'enum' | 'boolean'
+  label: string
+  description?: string
+  required: boolean
+  default?: string | number | boolean
+  options?: Array<{ value: string; label: string }>
+  placeholder?: string
+  settingsPath?: string
+}
+
 export type GuiSkillSummary = {
   id: string
   name: string
@@ -23,6 +35,8 @@ export type GuiSkillSummary = {
   legacy: boolean
   /** True for skills materialized from the app's built-in media skill packages. */
   builtin?: boolean
+  /** Optional config fields declared in skill.json; surfaced for the GUI to render a config panel. */
+  configSchema?: { fields: GuiSkillConfigField[] }
 }
 
 export type GuiSkillListResult =
@@ -388,7 +402,7 @@ async function loadSkillSummary(root: string, scope: GuiSkillScope): Promise<Gui
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
     const name = stringValue(manifest.name) || titleFromSlug(basename(root))
     const entry = stringValue(manifest.entry) || 'SKILL.md'
-    return {
+    const summary: GuiSkillSummary = {
       id: slug(stringValue(manifest.id) || name || basename(root)),
       name,
       ...(stringValue(manifest.description) ? { description: stringValue(manifest.description) } : {}),
@@ -397,6 +411,9 @@ async function loadSkillSummary(root: string, scope: GuiSkillScope): Promise<Gui
       scope,
       legacy: false
     }
+    const configSchema = parseSkillConfigSchema(manifest.configSchema)
+    if (configSchema) summary.configSchema = configSchema
+    return summary
   }
   const entryPath = join(root, 'SKILL.md')
   if (!existsSync(entryPath)) return null
@@ -412,6 +429,58 @@ async function loadSkillSummary(root: string, scope: GuiSkillScope): Promise<Gui
     scope,
     legacy: true
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Parse a skill.json `configSchema` into the GUI shape, validating field types
+ * defensively (skill.json is static but third-party skills may be malformed).
+ * Returns undefined when the schema is absent, empty, or contains no valid fields.
+ */
+function parseSkillConfigSchema(raw: unknown): { fields: GuiSkillConfigField[] } | undefined {
+  if (!isObject(raw) || !Array.isArray(raw.fields)) return undefined
+  const fields = raw.fields
+    .map(parseConfigField)
+    .filter((f): f is GuiSkillConfigField => f !== null)
+  return fields.length > 0 ? { fields } : undefined
+}
+
+function parseConfigField(raw: unknown): GuiSkillConfigField | null {
+  if (!isObject(raw)) return null
+  const key = typeof raw.key === 'string' ? raw.key.trim() : ''
+  const label = typeof raw.label === 'string' ? raw.label.trim() : ''
+  const type = raw.type
+  if (!key || !label) return null
+  if (type !== 'string' && type !== 'secret' && type !== 'number' && type !== 'enum' && type !== 'boolean') {
+    return null
+  }
+  const field: GuiSkillConfigField = {
+    key,
+    type,
+    label,
+    required: raw.required === true
+  }
+  if (typeof raw.description === 'string' && raw.description.trim()) field.description = raw.description.trim()
+  if (typeof raw.default === 'string' || typeof raw.default === 'number' || typeof raw.default === 'boolean') {
+    field.default = raw.default
+  }
+  if (typeof raw.placeholder === 'string' && raw.placeholder.trim()) field.placeholder = raw.placeholder.trim()
+  if (typeof raw.settingsPath === 'string' && raw.settingsPath.trim()) field.settingsPath = raw.settingsPath.trim()
+  if (Array.isArray(raw.options)) {
+    const options = raw.options
+      .map((o): { value: string; label: string } | null => {
+        if (!isObject(o)) return null
+        const value = typeof o.value === 'string' ? o.value.trim() : ''
+        const optionLabel = typeof o.label === 'string' ? o.label.trim() : ''
+        return value && optionLabel ? { value, label: optionLabel } : null
+      })
+      .filter((o): o is { value: string; label: string } => o !== null)
+    if (options.length > 0) field.options = options
+  }
+  return field
 }
 
 function readFrontmatter(content: string): { id?: string; name?: string; description?: string } {
