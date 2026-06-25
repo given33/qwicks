@@ -46,12 +46,14 @@ export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
   const sections: ProcessSection[] = []
 
   for (const block of blocks) {
+    // Reasoning blocks are never rendered — the model's internal thinking
+    // stays hidden (see turn-timer state machine spec). Drop them here so
+    // expanded process stacks only show tool/execution steps.
+    if (block.kind === 'reasoning') continue
     const kind =
-      block.kind === 'reasoning'
-        ? 'reasoning'
-        : block.kind === 'assistant'
-          ? 'output'
-          : 'execution'
+      block.kind === 'assistant'
+        ? 'output'
+        : 'execution'
     const category = kind === 'execution' && block.kind === 'tool' ? classifyToolCategory(block) : undefined
     const last = sections[sections.length - 1]
     // Merge only into an execution section of the SAME category. A category
