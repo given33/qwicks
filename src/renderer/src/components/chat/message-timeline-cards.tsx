@@ -323,16 +323,20 @@ export function TurnChangeSummary({
 /** Turn-level work-process summary. Details stay collapsed until the user opens them.
  * Consumes a TurnTimerState (derived by the parent from store data) so the
  * thinking→processing→processed lifecycle is driven by a single continuous
- * timer; reasoning content/duration is never surfaced here. */
+ * timer. When collapsed and done, shows a Codex-style mixed activity summary
+ * (e.g. "运行了 3 条命令 · 编辑了 2 个文件") next to the processed time. */
 export function WorkMetaRow({
   timer,
   stepCount,
+  activitySummary,
   expanded,
   onToggle,
   collapsible = true
 }: {
   timer: TurnTimerState
   stepCount: number
+  /** Codex-style multi-segment activity summary (collapsed hint). */
+  activitySummary?: string
   expanded: boolean
   onToggle: () => void
   collapsible?: boolean
@@ -349,10 +353,15 @@ export function WorkMetaRow({
     ? t(timer.labelKey, { duration: formatDuration(timer.displayMs as number) })
     : t('thinkingNow')
   const interactive = collapsible && stepCount > 0
+  // Show the activity hint only when collapsed (done) and there's a summary.
+  const showActivityHint = !!activitySummary && !expanded
 
   const content = (
     <>
       <span className={`tabular-nums ${timer.phase !== 'done' ? 'ds-shiny-text' : ''}`}>{labelText}</span>
+      {showActivityHint ? (
+        <span className="truncate text-ds-faint">· {activitySummary}</span>
+      ) : null}
       {interactive ? (
         expanded ? (
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-45" strokeWidth={1.8} />

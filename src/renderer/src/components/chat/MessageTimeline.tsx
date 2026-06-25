@@ -11,6 +11,7 @@ import { MessageTimelineEmptyHero, ThreadForkBanner, ThreadForkPoint } from './m
 import { GeneratedFilesPanel, MessageBubble } from './message-timeline-bubbles'
 import { ReviewPlanCard, ReviewSummaryCard, TurnChangeSummary, WorkMetaRow } from './message-timeline-cards'
 import { ProcessSectionRow, groupProcessSections } from './message-timeline-process'
+import { summarizeToolActivity, formatToolActivitySummary } from './tool-activity-summary'
 import { deriveTurnTimer } from './turn-timer'
 import type { TurnTimerState } from './turn-timer'
 import {
@@ -472,6 +473,7 @@ function MessageTurn({
   const workspaceRoot = useChatStore((s) => s.workspaceRoot)
   const activeThreadGoal = useChatStore((s) => s.activeThreadGoal)
   const forkThreadFromTurn = useChatStore((s) => s.forkThreadFromTurn)
+  const { t } = useTranslation('common')
   const [forking, setForking] = useState(false)
   // Inline Review Plan card: surfaced under a turn that produced a
   // successful `create_plan` result so the user can open/build the plan
@@ -512,6 +514,11 @@ function MessageTurn({
   const onlyCompactionProcess = processBlocks.length > 0 && workProcessBlocks.length === 0
   const hasProcessError = workProcessBlocks.some(processBlockHasError)
   const workExpanded = hasProcessError || (workExpandedOverride ?? isProcessing)
+  // Codex-style mixed activity summary for the collapsed hint (done + folded).
+  const activitySummary = useMemo(
+    () => formatToolActivitySummary(summarizeToolActivity(workProcessBlocks), t),
+    [workProcessBlocks, t]
+  )
   const reviewBlocks = useMemo(
     () => turn.blocks.filter((block) => block.kind === 'review'),
     [turn.blocks]
@@ -565,6 +572,7 @@ function MessageTurn({
           <WorkMetaRow
             timer={turnTimer}
             stepCount={workProcessBlocks.length}
+            activitySummary={activitySummary}
             expanded={workExpanded}
             collapsible={!hasProcessError}
             onToggle={() => setWorkExpandedOverride((value) => !(value ?? isProcessing))}
