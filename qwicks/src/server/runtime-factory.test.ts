@@ -18,8 +18,8 @@ describe('buildMemoryStore dream wiring (regression: dreamSystem must be returne
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('returns a dreamSystem for backend=dream', () => {
-    const result = buildMemoryStore(
+  it('returns a dreamSystem for backend=dream', async () => {
+    const result = await buildMemoryStore(
       { enabled: true, backend: 'dream', scopes: ['user'], maxInjectedRecords: 8 },
       dir
     )
@@ -29,8 +29,8 @@ describe('buildMemoryStore dream wiring (regression: dreamSystem must be returne
     result.close()
   })
 
-  it('returns NO dreamSystem for backend=file', () => {
-    const result = buildMemoryStore(
+  it('returns NO dreamSystem for backend=file', async () => {
+    const result = await buildMemoryStore(
       { enabled: true, backend: 'file', scopes: ['user'], maxInjectedRecords: 8 },
       dir
     )

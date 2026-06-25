@@ -23,10 +23,12 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   MemoryItem,
+  MemoryItemDraft,
   MemoryLifecycleStatus,
   MemoryProvenance,
   MemoryScope,
   MemoryType,
+  SensitivityLevel,
   SourceType,
   SuppressionScope,
   TemporalState,
@@ -35,6 +37,9 @@ import {
 } from '../types.js'
 import { DreamConfig } from '../config.js'
 import { SqliteMemoryRepository } from '../storage/sqlite-repository.js'
+import { classifySensitivity } from '../security/sensitivity-classifier.js'
+import { MemoryCapacityGuard } from '../refresh/capacity-guard.js'
+import { PendingSensitiveStore } from '../storage/pending-sensitive-store.js'
 import { FlatVectorIndex } from '../vectordb/flat-index.js'
 import { HashEmbedder } from '../embeddings/hash-provider.js'
 import { HttpEmbedder } from '../embeddings/http-provider.js'
@@ -58,7 +63,7 @@ import { decideInjection, type InjectionDecision } from '../retrieval/injection-
 import { NaturalPromptBuilder, naturalFallbackReply } from '../prompt_builder/natural-builder.js'
 import { TwinBuilder } from '../user_state/builder.js'
 import { HeuristicSynthesizer, LlmSynthesizer } from '../synthesis/synthesizer.js'
-import { DreamingScheduler, MemoryDecay, MemoryReinforcement } from '../refresh/scheduler.js'
+import { DreamingScheduler, MemoryDecay } from '../refresh/scheduler.js'
 import { TemporalDreamer } from '../refresh/temporal-dreamer.js'
 import { TopOfMindBalancer } from '../refresh/top-of-mind.js'
 import { DreamMemoryStore } from '../dream-store.js'
@@ -185,8 +190,17 @@ export class DreamMemorySystem {
   readonly observableGate: ObservableGate
   readonly promptBuilder = new NaturalPromptBuilder()
   readonly controls = new DreamControls()
+  /**
+   * Batch H(spec §8.5):实例级 fail-open ring-buffer —— 累积各 turn 的 failures,
+   * 供运行时可观测面板(recentFailures())展示"近 N 次 Dream 失败"。
+   * 上限 200,超出自动丢弃最旧(对齐 runbook 的"近 N 次"语义)。
+   */
+  private readonly recentFailuresBuf: string[] = []
+  private static readonly RECENT_FAILURES_MAX = 200
   /** Phase 3:用户控制(list/edit/delete/suppress/opt-out/export/purge/versions)。 */
   readonly controls2: MemoryControls
+  /** Batch B:高敏感待确认草稿存储(物理隔离)。 */
+  private readonly pendingStore: PendingSensitiveStore
   private readonly userId: string
   /** v3(P2-6):可注入的 Pulse research 函数(真实 web search)。 */
   private readonly pulseResearch: PulseResearchFn | undefined
@@ -202,6 +216,7 @@ export class DreamMemorySystem {
     mkdirSync(opts.dataDir, { recursive: true })
     this.repository = new SqliteMemoryRepository({ sqlitePath: join(opts.dataDir, 'dream_memory.db') })
     this.controls2 = new MemoryControls({ repository: this.repository })
+    this.pendingStore = new PendingSensitiveStore(this.repository)
     // v3(报告 §4.2/§6.2):DreamMemoryStore 注入 controls2 + userId,使 memory_create
     // 工具路径走完整 Dream 语义(SourceRecord + sourceIds + sanitizer + 真实 userId)。
     this.dreamStore = new DreamMemoryStore({
@@ -212,6 +227,16 @@ export class DreamMemorySystem {
       userId: this.userId
     })
     this.oauthStore = new OAuthTokenStore({ persistDir: join(opts.dataDir, 'oauth') })
+    // B8:默认密钥(dream-default-key)下加密的 OAuth token 拿到源码即可解密,生产不安全。
+    // 生产环境检测到默认密钥时记录告警(连接器 ingest 路径会在 requireSecureOAuth 里拒绝)。
+    if (this.oauthStore.isUsingDefaultKey()) {
+      const isProd = process.env.NODE_ENV === 'production' || process.env.DREAM_OAUTH_PRODUCTION === 'true'
+      try {
+        this.repository.logEvent('oauth_insecure_default_key', {
+          payload: { production: isProd, message: 'OAuth tokens encrypted with default key; connectors disabled in production.' }
+        })
+      } catch { /* 非 fatal */ }
+    }
 
     // embeddings:HTTP 优先 + hash 回退(报告 §4.7 P2-2 / 二轮报告 §5.4)。
     // 若配置了 embedding baseUrl,用 EmbeddingRouter(HttpEmbedder + HashEmbedder 回退);
@@ -271,17 +296,20 @@ export class DreamMemorySystem {
 
     this.twinBuilder = new TwinBuilder()
     const decay = new MemoryDecay({ repository: this.repository })
-    const reinforcement = new MemoryReinforcement({ repository: this.repository })
     // v3:TemporalDreamer(planned→occurred)+ TopOfMindBalancer(salience 排序)
     // 都接入 scheduler.tick,让 dreaming 自动执行时间转换与 top-of-mind 调整。
+    // B2/B3/B5:强化已收口到检索侧的 repository.reinforceUsed(见 retrieve/beforeTurn),
+    // 不再走 scheduler —— 历史的 MemoryReinforcement 类是死代码,已删。
     const temporalDreamer = new TemporalDreamer({ repository: this.repository })
     const topOfMindBalancer = new TopOfMindBalancer({ repository: this.repository })
+    const capacityGuard = new MemoryCapacityGuard(this.repository)
     this.scheduler = new DreamingScheduler({
       decay,
-      reinforcement,
       temporalDreamer,
       topOfMindBalancer,
-      repository: this.repository
+      repository: this.repository,
+      pendingStore: this.pendingStore,
+      capacityGuard
     })
 
     // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)
@@ -559,6 +587,7 @@ export class DreamMemorySystem {
       rewrittenQueryFromMemory
     }
 
+    this.mergeRecentFailures(failures)
     return {
       reply,
       systemBlock: built?.system ?? '',
@@ -588,6 +617,31 @@ export class DreamMemorySystem {
     const out: MemoryItem[] = []
     const existing = this.repository.list(userId, {})
     for (const draft of drafts) {
+      // Batch B:高敏感 draft → 物理隔离到 pending_sensitive_draft,不落 memory 表。
+      const classification = classifySensitivity(draft.content)
+      if (classification.sensitivity !== SensitivityLevel.NORMAL && classification.categories.length > 0) {
+        const probeItem = new MemoryItem(newMemoryId(), userId, draft.type, draft.content, draft.scope, [...draft.tags])
+        this.pendingStore.enqueue({
+          userId,
+          draft: new MemoryItemDraft(
+            draft.type,
+            draft.content,
+            [...draft.tags],
+            draft.importance,
+            draft.confidence,
+            draft.scope,
+            new MemoryProvenance(draft.provenance.source, draft.provenance.actor, threadId, turnId, draft.provenance.confidence, draft.provenance.model),
+            { ...draft.metadata },
+            classification.sensitivity,
+            [...classification.categories]
+          ),
+          category: classification.categories[0],
+          fingerprint: probeItem.fingerprint()
+        })
+        // Sensitive drafts are diverted (not in `out`); callers detect via
+        // getPendingStore().list(userId). They never reach repository.upsert.
+        continue
+      }
       // v3:从 content 推断 temporal_state + 时间窗口
       const temporalInfo = detectTemporalFromContent(draft.content)
       const item = new MemoryItem(
@@ -669,6 +723,113 @@ export class DreamMemorySystem {
     return out
   }
 
+  /** Batch B(spec §2.5):暴露 pending store 给 controls(listPending/confirmPending/dismissPending)。 */
+  getPendingStore(): PendingSensitiveStore {
+    return this.pendingStore
+  }
+
+  /**
+   * Batch B:确认一条待确认草稿 → 构造 MemoryItem(带 sensitivity)→ embed → 跑 conflict → 落库。
+   * 确认的敏感事实可能 supersede 已有记忆(对齐 spec §2.5 要点4)。
+   */
+  confirmPending(id: string): MemoryItem | null {
+    const row = this.pendingStore.get(id)
+    if (!row) return null
+    const draft = row.draft
+    const item = new MemoryItem(
+      newMemoryId(),
+      row.userId,
+      draft.type,
+      draft.content,
+      draft.scope,
+      [...draft.tags],
+      draft.importance,
+      draft.confidence,
+      nowIso(),
+      nowIso(),
+      null,
+      new MemoryProvenance(draft.provenance.source, draft.provenance.actor, null, null, draft.provenance.confidence, draft.provenance.model),
+      null,
+      null,
+      [],
+      { ...draft.metadata },
+      MemoryLifecycleStatus.ACTIVE,
+      [],
+      2,
+      [],
+      [],
+      undefined as unknown as TemporalState,
+      null,
+      null,
+      [],
+      [],
+      false,
+      false,
+      false,
+      draft.importance,
+      null,
+      null,
+      draft.sensitivity,
+      true,
+      [...draft.sensitivityCategories]
+    )
+    const v = this.embedder.embed(item.content)
+    if (v) {
+      item.embedding = v
+      item.embeddingModel = this.embedder.name()
+    }
+    for (const ex of this.repository.list(row.userId, {})) {
+      const a = compare(item, ex)
+      const action = decide(a)
+      if (action === 'supersede_old') {
+        ex.transitionStatus(MemoryLifecycleStatus.SUPERSEDED, { actor: 'chat.confirmPending', reason: 'superseded by confirmed sensitive' })
+        this.repository.upsert(ex)
+      }
+    }
+    this.repository.upsert(item)
+    this.retrieval.onIndexChanged(item)
+    this.pendingStore.delete(id)
+    return item
+  }
+
+  /** Batch B:驳回一条待确认草稿 → 写 sticky tombstone + 删行(对齐 spec §2.5 要点2)。 */
+  dismissPending(id: string): boolean {
+    const row = this.pendingStore.get(id)
+    if (!row) return false
+    this.pendingStore.dismiss(row.userId, id, row.fingerprint)
+    return true
+  }
+
+  /**
+   * Batch H(spec §8.5):近 N 次 Dream 失败(供 fail-open 可观测面板)。
+   * 各 turn 的 failures 在 beforeTurn/afterTurn 返回前经 mergeRecentFailures 累积到
+   * 实例 ring-buffer(上限 200);此处读取副本。空 = 近期无失败。
+   */
+  recentFailures(): string[] {
+    return [...this.recentFailuresBuf]
+  }
+
+  /** Batch H:把单 turn 的 failures 并入实例 ring-buffer(带时间戳)。 */
+  private mergeRecentFailures(failures: string[]): void {
+    if (failures.length === 0) return
+    const at = nowIso()
+    for (const f of failures) {
+      this.recentFailuresBuf.push(`[${at}] ${f}`)
+    }
+    if (this.recentFailuresBuf.length > DreamMemorySystem.RECENT_FAILURES_MAX) {
+      this.recentFailuresBuf.splice(0, this.recentFailuresBuf.length - DreamMemorySystem.RECENT_FAILURES_MAX)
+    }
+  }
+
+  /** Batch H(spec §8.3):当前 embedding 后端(http vs hash fallback),供诊断面板显示"是否真语义检索"。 */
+  embeddingBackend(): string {
+    try {
+      return this.embedder?.name?.() ?? 'unknown'
+    } catch {
+      return 'unknown'
+    }
+  }
+
   /** Phase 3:构建用户的 7 区 Memory Summary。 */
   buildSummary(userId: string): MemorySummary {
     const items = this.repository.list(userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
@@ -689,11 +850,16 @@ export class DreamMemorySystem {
     // 跑 ObservableGate(轻量)
     const allItems = this.repository.list(userId, {})
     const gateReport = this.observableGate.run({ userId, query, candidates: hits.map((h) => ({ item: h.item, score: h.score })), allUserItems: allItems })
-    return gateReport.decisions
+    const routed = gateReport.decisions
       .filter((d) => d.finalDecision !== 'suppress')
       .map((d) => { const h = hits.find((x) => x.item.id === d.memoryId)!; return { item: h.item, score: Math.max(0, d.scoreAfter) } })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
+    // B2+B3+B5(合并写侧):对最终注入集批量强化。
+    if (routed.length > 0) {
+      try { this.repository.reinforceUsed(routed.map((h) => h.item.id), { boost: 0.05 }) } catch { /* fail-open */ }
+    }
+    return routed
   }
 
   // ================================================================
@@ -762,6 +928,15 @@ export class DreamMemorySystem {
     } catch (err) { failures.push(`gate: ${String(err)}`); routedHits = [...hits] }
 
     try { routedHits = filterSuppressedWithExplicitAsk(userId, routedHits, this.controls2, input.prompt) } catch (err) { failures.push(`suppress_filter: ${String(err)}`) }
+
+    // B2+B3+B5(合并写侧):对最终注入集(gate 通过 + 未被 suppress)做一次批量强化。
+    // 在 injection decision 之前,这样即使 shouldInject=false(routedHits 被清空),
+    // 已被 gate/suppress 过滤掉的候选也不会被强化(强化的是"真正用到"的记忆)。
+    if (routedHits.length > 0) {
+      try {
+        this.repository.reinforceUsed(routedHits.map((h) => h.item.id), { boost: 0.05 })
+      } catch (err) { failures.push(`reinforce: ${String(err)}`) }
+    }
 
     let injectionDecision: InjectionDecision | null = null
     try {
@@ -885,11 +1060,28 @@ export class DreamMemorySystem {
       void Promise.resolve().then(() => { try { this.scheduler.tick({ userId }) } catch { /* non-blocking */ } })
     }
 
+    this.mergeRecentFailures(failures)
     return { newMemories, sourceId: chatSourceId, failures, dreamingTriggered }
+  }
+
+  /**
+   * B8:连接器路径(ingest/revoke)的安全前置检查。生产环境(NODE_ENV=production 或
+   * DREAM_OAUTH_PRODUCTION=true)下用默认密钥加密的 OAuth token 拿源码即可解密,
+   * 是安全违规 → 拒绝执行连接器操作。要求设置 DREAM_OAUTH_KEY。
+   */
+  private requireSecureOAuth(): void {
+    if (this.oauthStore.isUsingDefaultKey() &&
+        (process.env.NODE_ENV === 'production' || process.env.DREAM_OAUTH_PRODUCTION === 'true')) {
+      throw new Error(
+        'OAuth connectors disabled: token store uses the insecure default key in production. ' +
+          'Set the DREAM_OAUTH_KEY environment variable (or supply a passphrase) to enable Gmail/Drive connectors.'
+      )
+    }
   }
 
   /** Phase 5:从 Gmail 拉取邮件,抽取记忆(带 connector source lineage)。 */
   async ingestGmail(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    this.requireSecureOAuth()
     const token = this.oauthStore.load(account)
     if (!token) throw new Error(`no oauth token for ${account}`)
     const gmail = new GmailConnector({ token, fetchImpl: opts.fetchImpl })
@@ -929,6 +1121,7 @@ export class DreamMemorySystem {
 
   /** Phase 5:从 Drive 拉取文件,抽取记忆(带 connector source lineage)。 */
   async ingestDrive(account: string, opts: { maxResults?: number; fetchImpl?: typeof fetch } = {}): Promise<{ ingested: number }> {
+    this.requireSecureOAuth()
     const token = this.oauthStore.load(account)
     if (!token) throw new Error(`no oauth token for ${account}`)
     const drive = new DriveConnector({ token, fetchImpl: opts.fetchImpl })
@@ -972,6 +1165,7 @@ export class DreamMemorySystem {
    * @param opts.preview - 只返回受影响列表,不删除(3.4 revoke preview)。
    */
   revokeConnector(account: string, userId: string, opts: { preview?: boolean } = {}): { affected: number; affectedMemoryIds?: string[]; affectedSourceIds?: string[] } {
+    this.requireSecureOAuth()
     // 3.4:preview 模式不删除,只返回受影响列表
     const sources = this.controls2.listSources(userId, { includeDeleted: true })
       .concat(userId !== account ? this.controls2.listSources(account, { includeDeleted: true }) : [])

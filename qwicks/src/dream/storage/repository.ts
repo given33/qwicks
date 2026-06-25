@@ -50,6 +50,20 @@ export interface MemoryRepository {
   /** 软删(transition 到 DELETED)或硬删(删行)。返回是否命中。 */
   delete(id: string, opts?: { hard?: boolean }): boolean
 
+  /**
+   * v3(B2+B3+B5 合并写侧):对一批"被检索命中并最终注入"的记忆做一次批量强化。
+   * 一条 UPDATE 同时:
+   *   - last_used_at = at           (B3:刷新使用时间;B5 读侧 recency 用它)
+   *   - importance  = MIN(1.0, +boost)  (B2:强化,饱和封顶)
+   *   - salience    = MIN(1.0, +salienceBoost)  (可选,提升 top-of-mind 显著度)
+   * 关键:**不写 event log、不同步 source_link、不碰 updated_at**(避免 B5 修好的
+   * suppress/edit 不污染时效语义被强化破坏)。空 ids 数组是 no-op。
+   */
+  reinforceUsed(
+    ids: readonly string[],
+    opts?: { boost?: number; salienceBoost?: number; at?: string }
+  ): void
+
   /** 渐进迁移:旧 schema(无 status) → v2,返回统计。幂等。 */
   migrateV1ToV2(): {
     migratedCount: number

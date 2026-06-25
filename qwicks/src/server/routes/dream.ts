@@ -55,6 +55,44 @@ export async function dreamLedger(system: DreamMemorySystem | undefined, request
   return jsonResponse({ ledger: ledger.toDict() })
 }
 
+/** Batch B:列出待确认的高敏感草稿。 */
+export async function dreamPendingList(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const userId = new URL(request.url).searchParams.get('user_id') ?? 'default'
+  return jsonResponse({ pending: dream.getPendingStore().list(userId) })
+}
+
+/** Batch B:确认一条待确认草稿(落库为 SENSITIVE MemoryItem + 跑 conflict)。 */
+export async function dreamPendingConfirm(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const item = dream.confirmPending(id)
+  if (!item) return ERRORS.notFound(`pending draft not found: ${id}`)
+  return jsonResponse({ memory: item.toDict() })
+}
+
+/** Batch B:驳回一条待确认草稿(sticky tombstone,同内容不再 re-pend)。 */
+export async function dreamPendingDismiss(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const ok = dream.dismissPending(id)
+  if (!ok) return ERRORS.notFound(`pending draft not found: ${id}`)
+  return jsonResponse({ dismissed: true })
+}
+
+/** Batch C:序列化某轮对话为可分享 payload(默认全脱敏来源归因)。 */
+export async function dreamShare(system: DreamMemorySystem | undefined, request: Request): Promise<JsonResponse> {
+  const dream = requireDream(system)
+  if (!dream) return ERRORS.unavailable('dream memory system is unavailable')
+  const body = (await request.json().catch(() => ({}))) as { thread?: unknown; mode?: string }
+  if (!body.thread || typeof body.thread !== 'object') {
+    return ERRORS.validation('thread is required')
+  }
+  const mode = body.mode === 'show-chat' ? 'show-chat' : 'private'
+  return jsonResponse({ result: dream.controls2.shareThread(body.thread as never, mode as never) })
+}
+
 export async function dreamVersions(system: DreamMemorySystem | undefined, id: string): Promise<JsonResponse> {
   const dream = requireDream(system)
   if (!dream) return ERRORS.unavailable('dream memory system is unavailable')

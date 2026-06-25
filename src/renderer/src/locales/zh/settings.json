@@ -1052,5 +1052,18 @@
   "memoryLastInjectedDesc": "最近一轮对话中注入的记忆记录 ID。",
   "memoryDisabledHint": "记忆功能当前已关闭。需要在运行时配置(qwicks config)中启用后才能创建和使用记忆记录。",
   "memoryEnable": "启用记忆",
-  "memoryEnableDesc": "启用后,助手会跨会话保存事实和偏好,并自动注入到上下文中。修改后会在下一轮对话生效。"
+  "memoryEnableDesc": "启用后,助手会跨会话保存事实和偏好,并自动注入到上下文中。修改后会在下一轮对话生效。",
+  "memoryEngine": "记忆引擎",
+  "memoryEngineDesc": "选择长期记忆的存储方式。File 是旧的关键词存储；Dream 是新的语义记忆系统，具备生命周期、检索与 dreaming。",
+  "memoryEngineFile": "File（旧版）",
+  "memoryEngineDream": "Dream",
+  "memoryEngineSwitchConfirmTitle": "切换到 Dream 记忆？",
+  "memoryEngineSwitchConfirmBody": "现有记忆会被复制到 Dream 存储中（旧文件保留）。此操作只执行一次，可随时切回。运行时将重启以应用更改。",
+  "memoryEngineSwitchConfirmCta": "切换并重启",
+  "memoryEngineSwitchConfirmCancel": "取消",
+  "memoryMigrationError": "Dream 迁移失败，已回退到 File 记忆。你的记忆仍安全保存在旧存储中。详情：{error}",
+  "memoryDataControl": "数据控制",
+  "memoryDataControlDesc": "选择你的记忆数据是否可用于改进或训练模型。默认全部关闭——本应用本地优先，不上传记忆数据。这些开关只影响数据上报，本地记忆功能不受影响。",
+  "memoryDataControlImprove": "允许模型改进",
+  "memoryDataControlTrain": "允许模型训练"
 }

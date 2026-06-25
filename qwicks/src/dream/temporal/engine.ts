@@ -65,8 +65,12 @@ export function assess(
   const halfLifeDays = opts.halfLifeDays ?? 60
   const staleThreshold = opts.staleThreshold ?? 0.25
 
-  const age = ageDays(item.updatedAt, now)
-  let rec = recencyScore(item.updatedAt, halfLifeDays, now)
+  // B5:时效性改读"上次使用时间,回退创建时间"。updatedAt 每次都刷新(=now),
+  // 用它会导致 decay 一次性、suppress/edit 后旧记忆顶成"最新"。createdAt/lastUsedAt
+  // 不会被 decay/suppress/upsert 改变(强化走 reinforceUsed 不碰 updated_at),语义稳定。
+  const freshnessField = item.lastUsedAt ?? item.createdAt
+  const age = ageDays(freshnessField, now)
+  let rec = recencyScore(freshnessField, halfLifeDays, now)
   const hint = detectTemporalHint(item.content)
   if (hint !== null) rec = Math.min(1, Math.max(0, 0.6 * rec + 0.4 * hint))
 

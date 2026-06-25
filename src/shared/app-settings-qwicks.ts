@@ -22,6 +22,7 @@ import {
   type QWicksHistoryHygieneSettingsV1,
   type QWicksImageGenerationSettingsV1,
   type QWicksMcpSearchSettingsV1,
+  type QWicksMemoryBackend,
   type QWicksMusicGenerationSettingsV1,
   type QWicksRuntimeTuningSettingsV1,
   type QWicksRuntimeSettingsPatchV1,
@@ -112,6 +113,22 @@ function legacyReasoningRuntimeDefaults(): LegacyReasoningRuntimeSettingsV1 {
   }
 }
 
+/** Resolve a possibly-absent memoryBackend from saved settings (old installs predate the field). */
+export function resolveMemoryBackend(raw: { memoryBackend?: unknown } | undefined): QWicksMemoryBackend {
+  return raw?.memoryBackend === 'dream' ? 'dream' : 'file'
+}
+
+/** Batch F:解析数据控制设置(旧安装缺该字段 → 默认全关,零外发)。 */
+export function resolveDataControl(
+  raw: { dataControl?: unknown } | undefined
+): { allowModelImprovement: boolean; allowTraining: boolean } {
+  const dc = (raw?.dataControl ?? {}) as { allowModelImprovement?: unknown; allowTraining?: unknown }
+  return {
+    allowModelImprovement: dc.allowModelImprovement === true,
+    allowTraining: dc.allowTraining === true
+  }
+}
+
 export function defaultQWicksRuntimeSettings(
   port = DEFAULT_QWICKS_PORT
 ): QWicksRuntimeSettingsV1 {
@@ -142,6 +159,8 @@ export function defaultQWicksRuntimeSettings(
     videoGeneration: defaultQWicksVideoGenerationSettings(),
     modelProfiles: {},
     memoryEnabled: false,
+    memoryBackend: 'file',
+    dataControl: { allowModelImprovement: false, allowTraining: false },
     computerUse: defaultQWicksComputerUseSettings(),
     quality: defaultQWicksQualitySettings()
   }
@@ -439,6 +458,8 @@ export function mergeQWicksRuntimeSettings(
     videoGeneration: nextVideoGeneration,
     modelProfiles: nextModelProfiles,
     memoryEnabled: patch?.memoryEnabled ?? current.memoryEnabled ?? false,
+    memoryBackend: resolveMemoryBackend(patch?.memoryBackend ?? current.memoryBackend),
+    dataControl: resolveDataControl(patch?.dataControl ?? current.dataControl),
     computerUse: nextComputerUse,
     quality: nextQuality
   }

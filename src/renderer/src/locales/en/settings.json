@@ -1052,5 +1052,18 @@
   "memoryLastInjectedDesc": "Memory record IDs that were injected into the most recent turn.",
   "memoryDisabledHint": "Memory is currently disabled. Enable it in the runtime configuration (qwicks config) to create and use memory records.",
   "memoryEnable": "Enable memory",
-  "memoryEnableDesc": "When enabled, the assistant persists facts and preferences across sessions and injects them into context automatically. Changes apply on the next turn."
+  "memoryEnableDesc": "When enabled, the assistant persists facts and preferences across sessions and injects them into context automatically. Changes apply on the next turn.",
+  "memoryEngine": "Memory engine",
+  "memoryEngineDesc": "Choose how long-term memories are stored. File is the legacy keyword store; Dream is the new semantic memory system with lifecycle, retrieval and dreaming.",
+  "memoryEngineFile": "File (legacy)",
+  "memoryEngineDream": "Dream",
+  "memoryEngineSwitchConfirmTitle": "Switch to Dream memory?",
+  "memoryEngineSwitchConfirmBody": "Your existing memories will be copied into the Dream store (the old files are kept). This runs once and is reversible — you can switch back any time. The runtime will restart to apply the change.",
+  "memoryEngineSwitchConfirmCta": "Switch & restart",
+  "memoryEngineSwitchConfirmCancel": "Cancel",
+  "memoryMigrationError": "Dream migration failed and fell back to File memory. Your memories are safe in the legacy store. Details: {error}",
+  "memoryDataControl": "Data control",
+  "memoryDataControlDesc": "Choose whether your memory data may be used to improve or train models. Both are off by default — this app is local-first and does not upload memory data. These toggles only affect data reporting; your local memory keeps working.",
+  "memoryDataControlImprove": "Allow model improvement",
+  "memoryDataControlTrain": "Allow model training"
 }

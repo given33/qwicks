@@ -100,3 +100,36 @@ describe('PermissionRevocation', () => {
     expect(r.affectedCount).toBe(5)
   })
 })
+
+// Batch E(spec §5.2):生产模式硬门禁。
+describe('OAuthTokenStore production gate (Batch E)', () => {
+  let dir: string
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dream-oauth-prod-'))
+  })
+  afterEach(async () => {
+    delete process.env.DREAM_OAUTH_PRODUCTION
+    delete process.env.DREAM_OAUTH_KEY
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('canStartConnectors returns false when using default key in production', () => {
+    process.env.DREAM_OAUTH_PRODUCTION = 'true'
+    delete process.env.DREAM_OAUTH_KEY
+    const store = new OAuthTokenStore({ persistDir: dir })
+    expect(store.canStartConnectors()).toBe(false)
+  })
+
+  it('canStartConnectors returns true when a custom key is set', () => {
+    process.env.DREAM_OAUTH_KEY = 'my-secret-key'
+    const store = new OAuthTokenStore({ persistDir: dir })
+    expect(store.canStartConnectors()).toBe(true)
+  })
+
+  it('canStartConnectors returns true in dev (default key allowed for testing)', () => {
+    delete process.env.DREAM_OAUTH_PRODUCTION
+    delete process.env.DREAM_OAUTH_KEY
+    const store = new OAuthTokenStore({ persistDir: dir })
+    expect(store.canStartConnectors()).toBe(true)
+  })
+})

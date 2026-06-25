@@ -13,7 +13,7 @@ import {
 import { HashEmbedder } from '../embeddings/hash-provider.js'
 import { FlatVectorIndex } from '../vectordb/flat-index.js'
 import { SqliteMemoryRepository } from '../storage/sqlite-repository.js'
-import { RetrievalPipeline, RETRIEVAL_EXCLUDED_STATUSES, recencyScore } from './pipeline.js'
+import { RetrievalPipeline, RETRIEVAL_EXCLUDED_STATUSES, recencyScore, bm25Score, tokenize } from './pipeline.js'
 
 function item(overrides: Partial<MemoryItem> & { id: string; content: string }): MemoryItem {
   return new MemoryItem(
@@ -158,31 +158,18 @@ describe('RetrievalPipeline — 5-channel hybrid scoring', () => {
     expect(scoreA).toBeGreaterThan(scoreB)
   })
 
-  it('recency channel: more-recently-touched memory outscores older (upsert refreshes updatedAt)', async () => {
-    // upsert refreshes updatedAt to "now" (faithful to Python). Use a controllable
-    // clock so the two items genuinely land at different times.
-    let clock = new Date('2024-01-01T00:00:00Z').getTime()
-    const clockRepo = new SqliteMemoryRepository({
-      sqlitePath: join(dir, 'clock.db'),
-      nowIso: () => new Date(clock).toISOString()
-    })
-    const clockPipe = new RetrievalPipeline({
-      repository: clockRepo,
-      embedder: new HashEmbedder({ dim: 128 }),
-      vectorDb: new FlatVectorIndex({ dim: 128, persistDir: join(dir, 'vec-clock') })
-    })
-    clockPipe.warmup()
+  it('recency channel: more-recently-created memory outscores older (B5: recency reads createdAt)', async () => {
+    // B5:recency 改读 lastUsedAt ?? createdAt(不再读被每次 upsert 刷新的 updatedAt)。
+    // 所以"更新"信号 = 创建/使用时间。这里给两条记忆不同的 createdAt:
+    // b 创建于 2024(老),a 创建于 2026(新) → a 的 recency 高 → 得分高。
+    const b = item({ id: 'b', userId: 'alice', content: 'shared memory content xyz', importance: 0.5, createdAt: '2024-01-01T00:00:00Z' })
+    const a = item({ id: 'a', userId: 'alice', content: 'shared memory content xyz', importance: 0.5, createdAt: '2026-06-22T00:00:00Z' })
+    repo.upsert(b)
+    repo.upsert(a)
+    pipe.onIndexChanged(b)
+    pipe.onIndexChanged(a)
 
-    const b = item({ id: 'b', userId: 'alice', content: 'shared memory content xyz', importance: 0.5 })
-    clockRepo.upsert(b) // touched at 2024-01-01
-    clockPipe.onIndexChanged(b)
-    clock = new Date('2026-06-22T00:00:00Z').getTime() // advance clock
-    const a = item({ id: 'a', userId: 'alice', content: 'shared memory content xyz', importance: 0.5 })
-    clockRepo.upsert(a) // touched at 2026-06-22
-    clockPipe.onIndexChanged(a)
-
-    const hits = await clockPipe.retrieve({ userId: 'alice', query: 'shared memory content', topK: 5 })
-    clockRepo.close()
+    const hits = await pipe.retrieve({ userId: 'alice', query: 'shared memory content', topK: 5 })
     const scoreA = hits.find((h) => h.item.id === 'a')!.score
     const scoreB = hits.find((h) => h.item.id === 'b')!.score
     expect(scoreA).toBeGreaterThan(scoreB)
@@ -239,5 +226,123 @@ describe('RetrievalPipeline — 5-channel hybrid scoring', () => {
   it('returns empty when the user has no memories', async () => {
     const hits = await pipe.retrieve({ userId: 'nobody', query: 'anything', topK: 5 })
     expect(hits).toEqual([])
+  })
+})
+
+describe('RetrievalPipeline — reinforcement on retrieve (B2+B3)', () => {
+  let dir: string
+  let repo: SqliteMemoryRepository
+  let pipe: RetrievalPipeline
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dream-reinf-retr-'))
+    repo = new SqliteMemoryRepository({ sqlitePath: join(dir, 'm.db') })
+    const embedder = new HashEmbedder({ dim: 128 })
+    const vectordb = new FlatVectorIndex({ dim: 128, persistDir: join(dir, 'vec') })
+    pipe = new RetrievalPipeline({ repository: repo, embedder, vectorDb: vectordb })
+    pipe.warmup()
+  })
+  afterEach(async () => {
+    repo.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('B2: retrieving a hit raises its importance (capped) via reinforceUsed', async () => {
+    const a = item({ id: 'a', userId: 'alice', content: 'postgres replication lag tuning', importance: 0.5 })
+    repo.upsert(a)
+    pipe.onIndexChanged(a)
+    await pipe.retrieve({ userId: 'alice', query: 'postgres replication lag', topK: 5 })
+    const after = repo.get('a')!
+    expect(after.importance).toBeGreaterThan(0.5) // 强化生效
+    // 连续 retrieve 不超过 1.0
+    for (let i = 0; i < 20; i++) {
+      await pipe.retrieve({ userId: 'alice', query: 'postgres replication lag', topK: 5 })
+    }
+    expect(repo.get('a')!.importance).toBeLessThanOrEqual(1.0)
+  })
+
+  it('B3: retrieving a hit sets last_used_at (null -> non-null)', async () => {
+    const a = item({ id: 'a', userId: 'alice', content: 'postgres replication lag tuning' })
+    repo.upsert(a)
+    pipe.onIndexChanged(a)
+    expect(repo.get('a')!.lastUsedAt).toBeNull()
+    await pipe.retrieve({ userId: 'alice', query: 'postgres replication lag', topK: 5 })
+    expect(repo.get('a')!.lastUsedAt).not.toBeNull()
+  })
+})
+
+describe('bm25Score length normalization (B6)', () => {
+  it('punishes long documents given the same match: shorter doc scores higher with corpus avgdl', () => {
+    // 同一个查询 token 命中,但一个文档短、一个长(填充无关 token)。
+    const query = tokenize('python')
+    const shortDoc = tokenize('python')
+    const longDoc = tokenize('python ' + 'filler '.repeat(200))
+    const avgdl = (shortDoc.length + longDoc.length) / 2 // 语料平均长度
+    const shortScore = bm25Score(query, shortDoc, avgdl)
+    const longScore = bm25Score(query, longDoc, avgdl)
+    expect(shortScore).toBeGreaterThan(longScore) // 短文档得分更高
+  })
+
+  it('regression guard: without avgdl (legacy single-doc call) still returns sane value', () => {
+    const q = tokenize('python rocks')
+    const d = tokenize('python rocks rocks')
+    const s = bm25Score(q, d)
+    expect(s).toBeGreaterThan(0)
+    expect(s).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('RetrievalPipeline — boost gating (B15)', () => {
+  let dir: string
+  let repo: SqliteMemoryRepository
+  let pipe: RetrievalPipeline
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dream-b15-'))
+    repo = new SqliteMemoryRepository({ sqlitePath: join(dir, 'm.db') })
+    const embedder = new HashEmbedder({ dim: 128 })
+    const vectordb = new FlatVectorIndex({ dim: 128, persistDir: join(dir, 'vec') })
+    pipe = new RetrievalPipeline({ repository: repo, embedder, vectorDb: vectordb })
+    pipe.warmup()
+  })
+  afterEach(async () => {
+    repo.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('B15: a top-of-mind memory with ZERO semantic relevance gets NO boost (score == baseScore)', async () => {
+    // B15 核心:boost 只能放大已有相关性,不能凭空加成。一条 top-of-mind 但与查询
+    // 零相关的记忆,vector/bm25/exact 全为 0 → hasRelevance=false → topOfMindBoost=0。
+    // (它仍可能因 importance/recency 被召回 —— 那是既有契约,不在 B15 范围;B15 只保证
+    // 不被 +0.12 凭空拔高。)断言:score == baseScore(boost 没生效)。
+    const tom = item({
+      id: 'tom',
+      userId: 'alice',
+      content: 'completely unrelated filler content zzz',
+      updatedAt: '2026-06-20T00:00:00Z'
+    })
+    tom.isTopOfMind = true
+    repo.upsert(tom)
+    pipe.onIndexChanged(tom)
+    const hits = await pipe.retrieve({ userId: 'alice', query: 'postgres replication tuning', topK: 5 })
+    const hit = hits.find((h) => h.item.id === 'tom')
+    expect(hit).toBeTruthy()
+    expect(hit!.score).toBe(hit!.baseScore) // 零相关 → 没有 +0.12 boost
+  })
+
+  it('B15: a top-of-mind memory WITH relevance is still boosted (score > baseScore)', async () => {
+    const tom = item({
+      id: 'tom',
+      userId: 'alice',
+      content: 'postgres replication lag tuning guide',
+      updatedAt: '2026-06-20T00:00:00Z'
+    })
+    tom.isTopOfMind = true
+    repo.upsert(tom)
+    pipe.onIndexChanged(tom)
+    const hits = await pipe.retrieve({ userId: 'alice', query: 'postgres replication lag', topK: 5 })
+    const hit = hits.find((h) => h.item.id === 'tom')
+    expect(hit).toBeTruthy()
+    expect(hit!.score).toBeGreaterThan(hit!.baseScore) // boost 生效
   })
 })

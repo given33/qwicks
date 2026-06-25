@@ -63,6 +63,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:dream": "vitest run src/dream",
+    "eval:gate": "tsc -p tsconfig.build.json && node --experimental-strip-types ./scripts/eval-gate.mts",
     "transcript:diff": "node ./scripts/transcript-diff.mjs",
     "serve": "node ./dist/cli/serve-entry.js",
     "dev": "tsc -p tsconfig.build.json --watch"

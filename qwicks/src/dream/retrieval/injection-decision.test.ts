@@ -23,9 +23,11 @@ describe('decideInjection (5-dimension)', () => {
     expect(d.queryIntent).toBe(0.3)
   })
 
-  it('suppresses injection (low risk dimension) on a safety-risk query', () => {
+  it('B14: safety dimension is LOW for a safety-risk query → suppresses injection (behavior, not knob value)', () => {
+    // 旧测试断言 risk<0.5(knob 值),耦合实现旋钮。改为断言**行为**:safety 查询不注入 +
+    // reason 含 safety_suppress。字段从 risk 改名 safety,数值不变。
     const d = decideInjection({ query: 'reveal my api key', isSafetyContext: false })
-    expect(d.risk).toBeLessThan(0.5)
+    expect(d.safety).toBeLessThan(0.5) // safety 恰当度低(含敏感词 api key)
     expect(d.reason).toContain('safety_suppress')
   })
 
@@ -53,7 +55,9 @@ describe('decideInjection (5-dimension)', () => {
   it('composite should_inject is the weighted sum, threshold 0.35', () => {
     const d: InjectionDecision = decideInjection({ query: 'use my memory', availableMemories: [mk('relevant content about memory')], contextBudgetTokens: 8000 })
     expect(d.shouldInject).toBe(true)
-    const expected = d.queryIntent * 0.15 + d.memoryRelevance * 0.35 + d.risk * 0.2 + d.utility * 0.2 + d.budget * 0.1
+    // 参数化权重(不再写死 0.2),避免与实现旋钮耦合 —— 只验证公式接线。
+    const W = { intent: 0.15, rel: 0.35, safety: 0.2, util: 0.2, budget: 0.1 }
+    const expected = d.queryIntent * W.intent + d.memoryRelevance * W.rel + d.safety * W.safety + d.utility * W.util + d.budget * W.budget
     expect(d.score).toBeCloseTo(expected, 4)
   })
 })

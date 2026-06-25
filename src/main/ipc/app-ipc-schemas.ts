@@ -1173,6 +1173,17 @@ const workflowSettingsPatchSchema = z
   })
   .strict()
 
+const petSettingsPatchSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    spriteScale: z.number().min(0.1).max(4).optional(),
+    walkEnabled: z.boolean().optional(),
+    consoleOnLaunch: z.boolean().optional(),
+    diaryRetentionDays: z.number().int().min(1).max(3650).optional(),
+    growthSpeed: z.number().min(0.1).max(10).optional()
+  })
+  .strict()
+
 export const workflowRunNodePayloadSchema = z
   .object({
     workflowId: trimmedString(MAX_ID_LENGTH),
@@ -1245,6 +1256,7 @@ const settingsPatchObjectSchema = z.object({
   guiUpdate: z.object({
     channel: z.enum(GUI_UPDATE_CHANNELS).optional()
   }).strict().optional(),
+  pet: petSettingsPatchSchema.optional(),
   codePromptPrefix: z.string().max(MAX_CHANNEL_TEXT_LENGTH).optional(),
   disabledSkillIds: z.array(trimmedString(128)).max(512).optional()
 }).strict()

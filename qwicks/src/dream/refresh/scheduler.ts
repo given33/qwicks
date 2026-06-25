@@ -3,17 +3,19 @@
  *
  * - MemoryDecay:扫 user 的 active memory,expiresAt 过期 → transition EXPIRED;
  *   recency 低于阈值(stale)→ importance 降级(不删)。__do_not_decay__ tag 免疫。
- * - MemoryReinforcement:被 retrieve 命中的 memory importance 提升(封顶 1)。
+ *   (B5:recency 改读 lastUsedAt ?? createdAt,不再被 upsert 刷新污染。)
+ * - 强化(importance 提升):历史上有个 MemoryReinforcement 类,但 tick/forceTick
+ *   从不调用它 → 死代码。B2+B3+B5 已把强化收口到检索侧的 `repository.reinforceUsed`
+ *   批量 UPDATE(在 retrieve/beforeTurn 切完最终注入集后调一次),故此处不再持有它。
  * - DreamingScheduler:OpenAI-style 后台 markDirty + tick;chat 写新 memory →
- *   markDirty,后台按 interval 跑 tick(decay+reinforcement),不阻塞热路径。
+ *   markDirty,后台按 interval 跑 tick(decay + temporal + top-of-mind),不阻塞热路径。
  *
  * 注:Python refresh/advanced.py(2008 行)里的 L1/L2 分层洞察 / structured_attrs /
  * stale_refresh_loop / soft_gate_progression 都是针对 540-gold 的质量调参,不在
- * spec §6 核心范围;本 TS 实现先做 decay/reinforcement/scheduler 核心。
+ * spec §6 核心范围;本 TS 实现先做 decay/scheduler 核心。
  */
 import { MemoryLifecycleStatus as Status } from '../types.js'
 import { assess } from '../temporal/engine.js'
-import type { MemoryItem } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
 import type { TemporalDreamer } from './temporal-dreamer.js'
 import type { TopOfMindBalancer } from './top-of-mind.js'
@@ -66,34 +68,18 @@ export class MemoryDecay {
   }
 }
 
-export interface MemoryReinforcementOptions {
-  repository: MemoryRepository
-  boostStep?: number
-}
-
-export class MemoryReinforcement {
-  private readonly boostStep: number
-  constructor(private readonly opts: MemoryReinforcementOptions) {
-    this.boostStep = opts.boostStep ?? 0.05
-  }
-
-  reinforce(item: MemoryItem): void {
-    const current = this.opts.repository.get(item.id)
-    if (!current) return
-    current.importance = Math.min(1, current.importance + this.boostStep)
-    this.opts.repository.upsert(current)
-  }
-}
-
 export interface DreamingSchedulerOptions {
   decay: MemoryDecay
-  reinforcement: MemoryReinforcement
   /** v3:可选的时间状态转换器(planned→occurred 等)。 */
   temporalDreamer?: TemporalDreamer
   /** v3:可选的 top-of-mind 平衡器。 */
   topOfMindBalancer?: TopOfMindBalancer
   /** 3.1(工业级):持久化 dream_job 队列(可选;提供则 markDirty 入队 + tick 从队列处理)。 */
   repository?: import('../storage/repository.js').MemoryRepository
+  /** Batch B(spec §2.5 要点6):可选的高敏感待确认 store —— tick 时清理 30 天未确认草稿。 */
+  pendingStore?: import('../storage/pending-sensitive-store.js').PendingSensitiveStore
+  /** Batch D(spec §4):可选的容量防护 —— tick 时检查 softLimit,自动降级最低价值记忆。 */
+  capacityGuard?: import('./capacity-guard.js').MemoryCapacityGuard
 }
 
 export interface DreamingTickResult {
@@ -151,6 +137,22 @@ export class DreamingScheduler {
    * 返回 DreamingTickResult(ran=true 表示实际跑了)。
    */
   tick(opts: { userId?: string } = {}): DreamingTickResult {
+    // Batch B(spec §2.5 要点6):清理 30 天未确认的待确认草稿(纯老化,不留 tombstone)。
+    if (this.opts.pendingStore) {
+      try {
+        this.opts.pendingStore.purgeStale(30)
+      } catch {
+        // fail-open: 清理失败不影响 dreaming 主循环。
+      }
+    }
+    // Batch D(spec §4):检查 softLimit,自动降级最低价值记忆到 background。
+    if (this.opts.capacityGuard && opts.userId) {
+      try {
+        this.opts.capacityGuard.run(opts.userId)
+      } catch {
+        // fail-open: 容量检查失败不影响 dreaming 主循环。
+      }
+    }
     if (opts.userId) {
       if (!this.dirty.has(opts.userId)) return { ran: false }
       this.opts.decay.apply({ userId: opts.userId })

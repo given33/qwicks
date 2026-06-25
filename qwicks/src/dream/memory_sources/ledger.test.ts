@@ -8,7 +8,7 @@ function mk(id: string, content: string, metadata: Record<string, unknown> = {})
   return new MemoryItem(id, 'alice', MemoryType.FACT, content, MemoryScope.USER, [], 0.5, 0.7, '2026-06-01T00:00:00Z', '2026-06-01T00:00:00Z', null, new MemoryProvenance(), null, null, [], metadata)
 }
 function hit(id: string, score: number, content = 'x'): RetrievalHit {
-  return { item: mk(id, content), score, vectorScore: score, recencyScore: 0.5, importanceScore: 0.5, bm25Score: 0, exactScore: 0, source: 'vector' }
+  return { item: mk(id, content), score, baseScore: score, vectorScore: score, recencyScore: 0.5, importanceScore: 0.5, bm25Score: 0, exactScore: 0, source: 'vector' }
 }
 function dec(id: string, finalDecision: ObservableDecision['finalDecision'], scoreAfter: number, reason = ''): ObservableDecision {
   return {

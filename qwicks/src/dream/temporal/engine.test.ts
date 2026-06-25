@@ -5,6 +5,11 @@ import { ageDays, assess, detectTemporalHint, filterActive, recencyScore, sortby
 const NOW = () => new Date('2026-06-23T00:00:00Z')
 
 function mk(overrides: Partial<MemoryItem> & { id: string }): MemoryItem {
+  // B5:stale/recency 现在读 lastUsedAt ?? createdAt(不再读被每次 upsert 刷新的 updatedAt)。
+  // 所以"老记忆"必须在 createdAt 上老 —— 当只给了 updatedAt 而没给 createdAt 时,
+  // 把 createdAt 对齐到 updatedAt(现实中老记忆两者都老),让 stale 测试语义成立。
+  const updatedAt = overrides.updatedAt ?? '2026-06-01T00:00:00Z'
+  const createdAt = overrides.createdAt ?? updatedAt
   return new MemoryItem(
     overrides.id,
     'alice',
@@ -14,8 +19,8 @@ function mk(overrides: Partial<MemoryItem> & { id: string }): MemoryItem {
     [],
     0.5,
     0.7,
-    overrides.createdAt ?? '2026-06-01T00:00:00Z',
-    overrides.updatedAt ?? '2026-06-01T00:00:00Z',
+    createdAt,
+    updatedAt,
     overrides.expiresAt ?? null,
     new MemoryProvenance()
   )

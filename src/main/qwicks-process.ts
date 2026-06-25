@@ -524,7 +524,8 @@ export async function syncGuiManagedQWicksConfig(
       computerUse: computerUseConfigForRuntime(runtime.computerUse, computerUse),
       memory: {
         ...memory,
-        enabled: runtime.memoryEnabled
+        enabled: runtime.memoryEnabled,
+        backend: runtime.memoryBackend === 'dream' ? 'dream' : 'file'
       },
       mcp: {
         ...mcp,

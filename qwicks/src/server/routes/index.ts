@@ -52,7 +52,11 @@ import {
   dreamLedger,
   dreamOptIn,
   dreamOptOut,
+  dreamPendingConfirm,
+  dreamPendingDismiss,
+  dreamPendingList,
   dreamPulse,
+  dreamShare,
   dreamPurge,
   dreamRestore,
   dreamRevokeConnector,
@@ -176,6 +180,24 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('POST', '/v1/dream/ledger', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return dreamLedger(runtime.dreamSystem, request)
+  })
+  // Batch B:高敏感待确认草稿(list / confirm / dismiss)
+  router.add('GET', '/v1/dream/pending', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamPendingList(runtime.dreamSystem, request)
+  })
+  router.add('POST', '/v1/dream/pending/:id/confirm', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamPendingConfirm(runtime.dreamSystem, ctx.params.id)
+  })
+  router.add('POST', '/v1/dream/pending/:id/dismiss', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamPendingDismiss(runtime.dreamSystem, ctx.params.id)
+  })
+  // Batch C:分享某轮对话(默认全脱敏来源归因)
+  router.add('POST', '/v1/dream/share', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return dreamShare(runtime.dreamSystem, request)
   })
   router.add('GET', '/v1/dream/memory/:id/versions', async (request, ctx) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

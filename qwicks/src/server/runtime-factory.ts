@@ -81,6 +81,7 @@ import type { MemoryStore } from '../memory/memory-store.js'
 import { DreamMemoryStore } from '../dream/dream-store.js'
 import { SqliteMemoryRepository } from '../dream/storage/sqlite-repository.js'
 import { DreamMemorySystem } from '../dream/chat/pipeline.js'
+import { migrateLegacyMemory } from '../dream/storage/migrate-legacy-memory.js'
 import { DelegationRuntime, FileDelegationStore } from '../delegation/delegation-runtime.js'
 import { createChildAgentExecutor } from '../delegation/child-agent-executor.js'
 import { createMeshRuntimeSlot } from '../mesh/integration/mesh-runtime-slot.js'
@@ -275,10 +276,11 @@ export async function createQWicksServeRuntime(
       })
     : undefined
   const memory = options.capabilities?.memory.enabled
-    ? buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'), modelClient)
+    ? await buildMemoryStore(options.capabilities.memory, join(options.dataDir, 'memory'), modelClient)
     : undefined
   const memoryStore = memory?.store
   const dreamSystem = memory?.dreamSystem
+  const memoryMigrationError = memory?.migrationError
   const imageGenProviders = buildImageGenToolProviders(options.capabilities?.imageGen, {
     attachmentStore,
     nowIso
@@ -638,7 +640,7 @@ export async function createQWicksServeRuntime(
         ? await attachmentStore.diagnostics()
         : { enabled: false, rootDir: '', count: 0, totalBytes: 0 },
       memory: memoryStore
-        ? await memoryStore.diagnostics()
+        ? { ...(await memoryStore.diagnostics()), ...(memoryMigrationError ? { migrationError: memoryMigrationError } : {}) }
         : { enabled: false, rootDir: '', activeCount: 0, tombstoneCount: 0, lastInjectedIds: [] },
       imageGen: imageGenProviders.diagnostics,
       speechGen: speechGenProviders.diagnostics,
@@ -791,11 +793,11 @@ export async function startQWicksServe(
  * (the Dream SQLite repository). The runtime must call `close()` on shutdown
  * to release file locks / file descriptors.
  */
-export function buildMemoryStore(
+export async function buildMemoryStore(
   config: MemoryCapabilityConfig,
   legacyRootDir: string,
   modelClient?: ModelClient
-): { store: MemoryStore; close: () => void; dreamSystem?: DreamMemorySystem } {
+): Promise<{ store: MemoryStore; close: () => void; dreamSystem?: DreamMemorySystem; migrationError?: string }> {
   if (config.backend === 'dream') {
     const sqlitePath = join(legacyRootDir, 'dream_memory.db')
     // 构建完整 DreamMemorySystem(facade),这样 HTTP 路由能暴露 summary/ledger/versions。
@@ -821,6 +823,46 @@ export function buildMemoryStore(
         return { query, summary: '(research failed)', sources: [], followUps: [] }
       }
     } : undefined
+
+    // Batch A(spec §1):迁移 legacy FileMemoryStore JSON -> Dream SQLite(幂等,仅一次)。
+    // legacy JSON 位于 <legacyRootDir>/memory/*.json。用 migration_log 守卫,避免重跑。
+    // 任何异常 → 回退 FileMemoryStore + 返回 migrationError(GUI 红条),绝不留空 SQLite。
+    let migrationError: string | undefined
+    try {
+      const probe = new SqliteMemoryRepository({ sqlitePath })
+      try {
+        const MIGRATION_KIND = 'file_to_dream'
+        const prior = probe.lastMigration(MIGRATION_KIND)
+        if (!prior) {
+          const report = await migrateLegacyMemory({
+            fileDir: join(legacyRootDir, 'memory'),
+            repository: probe,
+            userId: 'default'
+          })
+          probe.recordMigration({
+            kind: MIGRATION_KIND,
+            migratedCount: report.migratedCount,
+            skippedCount: report.skippedCount,
+            failedCount: report.failedCount,
+            error: report.failedCount > 0 ? `${report.failedCount} rows failed: ${report.errors.slice(0, 3).join('; ')}` : undefined
+          })
+        }
+      } finally {
+        probe.close()
+      }
+    } catch (err) {
+      migrationError = String(err)
+    }
+
+    // 迁移抛错 → 回退 FileMemoryStore,用户绝不会进空 Dream DB。GUI 红条提示 migrationError。
+    if (migrationError) {
+      return {
+        store: new FileMemoryStore({ rootDir: legacyRootDir, config }),
+        close: () => {},
+        migrationError
+      }
+    }
+
     const dreamSystem = new DreamMemorySystem({
       dataDir: legacyRootDir,
       ...(chat ? { chat } : {}),

@@ -27,6 +27,12 @@ import {
   TemporalState
 } from '../types.js'
 import type { MemoryRepository } from '../storage/repository.js'
+import {
+  applyShareFilter,
+  type ShareMode,
+  type ShareResult,
+  type ShareThread
+} from './share-export-filter.js'
 
 const OPT_OUT_TAG = '__memory_opt_out__'
 
@@ -236,6 +242,15 @@ export class MemoryControls {
       twin: twin ? safeJsonParse(twin[0]) : null,
       twinGeneratedAt: twin ? twin[1] : null
     } as ExportResult
+  }
+
+  /**
+   * Batch C(spec §3.3):序列化某轮对话为可分享 payload。
+   * 把 ledger 的 used 来源映射成 ShareSourceAttribution,经 applyShareFilter 脱敏后返回。
+   * 默认 mode='private'(全脱敏,对齐 OpenAI FAQ)。show-chat 仅保留 chat/saved/custom 类型且 shareable。
+   */
+  shareThread(thread: ShareThread, mode: ShareMode = 'private'): ShareResult {
+    return applyShareFilter(thread, mode)
   }
 
   /**
