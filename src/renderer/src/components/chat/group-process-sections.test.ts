@@ -59,7 +59,7 @@ describe('groupProcessSections — typed grouping', () => {
     expect(sections[0].blocks).toHaveLength(3)
   })
 
-  it('filters out reasoning blocks (never rendered)', () => {
+  it('groups reasoning blocks into their own section (separate from execution)', () => {
     const blocks: ChatBlock[] = [
       reasoning('re1'),
       tool('r1', 'read'),
@@ -67,17 +67,18 @@ describe('groupProcessSections — typed grouping', () => {
       reasoning('re2')
     ]
     const sections = groupProcessSections(blocks)
-    // reasoning blocks are dropped entirely — only the execution section remains
-    expect(sections).toHaveLength(1)
-    expect(sections[0].kind).toBe('execution')
-    expect(sections[0].category).toBe('read')
-    expect(sections[0].blocks).toHaveLength(2)
+    // reasoning forms its own section; read tools merge into one execution section
+    expect(sections.map((s) => s.kind)).toEqual(['reasoning', 'execution', 'reasoning'])
+    expect(sections[1].category).toBe('read')
+    expect(sections[1].blocks).toHaveLength(2)
   })
 
-  it('returns empty when only reasoning blocks present', () => {
+  it('merges consecutive reasoning blocks into one section', () => {
     const blocks: ChatBlock[] = [reasoning('re1'), reasoning('re2')]
     const sections = groupProcessSections(blocks)
-    expect(sections).toHaveLength(0)
+    expect(sections).toHaveLength(1)
+    expect(sections[0].kind).toBe('reasoning')
+    expect(sections[0].blocks).toHaveLength(2)
   })
 
   it('keeps non-tool execution blocks (approval) ungrouped by category', () => {

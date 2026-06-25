@@ -46,18 +46,20 @@ export function groupProcessSections(blocks: ChatBlock[]): ProcessSection[] {
   const sections: ProcessSection[] = []
 
   for (const block of blocks) {
-    // Reasoning blocks are never rendered — the model's internal thinking
-    // stays hidden (see turn-timer state machine spec). Drop them here so
-    // expanded process stacks only show tool/execution steps.
-    if (block.kind === 'reasoning') continue
+    // Reasoning blocks form their own collapsible section (rendered by
+    // ReasoningSection — Codex-style thinking display). They do NOT merge
+    // with execution/output sections.
     const kind =
-      block.kind === 'assistant'
-        ? 'output'
-        : 'execution'
+      block.kind === 'reasoning'
+        ? 'reasoning'
+        : block.kind === 'assistant'
+          ? 'output'
+          : 'execution'
     const category = kind === 'execution' && block.kind === 'tool' ? classifyToolCategory(block) : undefined
     const last = sections[sections.length - 1]
-    // Merge only into an execution section of the SAME category. A category
-    // change breaks the run so each typed node stays distinct.
+    // Merge only into an execution section of the SAME category (reasoning
+    // blocks also merge with each other). A category change breaks the run so
+    // each typed node stays distinct.
     if (
       last &&
       last.kind === kind &&
@@ -1188,7 +1190,7 @@ function describeProcessBlock(
   t: (key: string, opts?: Record<string, unknown>) => string
 ): string {
   if (block.kind === 'reasoning') {
-    return t('thinkingLabel')
+    return t('thinkingNow')
   }
   if (block.kind === 'assistant') {
     return t('processTextLabel')
