@@ -197,6 +197,11 @@ export function getActiveCodePackageSync(): ActiveCodePackage | null {
 }
 
 export function currentCodeOrShellVersion(): string {
+  // Unified versioning: installer (shell) and code (hot) updates share ONE
+  // 0.2.N sequence, so this fallback chain never compares across two version
+  // series. When a code update is active, report its version; otherwise report
+  // the installer shell version (app.getVersion). Both are 0.2.x, so semver
+  // comparisons in the updater are always well-defined.
   return getActiveCodePackageSync()?.version ?? app.getVersion()
 }
 

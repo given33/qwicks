@@ -101,13 +101,20 @@ jobs:
           if ($manual) {
             $version = $manual
           } else {
-            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-            $parts = $pkg.version.Split('.')
+            # Unified versioning: installer and code (hot) updates share ONE
+            # 0.2.N sequence (N = git commit count). This MUST match
+            # release-code-update.yml's formula exactly, so the two never diverge
+            # into separate series (the 0.1.x vs 0.2.x split that caused the
+            # "always shows an update / restart loop" bug). Commit count is
+            # monotonically increasing, so a newer installer is always a higher
+            # version than any earlier code update.
+            $major = 0
+            $minor = 2
             $patch = (git rev-list --count HEAD).Trim()
             if ($patch -notmatch '^\d+$') {
               throw "Could not compute a monotonic patch version from git history."
             }
-            $version = "$($parts[0]).$($parts[1]).$patch"
+            $version = "$major.$minor.$patch"
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Version must be x.y.z, got: $version"

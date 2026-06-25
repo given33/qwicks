@@ -97,11 +97,12 @@ jobs:
           if ($manual) {
             $version = $manual
           } else {
-            # Code (hot) updates use a separate minor segment (0.2.x) so their
-            # version numbers never collide with installer releases (0.1.x).
-            # The client compares code vs shell versions with semver: any hot
-            # update 0.2.n is newer than any shell 0.1.n, and the two series
-            # advance independently off the same commit count.
+            # Unified versioning: code (hot) updates use 0.2.N (N = git commit
+            # count), the SAME series as installer releases (release-windows.yml
+            # uses the identical formula). A code update and an installer built
+            # from the same commit therefore share a version number, and the
+            # client's currentCodeOrShellVersion() (active code version ?? shell
+            # version) always compares within one series.
             $major = 0
             $codeMinor = 2
             $patch = (git rev-list --count HEAD).Trim()

@@ -1,7 +1,7 @@
 {
   "name": "qwicks-gui",
   "productName": "QWicks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Electron workbench for the QWicks runtime (HTTP/SSE)",
   "main": "./out/main/index.js",
   "type": "module",
