@@ -26,6 +26,22 @@ function isSafeForExternalSearch(value: string): boolean {
   return true
 }
 
+/**
+ * Batch E(spec §5.3):一个 memory 能否贡献 slot 到外部搜索 query?
+ * - sensitivityCategories ∩ {health,financial,identity} → 永不(slot 内容不得外泄)
+ * - connector 来源(gmail/drive/file)私有内容 → 永不
+ * - location 类(将来加入)→ 允许(这是文档招牌特性)
+ * 叠加 isSafeForExternalSearch(PII/secret/injection)二道过滤在调用处。
+ */
+const SLOT_BLOCKED_CATEGORIES = new Set(['health', 'financial', 'identity'])
+const CONNECTOR_SOURCES = new Set(['gmail', 'drive', 'file', 'connector'])
+
+function isSlotShareable(memory: MemoryItem): boolean {
+  if ((memory.sensitivityCategories ?? []).some((c) => SLOT_BLOCKED_CATEGORIES.has(c))) return false
+  if (CONNECTOR_SOURCES.has(String(memory.provenance?.source ?? ''))) return false
+  return true
+}
+
 export interface RewriteContext {
   userId: string
   query: string
@@ -76,7 +92,8 @@ export function rewriteQuery(ctx: RewriteContext): RewriteResult {
     if (hasFood) {
       const diet = extractDiet(mem.content)
       // 2.3(工业级):敏感过滤 —— SSN/密码/健康信息不进入外部搜索 query
-      if (diet && isSafeForExternalSearch(diet)) {
+      // Batch E:叠加 memory 级来源/类别过滤(health/financial/identity + connector 私有内容)
+      if (diet && isSlotShareable(mem) && isSafeForExternalSearch(diet)) {
         applied.push({ memoryId: mem.id, slot: 'diet', extractedValue: diet })
         additions.push(diet)
       }
@@ -84,7 +101,7 @@ export function rewriteQuery(ctx: RewriteContext): RewriteResult {
     // location 槽:仅当 query 有 location 意图时注入
     if (hasLocation) {
       const loc = extractLocation(mem.content)
-      if (loc && isSafeForExternalSearch(loc)) {
+      if (loc && isSlotShareable(mem) && isSafeForExternalSearch(loc)) {
         applied.push({ memoryId: mem.id, slot: 'location', extractedValue: loc })
         additions.push(loc)
       }

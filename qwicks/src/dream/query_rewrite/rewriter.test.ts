@@ -65,3 +65,34 @@ describe('rewriteQuery (memory rewrites search query, doc §3.5)', () => {
     expect(r.rewritten.toLowerCase()).toContain('berlin')
   })
 })
+
+// Batch E(spec §5.3):slot 来源隐私过滤。
+describe('rewriteQuery slot privacy (Batch E)', () => {
+  function memWith(content: string, opts: { categories?: string[]; source?: string } = {}): MemoryItem {
+    const m = mk(content, MemoryType.FACT, 0.8)
+    m.sensitivityCategories = opts.categories ?? []
+    if (opts.source) m.provenance.source = opts.source as never
+    return m
+  }
+
+  it('health-category memory never contributes a slot', () => {
+    const r = rewriteQuery({ userId: 'u', query: 'recommend a restaurant', memories: [memWith('I live in Paris and I am vegan', { categories: ['health'] })] })
+    expect(r.rewritten).toBe('recommend a restaurant')
+    expect(r.appliedMemories).toEqual([])
+  })
+
+  it('financial/identity-category memory never contributes a slot', () => {
+    const r = rewriteQuery({ userId: 'u', query: 'restaurants nearby', memories: [memWith('I live in Paris', { categories: ['financial'] })] })
+    expect(r.rewritten).toBe('restaurants nearby')
+  })
+
+  it('location-category-free memory contributes location slot (signature feature)', () => {
+    const r = rewriteQuery({ userId: 'u', query: 'restaurants nearby', memories: [memWith('I live in Paris')] })
+    expect(r.rewritten.toLowerCase()).toContain('paris')
+  })
+
+  it('connector-source private content does not enter query', () => {
+    const r = rewriteQuery({ userId: 'u', query: 'restaurants nearby', memories: [memWith('I live in Paris', { source: 'gmail' })] })
+    expect(r.rewritten).toBe('restaurants nearby')
+  })
+})
