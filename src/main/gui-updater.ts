@@ -1072,7 +1072,7 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
       }
       emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
       await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
-      // 标记"为更新退出"（app-main 的 before-quit 据此放行，runtime 已停止）。
+      // 标记"为更新退出"（index.ts 的 before-quit 据此放行，runtime 已停止）。
       ;(process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall = true
       await installCodeUpdatePackage(downloadedCodePackage)
       app.relaunch()
@@ -1090,7 +1090,7 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
     }
     emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
     await Promise.all([pendingVersionStateWrite, runBeforeInstallUpdate()])
-    // 标记"为更新退出"（app-main 的 before-quit 据此放行，runtime 已停止），
+    // 标记"为更新退出"（index.ts 的 before-quit 据此放行，runtime 已停止），
     // 否则 before-quit 的 preventDefault 会阻止 app 真正退出，
     // electron-updater 的 will-quit 安装钩子不触发 → 安装器不启动。
     ;(process as unknown as { qwicksUpdateInstall?: boolean }).qwicksUpdateInstall = true

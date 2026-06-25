@@ -340,7 +340,7 @@ describe('installGuiUpdate', () => {
   })
 
   it('marks process.qwicksUpdateInstall so before-quit lets the NSIS installer run', async () => {
-    // The full-package installer branch must set this flag: app-main's
+    // The full-package installer branch must set this flag: index.ts's
     // before-quit handler checks it to decide whether to block the quit. If
     // the flag is never set, preventDefault keeps the app alive and the
     // silent NSIS installer never launches — the "downloaded but won't

@@ -216,13 +216,6 @@ export function resolveHotCodeRendererIndexPath(): string | null {
   return fileExists(indexPath) ? indexPath : null
 }
 
-export function resolveHotCodeMainPath(): string | null {
-  const active = getActiveCodePackageSync()
-  if (!active) return null
-  const mainPath = join(active.root, 'main', 'app-main.js')
-  return fileExists(mainPath) ? mainPath : null
-}
-
 export function resolveHotCodeQWicksRoot(defaultRoot: string): string {
   const active = getActiveCodePackageSync()
   if (!active) return defaultRoot
@@ -274,9 +267,16 @@ export async function deactivateActiveCodePackage(reason: string): Promise<void>
 }
 
 function validateInstalledCodeRoot(root: string): boolean {
+  // A hot code update only swaps the renderer + preload (+ qwicks runtime).
+  // The main process (out/main/index.js) is NEVER part of a code.zip — it is
+  // bundled in app.asar and only replaced by a full installer — so requiring
+  // main/app-main.js here would reject every real code package and make
+  // "restart to update" silently do nothing (installCodeUpdatePackage throws).
+  // Require exactly the two artifacts the hot-code loaders actually consume:
+  //   resolveHotCodeRendererIndexPath -> renderer/index.html
+  //   resolveHotCodePreloadPath       -> preload/index.cjs | preload/index.mjs
   return (
     directoryExists(root) &&
-    fileExists(join(root, 'main', 'app-main.js')) &&
     fileExists(join(root, 'renderer', 'index.html')) &&
     (fileExists(join(root, 'preload', 'index.cjs')) || fileExists(join(root, 'preload', 'index.mjs')))
   )
@@ -346,7 +346,9 @@ export async function installCodeUpdatePackage(
   const packageRoot = resolveExtractedPackageRoot(extractDir)
   if (!validateInstalledCodeRoot(packageRoot)) {
     await rm(stagingRoot, { recursive: true, force: true })
-    throw new Error('The downloaded code package is missing renderer/index.html or preload/index.cjs.')
+    throw new Error(
+      'The downloaded code package is missing renderer/index.html or preload/index.cjs (or preload/index.mjs).'
+    )
   }
 
   await mkdir(dirname(targetRoot), { recursive: true })
