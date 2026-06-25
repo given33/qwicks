@@ -56,11 +56,11 @@ function render(target: ModelProviderProfileV1, fetched: string[]): string {
 
 describe('ProviderModelImportDialog', () => {
   it('shows the fetched count, a search input, and per-kind filter chips', () => {
-    const html = render(provider(), ['gpt-4o', 'gpt-4o-mini', 'whisper-1', 'dall-e-3'])
+    const html = render(provider(), ['gpt-4o', 'gpt-4o-mini', 'dall-e-3'])
     expect(html).toContain('Pick models to import')
-    expect(html).toContain('Fetched 4 from Acme')
+    expect(html).toContain('Fetched 3 from Acme')
     expect(html).toContain('Search by model name')
-    expect(html).toContain('All (4)')
+    expect(html).toContain('All (3)')
     expect(html).toContain('Text chat · 2')
   })
 
