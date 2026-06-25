@@ -44,6 +44,8 @@ afterEach(() => {
 
 describe('write PDF text service', () => {
   it('extracts page text from a text-layer PDF fixture', async () => {
+    // pdfjs-dist cold-start (worker load + font data) is slow on CI runners;
+    // give it headroom past the 5s default so this doesn't flake.
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'ds-gui-write-pdf-text-'))
     const pdfPath = join(workspaceRoot, 'papers', 'fixture.pdf')
     await mkdir(join(workspaceRoot, 'papers'), { recursive: true })
@@ -63,5 +65,5 @@ describe('write PDF text service', () => {
       charStart: 0
     })
     expect(result.pages[0].text).toContain('PDF BM25 keyword retrieval context')
-  })
+  }, 30_000)
 })
