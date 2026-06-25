@@ -77,7 +77,6 @@ export function initialSetupSelection(settings: AppSettingsV1): InitialSetupSele
 }
 
 export type InitialSetupAutoWirePlan = {
-  speechProviderId: string
   imageProviderId: string
 }
 
@@ -92,21 +91,13 @@ export function initialSetupAutoWirePlan(
   drafts: InitialSetupDrafts
 ): InitialSetupAutoWirePlan {
   const runtime = getQWicksRuntimeSettings(settings)
-  const speechUnconfigured = !runtime.speechToText.enabled && !runtime.speechToText.providerId.trim()
   const imageUnconfigured = !runtime.imageGeneration.enabled && !runtime.imageGeneration.providerId.trim()
-  const plan: InitialSetupAutoWirePlan = { speechProviderId: '', imageProviderId: '' }
+  const plan: InitialSetupAutoWirePlan = { imageProviderId: '' }
   for (const preset of INITIAL_SETUP_PROVIDER_PRESETS) {
     const apiKeyFilled = Boolean(drafts[preset.id]?.apiKey.trim())
     const tokenPlanKeyFilled = Boolean(
       preset.tokenPlan && drafts[tokenPlanProviderId(preset.id)]?.apiKey.trim()
     )
-    if (speechUnconfigured && !plan.speechProviderId) {
-      if (preset.speech && apiKeyFilled) {
-        plan.speechProviderId = preset.id
-      } else if (preset.tokenPlan?.speech && tokenPlanKeyFilled) {
-        plan.speechProviderId = tokenPlanProviderId(preset.id)
-      }
-    }
     if (imageUnconfigured && !plan.imageProviderId) {
       if (preset.image && apiKeyFilled) {
         plan.imageProviderId = preset.id
@@ -175,9 +166,6 @@ export function buildInitialSetupSettings(
     apiKey: '',
     baseUrl: '',
     ...(switchingProvider && selectedProfile?.models[0] ? { model: selectedProfile.models[0] } : {}),
-    ...(wire.speechProviderId
-      ? { speechToText: { enabled: true, providerId: wire.speechProviderId } }
-      : {}),
     ...(wire.imageProviderId
       ? { imageGeneration: { enabled: true, providerId: wire.imageProviderId } }
       : {})

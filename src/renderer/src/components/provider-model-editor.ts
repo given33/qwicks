@@ -1,14 +1,12 @@
 import {
   DEFAULT_IMAGE_GENERATION_PROTOCOL,
   DEFAULT_MUSIC_GENERATION_PROTOCOL,
-  DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
   DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
   DEFAULT_VIDEO_GENERATION_PROTOCOL,
   MODEL_REASONING_EFFORTS,
   isComposerChatModelId,
   isImageGenerationModelId,
   isMusicGenerationModelId,
-  isSpeechToTextModelId,
   isTextToSpeechModelId,
   isVideoGenerationModelId,
   type ModelEndpointFormat,
@@ -19,9 +17,9 @@ import {
   type ModelReasoningRequestProtocol
 } from '@shared/app-settings'
 
-export type ProviderModelKind = 'chat' | 'image' | 'speech' | 'tts' | 'music' | 'video'
+export type ProviderModelKind = 'chat' | 'image' | 'tts' | 'music' | 'video'
 
-export const PROVIDER_MODEL_KINDS: ProviderModelKind[] = ['chat', 'image', 'speech', 'tts', 'music', 'video']
+export const PROVIDER_MODEL_KINDS: ProviderModelKind[] = ['chat', 'image', 'tts', 'music', 'video']
 
 /** Reasoning effort choices offered in the editor. `auto` stays internal-only. */
 export const PROVIDER_MODEL_REASONING_EFFORT_CHOICES: ModelReasoningEffort[] =
@@ -144,7 +142,6 @@ export function providerModelIds(
 ): string[] {
   if (kind === 'chat') return [...provider.models]
   if (kind === 'image') return [...(provider.image?.models ?? [])]
-  if (kind === 'speech') return [...(provider.speech?.models ?? [])]
   if (kind === 'tts') return [...(provider.textToSpeech?.models ?? [])]
   if (kind === 'music') return [...(provider.music?.models ?? [])]
   return [...(provider.video?.models ?? [])]
@@ -160,15 +157,13 @@ export function classifyProviderModelIds(
   provider: ModelProviderProfileV1,
   modelIds: readonly string[]
 ): ProviderModelIdGroups {
-  const groups: ProviderModelIdGroups = { chat: [], image: [], speech: [], tts: [], music: [], video: [] }
+  const groups: ProviderModelIdGroups = { chat: [], image: [], tts: [], music: [], video: [] }
   const knownImageIds = new Set(providerModelIds(provider, 'image').map(modelKey))
-  const knownSpeechIds = new Set(providerModelIds(provider, 'speech').map(modelKey))
   const knownTtsIds = new Set(providerModelIds(provider, 'tts').map(modelKey))
   const knownMusicIds = new Set(providerModelIds(provider, 'music').map(modelKey))
   const knownVideoIds = new Set(providerModelIds(provider, 'video').map(modelKey))
   const explicitNonChatIds = [
     ...providerModelIds(provider, 'image'),
-    ...providerModelIds(provider, 'speech'),
     ...providerModelIds(provider, 'tts'),
     ...providerModelIds(provider, 'music'),
     ...providerModelIds(provider, 'video')
@@ -176,7 +171,6 @@ export function classifyProviderModelIds(
   const seenByKind: Record<ProviderModelKind, Set<string>> = {
     chat: new Set(),
     image: new Set(),
-    speech: new Set(),
     tts: new Set(),
     music: new Set(),
     video: new Set()
@@ -196,10 +190,6 @@ export function classifyProviderModelIds(
     }
     if (knownTtsIds.has(key) || isTextToSpeechModelId(modelId)) {
       pushUniqueModelId(groups.tts, seenByKind.tts, modelId)
-      continue
-    }
-    if (knownSpeechIds.has(key) || isSpeechToTextModelId(modelId)) {
-      pushUniqueModelId(groups.speech, seenByKind.speech, modelId)
       continue
     }
     if (knownImageIds.has(key) || isImageGenerationModelId(modelId)) {
@@ -270,17 +260,6 @@ export function applyProviderModelForm(
       image: { ...image, models: appendModelId(image.models, modelId) }
     }
   }
-  if (form.kind === 'speech') {
-    const speech = withoutOriginal.speech ?? {
-      protocol: DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
-      baseUrl: withoutOriginal.baseUrl.trim(),
-      models: []
-    }
-    return {
-      ...withoutOriginal,
-      speech: { ...speech, models: appendModelId(speech.models, modelId) }
-    }
-  }
   if (form.kind === 'tts') {
     const textToSpeech = withoutOriginal.textToSpeech ?? {
       protocol: DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
@@ -336,13 +315,6 @@ export function removeProviderModel(
     return {
       ...provider,
       image: { ...provider.image, models: filterModelId(provider.image.models, trimmed) }
-    }
-  }
-  if (kind === 'speech') {
-    if (!provider.speech) return provider
-    return {
-      ...provider,
-      speech: { ...provider.speech, models: filterModelId(provider.speech.models, trimmed) }
     }
   }
   if (kind === 'tts') {

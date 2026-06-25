@@ -11,10 +11,8 @@ import type {
   ModelProviderMusicCapabilityV1,
   ModelProviderProfileV1,
   ModelProviderSettingsV1,
-  ModelProviderSpeechCapabilityV1,
   ModelProviderTextToSpeechCapabilityV1,
   ModelProviderVideoCapabilityV1,
-  SpeechToTextProtocol,
   TextToSpeechProtocol,
   VideoGenerationProtocol
 } from '@shared/app-settings'
@@ -22,7 +20,6 @@ import {
   DEFAULT_IMAGE_GENERATION_PROTOCOL,
   DEFAULT_MUSIC_GENERATION_PROTOCOL,
   DEFAULT_MODEL_PROVIDER_ID,
-  DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
   DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
   DEFAULT_VIDEO_GENERATION_PROTOCOL,
   MODEL_ENDPOINT_FORMATS,
@@ -48,7 +45,6 @@ import {
   KeyRound,
   Loader2,
   Lock,
-  Mic,
   Music2,
   PlugZap,
   Plus,
@@ -80,11 +76,6 @@ const MODEL_ENDPOINT_FORMAT_LABEL_KEYS: Record<ModelEndpointFormat, string> = {
 const IMAGE_GENERATION_PROTOCOL_LABEL_KEYS: Record<ImageGenerationProtocol, string> = {
   'openai-images': 'imageGenProtocolOpenAi',
   'minimax-image': 'imageGenProtocolMiniMax'
-}
-
-const SPEECH_TO_TEXT_PROTOCOL_LABEL_KEYS: Record<SpeechToTextProtocol, string> = {
-  'openai-transcriptions': 'speechProtocolOpenAi',
-  'mimo-asr': 'speechProtocolMimoAsr'
 }
 
 const TEXT_TO_SPEECH_PROTOCOL_LABEL_KEYS: Record<TextToSpeechProtocol, string> = {
@@ -173,14 +164,6 @@ function defaultImageCapability(baseUrl: string): ModelProviderImageCapabilityV1
   }
 }
 
-function defaultSpeechCapability(baseUrl: string): ModelProviderSpeechCapabilityV1 {
-  return {
-    protocol: DEFAULT_SPEECH_TO_TEXT_PROTOCOL,
-    baseUrl: baseUrl.trim(),
-    models: []
-  }
-}
-
 function defaultTextToSpeechCapability(baseUrl: string): ModelProviderTextToSpeechCapabilityV1 {
   return {
     protocol: DEFAULT_TEXT_TO_SPEECH_PROTOCOL,
@@ -218,19 +201,6 @@ function presetImageCapability(providerId: string): ModelProviderImageCapability
   const preset = getModelProviderPreset(providerId)
   if (!preset?.image) return null
   return { protocol: preset.image.protocol, baseUrl: preset.image.baseUrl, models: [...preset.image.models] }
-}
-
-function presetSpeechCapability(provider: ModelProviderProfileV1): ModelProviderSpeechCapabilityV1 | null {
-  const direct = getModelProviderPreset(provider.id)
-  if (direct?.speech) {
-    return { protocol: direct.speech.protocol, baseUrl: direct.speech.baseUrl, models: [...direct.speech.models] }
-  }
-  const tokenPlanSpeech = tokenPlanPresetForProfileId(provider.id)?.tokenPlan?.speech
-  if (tokenPlanSpeech) {
-    // 套餐端点自己提供 ASR,语音地址跟随该 profile 的服务地址。
-    return { protocol: tokenPlanSpeech.protocol, baseUrl: provider.baseUrl, models: [...tokenPlanSpeech.models] }
-  }
-  return null
 }
 
 function presetTextToSpeechCapability(provider: ModelProviderProfileV1): ModelProviderTextToSpeechCapabilityV1 | null {
@@ -586,28 +556,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     })
   }
 
-  const updateModelProviderSpeech = (id: string, patch: Partial<ModelProviderSpeechCapabilityV1>): void => {
-    const target = displayProviders.find((item) => item.id === id)
-    if (!target) return
-    patchProviderProfile(target, (item) => ({
-      ...item,
-      speech: {
-        ...(item.speech ?? defaultSpeechCapability(item.baseUrl)),
-        ...patch
-      }
-    }))
-  }
-
-  const removeModelProviderSpeech = (id: string): void => {
-    const target = displayProviders.find((item) => item.id === id)
-    if (!target) return
-    patchProviderProfile(target, (item) => {
-      const { speech: _speech, ...rest } = item
-      void _speech
-      return rest
-    })
-  }
-
   const updateModelProviderTextToSpeech = (id: string, patch: Partial<ModelProviderTextToSpeechCapabilityV1>): void => {
     const target = displayProviders.find((item) => item.id === id)
     if (!target) return
@@ -770,7 +718,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         ...presetProvider.modelProfiles
       },
       image: presetProvider.image ?? existingProvider.image,
-      speech: presetProvider.speech ?? existingProvider.speech,
       textToSpeech: presetProvider.textToSpeech ?? existingProvider.textToSpeech,
       music: presetProvider.music ?? existingProvider.music,
       video: presetProvider.video ?? existingProvider.video
@@ -791,7 +738,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     if (!target) return
     const usedByChat = activeQWicksProviderId === id
     const usedByImage = (qwicks.imageGeneration?.providerId ?? '').trim() === id
-    const usedBySpeech = (qwicks.speechToText?.providerId ?? '').trim() === id
     const usedByTextToSpeech = (qwicks.textToSpeech?.providerId ?? '').trim() === id
     const usedByMusic = (qwicks.musicGeneration?.providerId ?? '').trim() === id
     const usedByVideo = (qwicks.videoGeneration?.providerId ?? '').trim() === id
@@ -802,7 +748,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     const references = [
       ...(usedByChat ? [t('modelProviderDeleteInUseChat')] : []),
       ...(usedByImage ? [t('modelProviderDeleteInUseImage')] : []),
-      ...(usedBySpeech ? [t('modelProviderDeleteInUseSpeech')] : []),
       ...(usedByTextToSpeech ? [t('modelProviderDeleteInUseTextToSpeech')] : []),
       ...(usedByMusic ? [t('modelProviderDeleteInUseMusic')] : []),
       ...(usedByVideo ? [t('modelProviderDeleteInUseVideo')] : []),
@@ -817,11 +762,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     if (!confirmed) return
     const nextProviders = modelProviders.filter((item) => item.id !== id)
     const qwicksPatch: QWicksRuntimeSettingsPatchV1 | undefined =
-      usedByChat || usedByImage || usedBySpeech || usedByTextToSpeech || usedByMusic || usedByVideo
+      usedByChat || usedByImage || usedByTextToSpeech || usedByMusic || usedByVideo
         ? {
             ...(usedByChat ? { providerId: DEFAULT_MODEL_PROVIDER_ID } : {}),
             ...(usedByImage ? { imageGeneration: { providerId: '' } } : {}),
-            ...(usedBySpeech ? { speechToText: { providerId: '' } } : {}),
             ...(usedByTextToSpeech ? { textToSpeech: { providerId: '' } } : {}),
             ...(usedByMusic ? { musicGeneration: { providerId: '' } } : {}),
             ...(usedByVideo ? { videoGeneration: { providerId: '' } } : {})
@@ -908,9 +852,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     const nextImageModels = target.image
       ? mergeProviderModelIds(target.image.models, picked.image)
       : picked.image
-    const nextSpeechModels = target.speech
-      ? mergeProviderModelIds(target.speech.models, picked.speech)
-      : picked.speech
     const nextTextToSpeechModels = target.textToSpeech
       ? mergeProviderModelIds(target.textToSpeech.models, picked.tts)
       : picked.tts
@@ -923,7 +864,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     const added =
       addedModelCount(target.models, nextChatModels)
       + addedModelCount(target.image?.models ?? [], nextImageModels)
-      + addedModelCount(target.speech?.models ?? [], nextSpeechModels)
       + addedModelCount(target.textToSpeech?.models ?? [], nextTextToSpeechModels)
       + addedModelCount(target.music?.models ?? [], nextMusicModels)
       + addedModelCount(target.video?.models ?? [], nextVideoModels)
@@ -933,9 +873,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         models: nextChatModels,
         ...(nextImageModels.length > 0
           ? { image: { ...(item.image ?? presetImageCapability(item.id) ?? defaultImageCapability(item.baseUrl)), models: nextImageModels } }
-          : {}),
-        ...(nextSpeechModels.length > 0
-          ? { speech: { ...(item.speech ?? presetSpeechCapability(item) ?? defaultSpeechCapability(item.baseUrl)), models: nextSpeechModels } }
           : {}),
         ...(nextTextToSpeechModels.length > 0
           ? { textToSpeech: { ...(item.textToSpeech ?? presetTextToSpeechCapability(item) ?? defaultTextToSpeechCapability(item.baseUrl)), models: nextTextToSpeechModels } }
@@ -993,9 +930,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   const activeImageBaseUrlInvalid = Boolean(
     activeProvider?.image && !isAcceptableHttpUrl(activeProvider.image.baseUrl)
   )
-  const activeSpeechBaseUrlInvalid = Boolean(
-    activeProvider?.speech && !isAcceptableHttpUrl(activeProvider.speech.baseUrl)
-  )
+
   const activeTextToSpeechBaseUrlInvalid = Boolean(
     activeProvider?.textToSpeech && !isAcceptableHttpUrl(activeProvider.textToSpeech.baseUrl)
   )
@@ -1048,7 +983,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
           {item.models.some((model) =>
             modelSupportsImageInput(profileForModel(item, model))
           ) ? <span className="text-[11px] font-semibold text-ds-muted">{t('modelProviderVisionBadge')}</span> : null}
-          {item.speech ? <Mic className="h-3 w-3" strokeWidth={1.9} /> : null}
           {item.textToSpeech ? <AudioLines className="h-3 w-3" strokeWidth={1.9} /> : null}
           {item.music ? <Music2 className="h-3 w-3" strokeWidth={1.9} /> : null}
           {item.video ? <Clapperboard className="h-3 w-3" strokeWidth={1.9} /> : null}
@@ -1306,10 +1240,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                             type="button"
                             onClick={() => {
                               const patch: Partial<ModelProviderProfileV1> = { baseUrl: region.baseUrl }
-                              const speech = activeProvider.speech
-                              if (speech && activeTokenPlanRegions.some((item) => item.baseUrl === speech.baseUrl.trim())) {
-                                patch.speech = { ...speech, baseUrl: region.baseUrl }
-                              }
                               const textToSpeech = activeProvider.textToSpeech
                               if (
                                 textToSpeech &&
@@ -1434,69 +1364,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                           onChange={(models) => updateModelProviderImage(activeProvider.id, { models })}
                           placeholder={t('modelProviderModelsPlaceholder')}
                           inputAriaLabel={t('imageGenModel')}
-                          removeLabel={(model) => t('modelProviderModelRemove', { model })}
-                        />
-                      </label>
-                    </div>
-                  ) : null}
-                </DetailSection>
-                <DetailSection
-                  title={t('modelProviderSpeechCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.speech)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            speech: presetSpeechCapability(activeProvider) ?? defaultSpeechCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderSpeech(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
-                >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderSpeechCapabilityDesc')}</p>
-                  {activeProvider.speech ? (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className={fieldLabelClass}>
-                        {t('speechToTextProtocol')}
-                        <select
-                          className={selectControlClass}
-                          value={activeProvider.speech.protocol}
-                          onChange={(e) => updateModelProviderSpeech(activeProvider.id, {
-                            protocol: e.target.value as SpeechToTextProtocol
-                          })}
-                        >
-                          {Object.entries(SPEECH_TO_TEXT_PROTOCOL_LABEL_KEYS).map(([protocol, key]) => (
-                            <option key={protocol} value={protocol}>{t(key)}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className={fieldLabelClass}>
-                        {t('speechToTextBaseUrl')}
-                        <input
-                          className={textInputClass}
-                          value={activeProvider.speech.baseUrl}
-                          placeholder={t('baseUrlPlaceholder')}
-                          spellCheck={false}
-                          onChange={(e) => updateModelProviderSpeech(activeProvider.id, { baseUrl: e.target.value })}
-                        />
-                        {activeSpeechBaseUrlInvalid ? (
-                          <span className="text-[12px] font-normal text-amber-600 dark:text-amber-300">
-                            {t('modelProviderInvalidUrl')}
-                          </span>
-                        ) : null}
-                      </label>
-                      <label className={`${fieldLabelClass} md:col-span-2`}>
-                        {t('speechToTextModels')}
-                        <ModelChipsInput
-                          key={`${activeProvider.id}-speech`}
-                          values={activeProvider.speech.models}
-                          onChange={(models) => updateModelProviderSpeech(activeProvider.id, { models })}
-                          placeholder={t('modelProviderModelsPlaceholder')}
-                          inputAriaLabel={t('speechToTextModels')}
                           removeLabel={(model) => t('modelProviderModelRemove', { model })}
                         />
                       </label>

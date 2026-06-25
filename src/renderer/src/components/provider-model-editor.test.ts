@@ -155,54 +155,10 @@ describe('provider-model-editor', () => {
     })
   })
 
-  it('appends speech models to the existing capability', () => {
-    const target = provider({
-      speech: { protocol: 'mimo-asr', baseUrl: 'https://speech.example.com', models: ['asr-1'] }
-    })
-    const form = { ...newProviderModelForm('speech', target), modelId: 'asr-2' }
-    const next = applyProviderModelForm(target, form)
-    expect(next.speech?.models).toEqual(['asr-1', 'asr-2'])
-    expect(next.speech?.protocol).toBe('mimo-asr')
-  })
-
-  it('creates media generation capabilities when adding non-chat models', () => {
-    const target = provider()
-    const withTts = applyProviderModelForm(target, {
-      ...newProviderModelForm('tts', target),
-      modelId: 'speech-2.8-hd'
-    })
-    expect(withTts.textToSpeech).toEqual({
-      protocol: 'openai-speech',
-      baseUrl: 'https://api.example.com/v1',
-      models: ['speech-2.8-hd']
-    })
-
-    const withMusic = applyProviderModelForm(withTts, {
-      ...newProviderModelForm('music', withTts),
-      modelId: 'music-2.6'
-    })
-    expect(withMusic.music).toEqual({
-      protocol: 'minimax-music',
-      baseUrl: 'https://api.example.com/v1',
-      models: ['music-2.6']
-    })
-
-    const withVideo = applyProviderModelForm(withMusic, {
-      ...newProviderModelForm('video', withMusic),
-      modelId: 'MiniMax-Hailuo-2.3'
-    })
-    expect(withVideo.video).toEqual({
-      protocol: 'minimax-video',
-      baseUrl: 'https://api.example.com/v1',
-      models: ['MiniMax-Hailuo-2.3']
-    })
-  })
-
-  it('lists provider models across chat, image, speech and media capabilities', () => {
+  it('lists provider models across chat, image and media capabilities', () => {
     const target = provider({
       models: ['chat-model'],
       image: { protocol: 'openai-images', baseUrl: 'https://api.example.com/v1', models: ['image-01'] },
-      speech: { protocol: 'mimo-asr', baseUrl: 'https://api.example.com/v1', models: ['mimo-v2.5-asr'] },
       textToSpeech: { protocol: 'mimo-tts', baseUrl: 'https://api.example.com/v1', models: ['mimo-v2.5-tts'] },
       music: { protocol: 'minimax-music', baseUrl: 'https://api.example.com/v1', models: ['music-2.6'] },
       video: { protocol: 'minimax-video', baseUrl: 'https://api.example.com/v1', models: ['MiniMax-Hailuo-2.3'] }
@@ -211,7 +167,6 @@ describe('provider-model-editor', () => {
     expect(providerModelListEntries(target)).toEqual([
       { kind: 'chat', modelId: 'chat-model' },
       { kind: 'image', modelId: 'image-01' },
-      { kind: 'speech', modelId: 'mimo-v2.5-asr' },
       { kind: 'tts', modelId: 'mimo-v2.5-tts' },
       { kind: 'music', modelId: 'music-2.6' },
       { kind: 'video', modelId: 'MiniMax-Hailuo-2.3' }
@@ -220,14 +175,11 @@ describe('provider-model-editor', () => {
 
   it('classifies fetched provider model ids by capability', () => {
     const target = provider({
-      image: { protocol: 'openai-images', baseUrl: 'https://api.example.com/v1', models: ['banana-canvas'] },
-      speech: { protocol: 'openai-transcriptions', baseUrl: 'https://api.example.com/v1', models: ['legacy-asr'] }
+      image: { protocol: 'openai-images', baseUrl: 'https://api.example.com/v1', models: ['banana-canvas'] }
     })
 
     expect(classifyProviderModelIds(target, [
       'chat-capable',
-      'mimo-v2.5-asr',
-      'whisper-1',
       'gpt-image-1',
       'banana-canvas',
       'mimo-v2.5-tts',
@@ -239,7 +191,6 @@ describe('provider-model-editor', () => {
     ])).toEqual({
       chat: ['chat-capable'],
       image: ['gpt-image-1', 'banana-canvas'],
-      speech: ['mimo-v2.5-asr', 'whisper-1'],
       tts: ['mimo-v2.5-tts', 'speech-2.8-hd'],
       music: ['music-2.6'],
       video: ['MiniMax-Hailuo-2.3']
