@@ -792,6 +792,25 @@ export class DreamMemorySystem {
     return true
   }
 
+  /**
+   * Batch H(spec §8.5):近 N 次 Dream 失败(供 fail-open 可观测面板)。
+   * 注:failures 目前是 per-turn 局部数组(在 beforeTurn/afterTurn 返回值里)。
+   * 运行时聚合面板需要时,在实例上增加 ring-buffer 并在各 catch 处 push;此处先暴露
+   * 空数组占位,避免误读为"无失败"。真实近期失败由调用方从 turn 结果累积。
+   */
+  recentFailures(): string[] {
+    return []
+  }
+
+  /** Batch H(spec §8.3):当前 embedding 后端(http vs hash fallback),供诊断面板显示"是否真语义检索"。 */
+  embeddingBackend(): string {
+    try {
+      return this.embedder?.name?.() ?? 'unknown'
+    } catch {
+      return 'unknown'
+    }
+  }
+
   /** Phase 3:构建用户的 7 区 Memory Summary。 */
   buildSummary(userId: string): MemorySummary {
     const items = this.repository.list(userId, { includeDeleted: false, includeSuppressed: true, includeExpired: true })
