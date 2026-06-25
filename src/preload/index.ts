@@ -170,8 +170,6 @@ const api = {
     ipcRenderer.invoke('write:authorize-prototype', payload),
   openWritePrototype: (payload) =>
     ipcRenderer.invoke('write:open-prototype', payload),
-  transcribeSpeech: (payload) =>
-    ipcRenderer.invoke('speech:transcribe', payload),
   listWriteInlineCompletionDebugEntries: () =>
     ipcRenderer.invoke('write:inline-completion-debug:list'),
   clearWriteInlineCompletionDebugEntries: () =>

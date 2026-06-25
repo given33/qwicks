@@ -70,10 +70,6 @@ import type {
   WriteInfographicResult
 } from './write-infographic'
 import type {
-  SpeechTranscriptionRequest,
-  SpeechTranscriptionResult
-} from './speech-to-text'
-import type {
   UiPluginListItem,
   UiPluginManifestV1,
   UiPluginRuntimeFigures
@@ -426,9 +422,6 @@ export type QWicksGuiApi = {
     path: string
     workspaceRoot: string
   }) => Promise<{ ok: boolean; message?: string }>
-  transcribeSpeech: (
-    payload: SpeechTranscriptionRequest
-  ) => Promise<SpeechTranscriptionResult>
   listWriteInlineCompletionDebugEntries: () => Promise<WriteInlineCompletionDebugEntry[]>
   clearWriteInlineCompletionDebugEntries: () => Promise<boolean>
   startSse: (threadId: string, sinceSeq: number, streamId?: string) => Promise<{ streamId: string }>

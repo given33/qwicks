@@ -81,7 +81,6 @@ import {
   workspaceFileTargetPayloadSchema,
   workspaceFileWatchPayloadSchema,
   workspaceFileWritePayloadSchema,
-  speechTranscribePayloadSchema,
   writeInfographicPayloadSchema,
   writeInlineCompletionPayloadSchema,
   writePrototypeFilePayloadSchema,
@@ -156,7 +155,6 @@ import {
 } from '../services/write-inline-completion-service'
 import { requestWriteInfographic } from '../services/write-infographic-service'
 import { authorizePrototypePath } from '../services/prototype-embed-registry'
-import { requestSpeechTranscription } from '../services/speech-to-text-service'
 import {
   getComputerUsePermissions,
   requestComputerUsePermission
@@ -1181,12 +1179,6 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     if (!authorized.ok) return authorized
     return openPathWithShell(authorized.absolutePath)
   })
-  ipcMain.handle('speech:transcribe', async (_, payload: unknown) =>
-    requestSpeechTranscription(
-      await store.load(),
-      parseIpcPayload('speech:transcribe', speechTranscribePayloadSchema, payload)
-    )
-  )
   ipcMain.handle('write:inline-completion-debug:list', async () => listWriteInlineCompletionDebugEntries())
   ipcMain.handle('write:inline-completion-debug:clear', async () => {
     clearWriteInlineCompletionDebugEntries()

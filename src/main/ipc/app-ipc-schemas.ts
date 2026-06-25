@@ -48,7 +48,6 @@ import { GUI_UPDATE_CHANNELS } from '../../shared/gui-update'
 import { WINDOW_CLOSE_ACTIONS } from '../../shared/app-settings'
 import { KEYBOARD_SHORTCUT_COMMANDS } from '../../shared/keyboard-shortcuts'
 import { WRITE_INFOGRAPHIC_MAX_TEXT_CHARS } from '../../shared/write-infographic'
-import { SPEECH_TRANSCRIPTION_MAX_BASE64_CHARS, SPEECH_TRANSCRIPTION_MAX_DURATION_MS } from '../../shared/speech-to-text'
 import {
   TERMINAL_DEFAULT_COLS,
   TERMINAL_DEFAULT_ROWS,
@@ -1562,15 +1561,6 @@ export const writePrototypeFilePayloadSchema = z
   .object({
     path: trimmedString(MAX_PATH_LENGTH),
     workspaceRoot: trimmedString(MAX_PATH_LENGTH)
-  })
-  .strict()
-
-export const speechTranscribePayloadSchema = z
-  .object({
-    audioBase64: z.string().min(1).max(SPEECH_TRANSCRIPTION_MAX_BASE64_CHARS),
-    mimeType: trimmedString(64),
-    durationMs: z.number().int().positive().max(SPEECH_TRANSCRIPTION_MAX_DURATION_MS).optional(),
-    speechToText: speechToTextSettingsSchema.optional()
   })
   .strict()
 
