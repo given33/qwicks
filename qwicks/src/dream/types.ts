@@ -343,6 +343,8 @@ export interface SourceRecordDict {
   ingested_at?: string
   /** 来源是否被删除(用户主动删 chat / 断开 connector / 删 file)。 */
   deleted?: boolean
+  /** Batch C:能否对外共享(按 sourceType 算 — connector/file/gmail→false, chat/saved/custom→true)。ingest 时写定,不可变。 */
+  shareable?: boolean
 }
 
 export class SourceRecord {
@@ -356,7 +358,9 @@ export class SourceRecord {
     public attrs: Record<string, unknown> = {},
     public createdAt: string = nowIso(),
     public ingestedAt: string = nowIso(),
-    public deleted: boolean = false
+    public deleted: boolean = false,
+    /** Batch C:能否对外共享(按 sourceType 算 — connector/file/gmail→false, chat/saved/custom→true)。ingest 时写定,不可变。 */
+    public shareable: boolean = true
   ) {}
 
   static fromDict(raw: SourceRecordDict): SourceRecord {
@@ -372,7 +376,8 @@ export class SourceRecord {
         : {},
       typeof raw.created_at === 'string' ? raw.created_at : nowIso(),
       typeof raw.ingested_at === 'string' ? raw.ingested_at : nowIso(),
-      raw.deleted === true
+      raw.deleted === true,
+      raw.shareable !== false
     )
   }
 
@@ -387,7 +392,8 @@ export class SourceRecord {
       attrs: { ...this.attrs },
       created_at: this.createdAt,
       ingested_at: this.ingestedAt,
-      deleted: this.deleted
+      deleted: this.deleted,
+      shareable: this.shareable
     }
   }
 }

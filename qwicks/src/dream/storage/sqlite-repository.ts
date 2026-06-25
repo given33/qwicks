@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS source_record (
     attrs TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     ingested_at TEXT NOT NULL,
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    shareable INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS ix_source_user ON source_record(user_id);
 CREATE INDEX IF NOT EXISTS ix_source_type ON source_record(source_type);
@@ -249,6 +250,7 @@ interface SourceRow {
   created_at: string
   ingested_at: string
   deleted: number
+  shareable: number
 }
 
 interface SuppressionRow {
@@ -766,16 +768,19 @@ export class SqliteMemoryRepository implements MemoryRepository {
 
   upsertSource(source: SourceRecord): SourceRecord {
     if (!source.id) source.id = 'src_' + this.newId().slice(4)
+    // Batch C:shareable 未显式设时,按 sourceType 推导(connector/file/gmail→false)。
+    const shareable = source.shareable && !['gmail', 'drive', 'file', 'connector'].includes(source.sourceType)
     this.db
       .prepare(
         /* sql */ `
         INSERT INTO source_record (id, user_id, source_type, external_ref, title, content, attrs,
-                                   created_at, ingested_at, deleted)
-        VALUES (@id,@user_id,@source_type,@external_ref,@title,@content,@attrs,@created_at,@ingested_at,@deleted)
+                                   created_at, ingested_at, deleted, shareable)
+        VALUES (@id,@user_id,@source_type,@external_ref,@title,@content,@attrs,@created_at,@ingested_at,@deleted,@shareable)
         ON CONFLICT(id) DO UPDATE SET
             user_id=excluded.user_id, source_type=excluded.source_type,
             external_ref=excluded.external_ref, title=excluded.title, content=excluded.content,
-            attrs=excluded.attrs, ingested_at=excluded.ingested_at, deleted=excluded.deleted
+            attrs=excluded.attrs, ingested_at=excluded.ingested_at, deleted=excluded.deleted,
+            shareable=excluded.shareable
       `
       )
       .run({
@@ -788,8 +793,10 @@ export class SqliteMemoryRepository implements MemoryRepository {
         attrs: JSON.stringify(source.attrs),
         created_at: source.createdAt,
         ingested_at: source.ingestedAt,
-        deleted: source.deleted ? 1 : 0
+        deleted: source.deleted ? 1 : 0,
+        shareable: shareable ? 1 : 0
       })
+    source.shareable = shareable
     this.logEvent('source_upsert', {
       recordId: source.id,
       userId: source.userId,
@@ -1248,6 +1255,33 @@ export class SqliteMemoryRepository implements MemoryRepository {
     } catch {
       /* index creation non-fatal */
     }
+
+    // Batch C:source_record.shareable 列 + 回填。
+    this.ensureSourceShareable()
+  }
+
+  /** Batch C:确保 source_record 有 shareable 列,并按 sourceType 回填已存在行。 */
+  private ensureSourceShareable(): void {
+    const table = this.db
+      .prepare(/* sql */ `SELECT name FROM sqlite_master WHERE type='table' AND name='source_record'`)
+      .get() as { name: string } | undefined
+    if (!table) return // 还没建表,SCHEMA 会建
+    const cols = new Set(
+      (this.db.prepare(/* sql */ `PRAGMA table_info(source_record)`).all() as Array<{ name: string }>).map(
+        (r) => r.name
+      )
+    )
+    if (!cols.has('shareable')) {
+      this.db.exec(/* sql */ `ALTER TABLE source_record ADD COLUMN shareable INTEGER NOT NULL DEFAULT 1`)
+    }
+    // 回填:connector/file/gmail → 0,其余 → 1。
+    try {
+      this.db.exec(
+        /* sql */ `UPDATE source_record SET shareable = CASE WHEN source_type IN ('gmail','drive','file','connector') THEN 0 ELSE 1 END`
+      )
+    } catch {
+      /* 回填非致命(空表等) */
+    }
   }
 
   private itemToRowParams(item: MemoryItem): Record<string, unknown> {
@@ -1341,7 +1375,8 @@ export class SqliteMemoryRepository implements MemoryRepository {
       attrs: parseJsonObject(row.attrs),
       created_at: row.created_at,
       ingested_at: row.ingested_at,
-      deleted: boolFromInt(row.deleted)
+      deleted: boolFromInt(row.deleted),
+      shareable: boolFromInt(row.shareable)
     })
   }
 
