@@ -58,7 +58,6 @@ import {
   KeyboardShortcutsSettingsSection,
   LlmDebugSettingsSection,
   WorktreeSettingsSection,
-  MediaGenerationSettingsSection,
   MemorySettingsSection,
   ModelConfigurationSettingsSection,
   DreamMemorySummarySection,
@@ -67,7 +66,7 @@ import {
   WriteSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'media' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
+type SettingsCategory = 'general' | 'modelConfiguration' | 'providers' | 'write' | 'agents' | 'skills' | 'mcp' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type InlineNotice = {
@@ -290,10 +289,6 @@ export function SettingsView(): ReactElement {
       setCategory('write')
       return
     }
-    if (settingsSection === 'imageGeneration' || settingsSection === 'mediaGeneration' || settingsSection === 'speechToText') {
-      setCategory('media')
-      return
-    }
     if (settingsSection === 'permissions') {
       setCategory('permissions')
       return
@@ -328,21 +323,17 @@ export function SettingsView(): ReactElement {
       settingsSection === 'modelConfiguration' ||
       settingsSection === 'providers' ||
       settingsSection === 'write' ||
-      settingsSection === 'imageGeneration' ||
-      settingsSection === 'mediaGeneration' ||
-      settingsSection === 'speechToText' ||
       settingsSection === 'archives' ||
       settingsSection === 'claw' ||
       settingsSection === 'shortcuts' ||
       settingsSection === 'easterEgg' ||
       settingsSection === 'updates' ||
-      category === 'media' ||
       (category !== 'agents' && category !== 'permissions')
     ) {
       return
     }
     const refs: Record<
-      Exclude<SettingsRouteSection, 'general' | 'modelConfiguration' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'archives' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates'>,
+      Exclude<SettingsRouteSection, 'general' | 'modelConfiguration' | 'providers' | 'write' | 'archives' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates'>,
       HTMLDivElement | null
     > = {
       agents: agentsSectionRef.current,
@@ -1050,8 +1041,6 @@ export function SettingsView(): ReactElement {
           ) : null}
           {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
-          {/* 媒体能力（任务5）：图像/语音合成/音乐/视频生成 + 语音输入合并为单个卡片。 */}
-          {category === 'media' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'agents' || category === 'permissions' || category === 'skills' || category === 'mcp' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}
