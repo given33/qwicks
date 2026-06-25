@@ -2704,7 +2704,7 @@ export class AgentLoop {
     if (this.opts.dreamSystem?.beforeTurn) {
       try {
         const result = await this.opts.dreamSystem.beforeTurn({
-          userId: input.userId ?? 'default', prompt: input.prompt,
+          userId: input.userId ?? this.memoryUserId, prompt: input.prompt,
           threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
         })
         const memories = result.memories
@@ -2718,7 +2718,7 @@ export class AgentLoop {
       } catch { /* fail-open */ }
     } else if (this.opts.dreamSystem?.retrieve) {
       try {
-        const hits = await this.opts.dreamSystem.retrieve(input.prompt, 'default', 8)
+        const hits = await this.opts.dreamSystem.retrieve(input.prompt, input.userId ?? this.memoryUserId, 8)
         const memories = hits.map((h) => ({ id: h.item.id, content: h.item.content, scope: h.item.scope }))
         if (this.opts.memoryStore) this.opts.memoryStore.setLastInjected(memories.map((m) => m.id))
         return memories
@@ -2751,7 +2751,7 @@ export class AgentLoop {
     if (!this.opts.dreamSystem?.afterTurn) return
     try {
       await this.opts.dreamSystem.afterTurn({
-        userId: input.userId ?? 'default', userPrompt: input.userPrompt, assistantReply: input.assistantReply,
+        userId: input.userId ?? this.memoryUserId, userPrompt: input.userPrompt, assistantReply: input.assistantReply,
         threadId: input.threadId ?? null, turnId: input.turnId ?? null, temporary: false
       })
     } catch (err) {
