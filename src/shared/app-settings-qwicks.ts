@@ -157,6 +157,7 @@ export function defaultQWicksRuntimeSettings(
     textToSpeech: defaultQWicksTextToSpeechSettings(),
     musicGeneration: defaultQWicksMusicGenerationSettings(),
     videoGeneration: defaultQWicksVideoGenerationSettings(),
+    skillConfigs: {},
     modelProfiles: {},
     memoryEnabled: false,
     memoryBackend: 'file',
@@ -412,6 +413,10 @@ export function mergeQWicksRuntimeSettings(
     ...currentVideoGeneration,
     ...(patch?.videoGeneration ?? {})
   })
+  const nextSkillConfigs = normalizeSkillConfigs({
+    ...(current.skillConfigs ?? {}),
+    ...(patch?.skillConfigs ?? {})
+  })
   const currentComputerUse = normalizeQWicksComputerUseSettings(current.computerUse)
   const nextComputerUse = normalizeQWicksComputerUseSettings({
     ...currentComputerUse,
@@ -456,6 +461,7 @@ export function mergeQWicksRuntimeSettings(
     textToSpeech: nextTextToSpeech,
     musicGeneration: nextMusicGeneration,
     videoGeneration: nextVideoGeneration,
+    skillConfigs: nextSkillConfigs,
     modelProfiles: nextModelProfiles,
     memoryEnabled: patch?.memoryEnabled ?? current.memoryEnabled ?? false,
     memoryBackend: resolveMemoryBackend({ memoryBackend: patch?.memoryBackend ?? current.memoryBackend }),
@@ -504,6 +510,29 @@ function normalizeQWicksSpeechToTextSettings(
 
 function normalizeQWicksSpeechToTextProtocol(value: unknown): SpeechToTextProtocol {
   return value === 'mimo-asr' ? 'mimo-asr' : DEFAULT_SPEECH_TO_TEXT_PROTOCOL
+}
+
+/**
+ * Normalize the generic per-skill config store. Drops non-record entries and
+ * any field values that are not string/number/boolean. Always returns an object
+ * (never undefined), so a missing store normalizes to `{}`.
+ */
+function normalizeSkillConfigs(
+  input: Record<string, Record<string, string | number | boolean>> | undefined
+): Record<string, Record<string, string | number | boolean>> {
+  if (!input || typeof input !== 'object') return {}
+  const out: Record<string, Record<string, string | number | boolean>> = {}
+  for (const [skillId, fields] of Object.entries(input)) {
+    if (!fields || typeof fields !== 'object') continue
+    const clean: Record<string, string | number | boolean> = {}
+    for (const [key, value] of Object.entries(fields)) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        clean[key] = value
+      }
+    }
+    out[skillId] = clean
+  }
+  return out
 }
 
 function normalizeQWicksTextToSpeechSettings(
@@ -1048,6 +1077,7 @@ export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partia
     textToSpeech: normalizeQWicksTextToSpeechSettings(explicitQWicks.textToSpeech),
     musicGeneration: normalizeQWicksMusicGenerationSettings(explicitQWicks.musicGeneration),
     videoGeneration: normalizeQWicksVideoGenerationSettings(explicitQWicks.videoGeneration),
+    skillConfigs: normalizeSkillConfigs(explicitQWicks.skillConfigs),
     quality: normalizeQWicksQualitySettings(explicitQWicks.quality)
   }
   // Strip the legacy `agentProvider` discriminator and the legacy

@@ -197,6 +197,30 @@ describe('qwicks defaults', () => {
     })
   })
 
+  it('defaults skillConfigs to an empty object', () => {
+    expect(defaultQWicksRuntimeSettings().skillConfigs).toEqual({})
+  })
+
+  it('normalizes skillConfigs, preserving valid values and dropping invalid ones', () => {
+    const base = settings()
+    base.agents.qwicks.skillConfigs = {
+      'my-skill': { token: 'abc', count: 3, enabled: true },
+      'bad-skill': { ok: null as unknown as string } as Record<string, string | number | boolean>
+    }
+    const normalized = normalizeAppSettings(base)
+    expect(normalized.agents.qwicks.skillConfigs).toEqual({
+      'my-skill': { token: 'abc', count: 3, enabled: true },
+      'bad-skill': {}
+    })
+  })
+
+  it('normalizes a missing skillConfigs to an empty object', () => {
+    const base = settings()
+    delete (base.agents.qwicks as { skillConfigs?: unknown }).skillConfigs
+    const normalized = normalizeAppSettings(base)
+    expect(normalized.agents.qwicks.skillConfigs).toEqual({})
+  })
+
   it('defaults advanced QWicks runtime tuning to conservative values', () => {
     expect(defaultQWicksRuntimeSettings()).toMatchObject({
       storage: {

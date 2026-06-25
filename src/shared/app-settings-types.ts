@@ -224,6 +224,12 @@ export type QWicksRuntimeSettingsV1 = {
   musicGeneration: QWicksMusicGenerationSettingsV1
   /** Video generation provider exposed to agents as generate_video. */
   videoGeneration: QWicksVideoGenerationSettingsV1
+  /**
+   * Per-skill config values for skills without a settingsPath mapping (generic
+   * third-party skills). Keyed by skillId, then by fieldKey. Media skills map
+   * their fields to settingsPath instead, so they do not use this store.
+   */
+  skillConfigs: Record<string, Record<string, string | number | boolean>>
   /** GUI-owned model capability profiles written into QWicks `models.profiles`. */
   modelProfiles: Record<string, ModelProviderModelProfileV1>
   /** Whether long-term memory is enabled in the QWicks runtime. */
@@ -471,6 +477,7 @@ export type QWicksRuntimeSettingsPatchV1 = Partial<
   textToSpeech?: Partial<QWicksTextToSpeechSettingsV1>
   musicGeneration?: Partial<QWicksMusicGenerationSettingsV1>
   videoGeneration?: Partial<QWicksVideoGenerationSettingsV1>
+  skillConfigs?: Record<string, Record<string, string | number | boolean>>
   computerUse?: Partial<QWicksComputerUseSettingsV1>
   quality?: Partial<QWicksDesignQualitySettingsV1>
   modelProfiles?: Record<string, ModelProviderModelProfilePatchV1 | null>

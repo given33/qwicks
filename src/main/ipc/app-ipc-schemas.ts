@@ -423,6 +423,10 @@ const qwicksRuntimePatchSchema = z.object({
     timeoutMs: z.number().int().positive().max(3_600_000).optional(),
     pollIntervalMs: z.number().int().positive().max(120_000).optional()
   }).strict().optional(),
+  skillConfigs: z.record(
+    z.string().max(128),
+    z.record(z.string().max(128), z.union([z.string().max(8192), z.number(), z.boolean()]))
+  ).optional(),
   computerUse: z.object({
     enabled: z.boolean().optional(),
     mode: z.enum(['auto', 'always', 'off']).optional(),
