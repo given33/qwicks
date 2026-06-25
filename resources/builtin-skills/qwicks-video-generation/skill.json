@@ -2,10 +2,12 @@
   "id": "qwicks-video-generation",
   "name": "视频生成",
   "description": "根据文字描述生成视频片段，支持图生视频（首尾帧引导）。调用 generate_video 工具。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "SKILL.md",
   "triggers": {
-    "commands": ["/video"],
+    "commands": [
+      "/video"
+    ],
     "promptPatterns": [
       "生成视频",
       "做视频",
@@ -18,6 +20,75 @@
       "create a video"
     ]
   },
-  "allowedTools": ["generate_video"],
-  "priority": 100
+  "allowedTools": [
+    "generate_video"
+  ],
+  "priority": 100,
+  "configSchema": {
+    "fields": [
+      {
+        "key": "enabled",
+        "type": "boolean",
+        "label": "videoGenerationEnabled",
+        "default": false,
+        "settingsPath": "agents.qwicks.videoGeneration.enabled"
+      },
+      {
+        "key": "providerId",
+        "type": "enum",
+        "label": "videoGenerationProvider",
+        "settingsPath": "agents.qwicks.videoGeneration.providerId"
+      },
+      {
+        "key": "protocol",
+        "type": "enum",
+        "label": "videoGenerationProtocol",
+        "settingsPath": "agents.qwicks.videoGeneration.protocol"
+      },
+      {
+        "key": "baseUrl",
+        "type": "string",
+        "label": "videoGenerationBaseUrl",
+        "settingsPath": "agents.qwicks.videoGeneration.baseUrl"
+      },
+      {
+        "key": "apiKey",
+        "type": "secret",
+        "label": "videoGenerationApiKey",
+        "required": true,
+        "settingsPath": "agents.qwicks.videoGeneration.apiKey"
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "label": "videoGenerationModel",
+        "required": true,
+        "settingsPath": "agents.qwicks.videoGeneration.model"
+      },
+      {
+        "key": "defaultDuration",
+        "type": "number",
+        "label": "videoGenerationDefaultDuration",
+        "settingsPath": "agents.qwicks.videoGeneration.defaultDuration"
+      },
+      {
+        "key": "defaultResolution",
+        "type": "enum",
+        "label": "videoGenerationDefaultResolution",
+        "settingsPath": "agents.qwicks.videoGeneration.defaultResolution"
+      },
+      {
+        "key": "timeoutMs",
+        "type": "number",
+        "label": "videoGenerationTimeout",
+        "settingsPath": "agents.qwicks.videoGeneration.timeoutMs"
+      },
+      {
+        "key": "pollIntervalMs",
+        "type": "number",
+        "label": "videoGenerationPollInterval",
+        "settingsPath": "agents.qwicks.videoGeneration.pollIntervalMs"
+      }
+    ]
+  }
 }

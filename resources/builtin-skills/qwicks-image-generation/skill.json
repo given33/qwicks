@@ -2,10 +2,12 @@
   "id": "qwicks-image-generation",
   "name": "图像生成",
   "description": "根据文本描述生成图片，支持文生图与图生图（参考图）。调用 generate_image 工具。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "SKILL.md",
   "triggers": {
-    "commands": ["/image"],
+    "commands": [
+      "/image"
+    ],
     "promptPatterns": [
       "生成图",
       "画一",
@@ -24,6 +26,63 @@
       "create an? image"
     ]
   },
-  "allowedTools": ["generate_image"],
-  "priority": 100
+  "allowedTools": [
+    "generate_image"
+  ],
+  "priority": 100,
+  "configSchema": {
+    "fields": [
+      {
+        "key": "enabled",
+        "type": "boolean",
+        "label": "imageGenEnabled",
+        "default": false,
+        "settingsPath": "agents.qwicks.imageGeneration.enabled"
+      },
+      {
+        "key": "providerId",
+        "type": "enum",
+        "label": "imageGenProvider",
+        "settingsPath": "agents.qwicks.imageGeneration.providerId"
+      },
+      {
+        "key": "protocol",
+        "type": "enum",
+        "label": "imageGenProtocol",
+        "settingsPath": "agents.qwicks.imageGeneration.protocol"
+      },
+      {
+        "key": "baseUrl",
+        "type": "string",
+        "label": "imageGenBaseUrl",
+        "settingsPath": "agents.qwicks.imageGeneration.baseUrl"
+      },
+      {
+        "key": "apiKey",
+        "type": "secret",
+        "label": "imageGenApiKey",
+        "required": true,
+        "settingsPath": "agents.qwicks.imageGeneration.apiKey"
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "label": "imageGenModel",
+        "required": true,
+        "settingsPath": "agents.qwicks.imageGeneration.model"
+      },
+      {
+        "key": "defaultSize",
+        "type": "string",
+        "label": "imageGenDefaultSize",
+        "settingsPath": "agents.qwicks.imageGeneration.defaultSize"
+      },
+      {
+        "key": "timeoutMs",
+        "type": "number",
+        "label": "imageGenTimeout",
+        "settingsPath": "agents.qwicks.imageGeneration.timeoutMs"
+      }
+    ]
+  }
 }

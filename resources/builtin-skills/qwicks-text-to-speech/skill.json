@@ -2,10 +2,12 @@
   "id": "qwicks-text-to-speech",
   "name": "语音合成",
   "description": "把文字转成语音朗读出来（TTS）。调用 generate_speech 工具。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "SKILL.md",
   "triggers": {
-    "commands": ["/tts"],
+    "commands": [
+      "/tts"
+    ],
     "promptPatterns": [
       "朗读",
       "配音",
@@ -22,6 +24,69 @@
       "generate speech"
     ]
   },
-  "allowedTools": ["generate_speech"],
-  "priority": 100
+  "allowedTools": [
+    "generate_speech"
+  ],
+  "priority": 100,
+  "configSchema": {
+    "fields": [
+      {
+        "key": "enabled",
+        "type": "boolean",
+        "label": "textToSpeechEnabled",
+        "default": false,
+        "settingsPath": "agents.qwicks.textToSpeech.enabled"
+      },
+      {
+        "key": "providerId",
+        "type": "enum",
+        "label": "textToSpeechProvider",
+        "settingsPath": "agents.qwicks.textToSpeech.providerId"
+      },
+      {
+        "key": "protocol",
+        "type": "enum",
+        "label": "textToSpeechProtocol",
+        "settingsPath": "agents.qwicks.textToSpeech.protocol"
+      },
+      {
+        "key": "baseUrl",
+        "type": "string",
+        "label": "textToSpeechBaseUrl",
+        "settingsPath": "agents.qwicks.textToSpeech.baseUrl"
+      },
+      {
+        "key": "apiKey",
+        "type": "secret",
+        "label": "textToSpeechApiKey",
+        "required": true,
+        "settingsPath": "agents.qwicks.textToSpeech.apiKey"
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "label": "textToSpeechModel",
+        "required": true,
+        "settingsPath": "agents.qwicks.textToSpeech.model"
+      },
+      {
+        "key": "voice",
+        "type": "string",
+        "label": "textToSpeechVoice",
+        "settingsPath": "agents.qwicks.textToSpeech.voice"
+      },
+      {
+        "key": "format",
+        "type": "enum",
+        "label": "textToSpeechFormat",
+        "settingsPath": "agents.qwicks.textToSpeech.format"
+      },
+      {
+        "key": "timeoutMs",
+        "type": "number",
+        "label": "textToSpeechTimeout",
+        "settingsPath": "agents.qwicks.textToSpeech.timeoutMs"
+      }
+    ]
+  }
 }

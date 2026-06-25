@@ -2,10 +2,12 @@
   "id": "qwicks-music-generation",
   "name": "音乐生成",
   "description": "根据描述或歌词生成音乐（含纯音乐与人声歌曲）。调用 generate_music 工具。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "SKILL.md",
   "triggers": {
-    "commands": ["/music"],
+    "commands": [
+      "/music"
+    ],
     "promptPatterns": [
       "作曲",
       "写歌",
@@ -21,6 +23,63 @@
       "create a song"
     ]
   },
-  "allowedTools": ["generate_music"],
-  "priority": 100
+  "allowedTools": [
+    "generate_music"
+  ],
+  "priority": 100,
+  "configSchema": {
+    "fields": [
+      {
+        "key": "enabled",
+        "type": "boolean",
+        "label": "musicGenerationEnabled",
+        "default": false,
+        "settingsPath": "agents.qwicks.musicGeneration.enabled"
+      },
+      {
+        "key": "providerId",
+        "type": "enum",
+        "label": "musicGenerationProvider",
+        "settingsPath": "agents.qwicks.musicGeneration.providerId"
+      },
+      {
+        "key": "protocol",
+        "type": "enum",
+        "label": "musicGenerationProtocol",
+        "settingsPath": "agents.qwicks.musicGeneration.protocol"
+      },
+      {
+        "key": "baseUrl",
+        "type": "string",
+        "label": "musicGenerationBaseUrl",
+        "settingsPath": "agents.qwicks.musicGeneration.baseUrl"
+      },
+      {
+        "key": "apiKey",
+        "type": "secret",
+        "label": "musicGenerationApiKey",
+        "required": true,
+        "settingsPath": "agents.qwicks.musicGeneration.apiKey"
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "label": "musicGenerationModel",
+        "required": true,
+        "settingsPath": "agents.qwicks.musicGeneration.model"
+      },
+      {
+        "key": "format",
+        "type": "enum",
+        "label": "musicGenerationFormat",
+        "settingsPath": "agents.qwicks.musicGeneration.format"
+      },
+      {
+        "key": "timeoutMs",
+        "type": "number",
+        "label": "musicGenerationTimeout",
+        "settingsPath": "agents.qwicks.musicGeneration.timeoutMs"
+      }
+    ]
+  }
 }
