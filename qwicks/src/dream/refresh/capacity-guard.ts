@@ -112,11 +112,10 @@ export class MemoryCapacityGuard {
       if (!item) continue
       item.metadata.background = true
       item.statusHistory.push({
+        status: item.status,
         at: nowIso(),
         actor: 'capacity_guard',
-        reason: 'auto_demote_capacity',
-        from: item.status,
-        to: item.status
+        reason: 'auto_demote_capacity'
       })
       this.repository.upsert(item)
       demoted += 1

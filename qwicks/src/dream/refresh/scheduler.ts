@@ -78,6 +78,8 @@ export interface DreamingSchedulerOptions {
   repository?: import('../storage/repository.js').MemoryRepository
   /** Batch B(spec §2.5 要点6):可选的高敏感待确认 store —— tick 时清理 30 天未确认草稿。 */
   pendingStore?: import('../storage/pending-sensitive-store.js').PendingSensitiveStore
+  /** Batch D(spec §4):可选的容量防护 —— tick 时检查 softLimit,自动降级最低价值记忆。 */
+  capacityGuard?: import('./capacity-guard.js').MemoryCapacityGuard
 }
 
 export interface DreamingTickResult {
@@ -141,6 +143,14 @@ export class DreamingScheduler {
         this.opts.pendingStore.purgeStale(30)
       } catch {
         // fail-open: 清理失败不影响 dreaming 主循环。
+      }
+    }
+    // Batch D(spec §4):检查 softLimit,自动降级最低价值记忆到 background。
+    if (this.opts.capacityGuard && opts.userId) {
+      try {
+        this.opts.capacityGuard.run(opts.userId)
+      } catch {
+        // fail-open: 容量检查失败不影响 dreaming 主循环。
       }
     }
     if (opts.userId) {

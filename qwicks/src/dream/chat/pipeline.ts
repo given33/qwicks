@@ -38,6 +38,7 @@ import {
 import { DreamConfig } from '../config.js'
 import { SqliteMemoryRepository } from '../storage/sqlite-repository.js'
 import { classifySensitivity } from '../security/sensitivity-classifier.js'
+import { MemoryCapacityGuard } from '../refresh/capacity-guard.js'
 import { PendingSensitiveStore } from '../storage/pending-sensitive-store.js'
 import { FlatVectorIndex } from '../vectordb/flat-index.js'
 import { HashEmbedder } from '../embeddings/hash-provider.js'
@@ -294,12 +295,14 @@ export class DreamMemorySystem {
     // 不再走 scheduler —— 历史的 MemoryReinforcement 类是死代码,已删。
     const temporalDreamer = new TemporalDreamer({ repository: this.repository })
     const topOfMindBalancer = new TopOfMindBalancer({ repository: this.repository })
+    const capacityGuard = new MemoryCapacityGuard(this.repository)
     this.scheduler = new DreamingScheduler({
       decay,
       temporalDreamer,
       topOfMindBalancer,
       repository: this.repository,
-      pendingStore: this.pendingStore
+      pendingStore: this.pendingStore,
+      capacityGuard
     })
 
     // Phase 2:ObservableGate(judicious + freshness + user_correction 三 gate orchestrate)
