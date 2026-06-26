@@ -1,6 +1,7 @@
 import type { ReactElement, RefObject } from 'react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CornerUpLeft } from 'lucide-react'
 import type { ChatBlock, RuntimeConnectionStatus } from '../../agent/types'
 import { useChatStore } from '../../store/chat-store'
 import { threadHasPendingRuntimeWork } from '../../store/chat-store-runtime-helpers'
@@ -653,6 +654,7 @@ function LiveTurnProgressRow({ hasActiveGoal }: { hasActiveGoal: boolean }): Rea
   const { t, i18n } = useTranslation('common')
   const swimMode = useWorkLogoSwimMode(true)
   const iqwicksVariant = useIqwicksWorkLogoVariant(true)
+  const steeredAt = useChatStore((s) => s.steeredAt)
   // iQWicks 模式是全局 html 属性;进行行每个回合重新挂载,挂载时读取即可
   const [iqwicksModeOn] = useState(
     () =>
@@ -675,6 +677,12 @@ function LiveTurnProgressRow({ hasActiveGoal }: { hasActiveGoal: boolean }): Rea
         <AnimatedWorkLogo active iqwicksVariant={iqwicksVariant} mode={swimMode} phase="trail" size="sm" />
       </span>
       <span className="ds-shiny-text">{label}</span>
+      {steeredAt > 0 ? (
+        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-ds-accent-soft/40 px-2 py-0.5 text-[12px] font-medium text-ds-accent">
+          <CornerUpLeft className="h-3 w-3" strokeWidth={2} />
+          {t('steered')}
+        </span>
+      ) : null}
     </div>
   )
 }

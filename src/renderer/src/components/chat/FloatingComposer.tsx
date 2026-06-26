@@ -513,6 +513,7 @@ export function FloatingComposer({
   const clearActiveThreadGoal = useChatStore((s) => s.clearActiveThreadGoal)
   const clawChannels = useChatStore((s) => s.clawChannels)
   const activeClawChannelId = useChatStore((s) => s.activeClawChannelId)
+  const canSteerRunningTurn = useChatStore((s) => Boolean(s.busy && s.currentTurnId))
   const compact = variant === 'compact'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const activeClawChannel = useMemo(
@@ -702,7 +703,9 @@ export function FloatingComposer({
       : goalPanelOpen && route !== 'claw'
         ? t('goalComposerPlaceholder')
       : busy
-        ? t('composerQueuePlaceholder')
+        ? canSteerRunningTurn
+          ? t('composerSteerHint')
+          : t('composerQueuePlaceholder')
         : route === 'claw'
             ? clawHasInboundConversation
               ? t('clawPlaceholder', { name: clawAgentName })

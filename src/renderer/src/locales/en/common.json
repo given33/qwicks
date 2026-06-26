@@ -1910,6 +1910,8 @@
   "thinkingNow": "Thinking…",
   "thinkingWithSeconds": "Thinking {{duration}}",
   "reasoningThought": "Thought",
+  "steered": "Steered",
+  "composerSteerHint": "Message will be injected into the running turn",
   "thoughtStep": "Thought ({{count}} step)",
   "timelineShowEarlierTurns": "Show {{count}} earlier turns",
   "timelineCollapseEarlierTurns": "Show recent turns only",
