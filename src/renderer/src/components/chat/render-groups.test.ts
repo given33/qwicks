@@ -3,7 +3,11 @@ import type { ChatBlock, ToolBlock } from '../../agent/types'
 import {
   classifyBlock,
   isCollapsible,
-  splitByAssistantAnchors
+  splitByAssistantAnchors,
+  summarizeActivity,
+  createActivityAccumulator,
+  accumulateActivity,
+  projectActivitySummary
 } from './render-groups'
 
 function tool(id: string, toolName: string, overrides: Partial<ToolBlock> = {}): ChatBlock {
@@ -121,5 +125,82 @@ describe('splitByAssistantAnchors', () => {
     // a1->a2 is empty (skipped); a2->end has the tool
     expect(slices).toHaveLength(1)
     expect(slices[0].startIndex).toBe(2)
+  })
+})
+
+describe('summarizeActivity (Set dedup)', () => {
+  it('counts commands and web searches', () => {
+    const units = [tool('b1', 'bash'), tool('b2', 'bash'), tool('ws1', 'web_search')].map(classifyBlock)
+    const stats = summarizeActivity(units)
+    expect(stats.commandCount).toBe(2)
+    expect(stats.webSearchCount).toBe(1)
+  })
+
+  it('dedupes edited file paths (same file edited twice = 1)', () => {
+    const units = [
+      tool('e1', 'edit', { toolKind: 'file_change', filePath: 'src/a.ts' }),
+      tool('e2', 'edit', { toolKind: 'file_change', filePath: 'src/a.ts' }),
+      tool('e3', 'edit', { toolKind: 'file_change', filePath: 'src/b.ts' })
+    ].map(classifyBlock)
+    const stats = summarizeActivity(units)
+    expect(stats.editedFileCount).toBe(2) // 2 unique paths, not 3 calls
+  })
+
+  it('tracks running counts separately', () => {
+    const units = [
+      tool('b1', 'bash', { status: 'running' }),
+      tool('b2', 'bash'),
+      tool('e1', 'edit', { toolKind: 'file_change', status: 'running', filePath: 'x.ts' }),
+      tool('e2', 'edit', { toolKind: 'file_change', filePath: 'x.ts' })
+    ].map(classifyBlock)
+    const stats = summarizeActivity(units)
+    expect(stats.runningCommandCount).toBe(1)
+    expect(stats.commandCount).toBe(2)
+    expect(stats.runningEditedFileCount).toBe(1)
+    expect(stats.editedFileCount).toBe(1)
+  })
+
+  it('dedupes read paths', () => {
+    const units = [
+      tool('r1', 'read_file', { filePath: 'src/a.ts' }),
+      tool('r2', 'read_file', { filePath: 'src/a.ts' })
+    ].map(classifyBlock)
+    expect(summarizeActivity(units).readCount).toBe(1)
+  })
+
+  it('distinguishes write (created) from edit (edited)', () => {
+    const units = [
+      tool('w1', 'write', { toolKind: 'file_change', filePath: 'new.ts' }),
+      tool('e1', 'edit', { toolKind: 'file_change', filePath: 'old.ts' })
+    ].map(classifyBlock)
+    const stats = summarizeActivity(units)
+    expect(stats.createdFileCount).toBe(1)
+    expect(stats.editedFileCount).toBe(1)
+  })
+
+  it('empty accumulator projects to all zeros', () => {
+    expect(projectActivitySummary(createActivityAccumulator())).toEqual({
+      commandCount: 0,
+      runningCommandCount: 0,
+      editedFileCount: 0,
+      runningEditedFileCount: 0,
+      createdFileCount: 0,
+      createdLineCount: 0,
+      runningCreatedFileCount: 0,
+      readCount: 0,
+      runningReadCount: 0,
+      webSearchCount: 0,
+      runningWebSearchCount: 0
+    })
+  })
+
+  it('accumulateActivity is incremental (matches summarize)', () => {
+    const units = [tool('b1', 'bash'), tool('e1', 'edit', { toolKind: 'file_change', filePath: 'a.ts' })].map(
+      classifyBlock
+    )
+    const acc = createActivityAccumulator()
+    accumulateActivity(acc, units[0])
+    accumulateActivity(acc, units[1])
+    expect(projectActivitySummary(acc)).toEqual(summarizeActivity(units))
   })
 })

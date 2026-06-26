@@ -46,6 +46,115 @@ export type ActivitySlice = {
 }
 
 /**
+ * 摘要累积器（对标 zt）。用 Set 去重的路径统计 + 命令/搜索计数。
+ * 关键：统计的是【不重复文件数】（Set.size），不是调用次数——同文件多次编辑
+ * 只算 1 个 editedFile。
+ */
+export type ActivityAccumulator = {
+  editedPaths: Set<string>
+  runningEditedPaths: Set<string>
+  createdPaths: Set<string>
+  runningCreatedPaths: Set<string>
+  readPaths: Set<string>
+  runningReadPaths: Set<string>
+  commandCount: number
+  runningCommandCount: number
+  webSearchCount: number
+  runningWebSearchCount: number
+}
+
+/** 初始化累加器（对标 zt()）。 */
+export function createActivityAccumulator(): ActivityAccumulator {
+  return {
+    editedPaths: new Set(),
+    runningEditedPaths: new Set(),
+    createdPaths: new Set(),
+    runningCreatedPaths: new Set(),
+    readPaths: new Set(),
+    runningReadPaths: new Set(),
+    commandCount: 0,
+    runningCommandCount: 0,
+    webSearchCount: 0,
+    runningWebSearchCount: 0
+  }
+}
+
+/** 累积单个 unit 到累加器（对标 Bt）。 */
+export function accumulateActivity(acc: ActivityAccumulator, unit: ClassifiedUnit): void {
+  const path = unit.filePath
+  switch (unit.type) {
+    case 'patch':
+      // edit/write → 区分 edited/created（简化：write=created, edit=edited）
+      if (unit.category === 'write') {
+        if (path) acc.createdPaths.add(path)
+        if (unit.isRunning && path) acc.runningCreatedPaths.add(path)
+      } else {
+        if (path) acc.editedPaths.add(path)
+        if (unit.isRunning && path) acc.runningEditedPaths.add(path)
+      }
+      break
+    case 'exec':
+      if (unit.category === 'web') {
+        acc.webSearchCount += 1
+        if (unit.isRunning) acc.runningWebSearchCount += 1
+      } else {
+        acc.commandCount += 1
+        if (unit.isRunning) acc.runningCommandCount += 1
+      }
+      break
+    case 'read':
+      if (path) acc.readPaths.add(path)
+      if (unit.isRunning && path) acc.runningReadPaths.add(path)
+      break
+    case 'web':
+      acc.webSearchCount += 1
+      if (unit.isRunning) acc.runningWebSearchCount += 1
+      break
+    default:
+      break
+  }
+}
+
+/** 投影累加器为最终的去重统计（对标 Vt）。 */
+export type ActivitySummaryStats = {
+  commandCount: number
+  runningCommandCount: number
+  editedFileCount: number
+  runningEditedFileCount: number
+  createdFileCount: number
+  createdLineCount: 0
+  runningCreatedFileCount: number
+  readCount: number
+  runningReadCount: number
+  webSearchCount: number
+  runningWebSearchCount: number
+}
+
+/** 把累加器投影为去重后的统计（对标 Vt：Set.size = 不重复文件数）。 */
+export function projectActivitySummary(acc: ActivityAccumulator): ActivitySummaryStats {
+  return {
+    commandCount: acc.commandCount,
+    runningCommandCount: acc.runningCommandCount,
+    editedFileCount: acc.editedPaths.size,
+    runningEditedFileCount: acc.runningEditedPaths.size,
+    createdFileCount: acc.createdPaths.size,
+    createdLineCount: 0,
+    runningCreatedFileCount: acc.runningCreatedPaths.size,
+    readCount: acc.readPaths.size,
+    runningReadCount: acc.runningReadPaths.size,
+    webSearchCount: acc.webSearchCount,
+    runningWebSearchCount: acc.runningWebSearchCount
+  }
+}
+
+/** 累积一组 units 并投影（便捷组合）。 */
+export function summarizeActivity(units: ClassifiedUnit[]): ActivitySummaryStats {
+  const acc = createActivityAccumulator()
+  for (const unit of units) accumulateActivity(acc, unit)
+  return projectActivitySummary(acc)
+}
+
+/**
  * 分类器（对标 Ve）。把单个 ChatBlock 转成 ClassifiedUnit。
  */
 export function classifyBlock(block: ChatBlock): ClassifiedUnit {
