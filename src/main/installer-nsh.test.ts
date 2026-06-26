@@ -35,11 +35,15 @@ describe('build/installer.nsh structure (problem 2 regression guard)', () => {
     expect(customInitBody).not.toMatch(/\$\{If\}\s+\$2\s*==\s*"INFO"/)
   })
 
-  it('does NOT rely on customCheckAppRunning as the only cleanup (it is skipped under /S)', () => {
+  it('customCheckAppRunning re-kills defensively and never Abort (never blocks install)', () => {
     const checkMatch = content.match(/!macro\s+customCheckAppRunning([\s\S]*?)!macroend/i)
     expect(checkMatch, 'customCheckAppRunning macro not found').not.toBeNull()
     const checkBody = checkMatch![1]
-    // The body must NOT contain the kill loop — that belongs in customInit now.
-    expect(checkBody).not.toMatch(/taskkill\s+\/F\s+\/IM\s+QWicks\.exe/)
+    // Defining customCheckAppRunning makes the template's !ifmacrodef branch fire
+    // (suppressing the built-in _CHECK_APP_RUNNING, whose appRunning dialog can
+    // fire falsely on localized Windows). The body re-kills defensively...
+    expect(checkBody).toMatch(/taskkill\s+\/F\s+\/IM\s+QWicks\.exe/)
+    // ...and must NOT call Abort — that cancels the install.
+    expect(checkBody).not.toMatch(/^\s*Abort\b/m)
   })
 })
