@@ -424,6 +424,9 @@ export type ThreadEventSink = {
   onGoal(ev: { threadId: string; goal: ThreadGoal | null; cleared?: boolean; createdAt?: string }): void
   onTodos?(ev: { threadId: string; todos: ThreadTodoList | null; cleared?: boolean; createdAt?: string }): void
   onTurnComplete(): void
+  /** Steering: a user message was injected into the running turn. The turn
+   * continues (not completed) — UI should show a "steered" indicator. */
+  onSteered?(text: string): void
   onError(err: Error, options?: ThreadErrorOptions): void
   /** Optional: cumulative usage update for the thread. */
   onUsage?(usage: ThreadUsageSnapshot): void

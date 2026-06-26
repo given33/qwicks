@@ -199,6 +199,9 @@ export type ChatState = {
   modelReconnecting: ModelReconnectingState | null
   currentTurnId: string | null
   currentTurnUserId: string | null
+  /** Timestamp of the most recent steering injection into the current turn
+   * (0 = none). UI shows a "steered" indicator while the turn runs. */
+  steeredAt: number
   turnStartedAtByUserId: Record<string, number>
   turnDurationByUserId: Record<string, number>
   turnReasoningFirstAtByUserId: Record<string, number>

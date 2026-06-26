@@ -1235,6 +1235,13 @@ export async function dispatchQWicksRuntimeEvent(
     case 'turn_aborted':
       sink.onTurnComplete()
       return
+    case 'turn_steered': {
+      // Steering: a user message was injected into the running turn. The turn
+      // keeps going (not completed) — surface a steered indicator.
+      const steerText = (event as { text?: string }).text ?? ''
+      sink.onSteered?.(steerText)
+      return
+    }
     case 'turn_failed': {
       const payload = runtimeErrorFromEvent(event, 'QWicks turn failed')
       sink.onRuntimeError?.(payload)

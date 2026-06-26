@@ -154,6 +154,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelReconnecting: null,
   currentTurnId: null,
   currentTurnUserId: null,
+  steeredAt: 0,
   turnStartedAtByUserId: {},
   turnDurationByUserId: {},
   turnReasoningFirstAtByUserId: {},

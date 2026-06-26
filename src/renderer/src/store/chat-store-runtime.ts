@@ -618,6 +618,7 @@ export function buildThreadEventSink(
           busy: true,
           currentTurnId: ev.turnId ?? s.currentTurnId,
           currentTurnUserId: ev.itemId,
+          steeredAt: 0,
           turnStartedAtByUserId: {
             ...s.turnStartedAtByUserId,
             [ev.itemId]: s.turnStartedAtByUserId[ev.itemId] ?? startedAt
@@ -1111,6 +1112,13 @@ export function buildThreadEventSink(
           }
         }
       })
+    },
+    onSteered: (text) => {
+      if (!isCurrentStream()) return
+      // Record the steering injection; runtime appended a user_message item to
+      // the current turn. UI surfaces a "steered" indicator.
+      void text
+      set({ steeredAt: Date.now() })
     },
     onTurnComplete: () => {
       if (!isCurrentStream()) return

@@ -20,6 +20,41 @@ function makeSink(): ThreadEventSink {
   }
 }
 
+describe('steering', () => {
+  it('dispatches turn_steered to onSteered with text', async () => {
+    const steered: string[] = []
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onSteered: (text) => steered.push(text)
+    }
+    await dispatchQWicksRuntimeEvent(
+      {
+        kind: 'turn_steered',
+        seq: 1,
+        turnId: 't1',
+        text: 'use approach B'
+      } as unknown as CoreRuntimeEventJson,
+      sink,
+      async () => undefined
+    )
+    expect(steered).toEqual(['use approach B'])
+  })
+
+  it('handles turn_steered with missing text', async () => {
+    const steered: string[] = []
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onSteered: (text) => steered.push(text)
+    }
+    await dispatchQWicksRuntimeEvent(
+      { kind: 'turn_steered', seq: 2, turnId: 't1' } as unknown as CoreRuntimeEventJson,
+      sink,
+      async () => undefined
+    )
+    expect(steered).toEqual([''])
+  })
+})
+
 describe('assistant stream mapping', () => {
   it('does not append completed assistant snapshots after streaming deltas', async () => {
     const deltas: unknown[] = []
