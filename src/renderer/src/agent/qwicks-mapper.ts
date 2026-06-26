@@ -21,6 +21,7 @@ import type {
   UserInputQuestion
 } from './types'
 import { redactSecrets, redactSecretText } from '@shared/secret-redaction'
+import { synthesizePreviewPatch } from '../lib/synthesize-preview-patch'
 import type {
   CoreChildRuntimeMetadataJson,
   CoreRuntimeEventJson,
@@ -491,7 +492,42 @@ function extractPlanMetadata(item: CoreTurnItemJson): Record<string, unknown> | 
   return Object.keys(plan).length > 0 ? plan : null
 }
 
+/**
+ * PatchItem 流式预览：从 edit 工具的参数（oldText/newText，单个或 edits[] 数组）
+ * 合成一个预览 unified diff。多组 edit 合并展示。返回 undefined 表示无可用预览
+ * （例如 write 工具只有 content 没有 oldText，或参数缺失）。
+ */
+function synthesizeEditPreviewPatch(
+  filePath: string,
+  payload: Record<string, unknown>
+): string | undefined {
+  const singleOld = typeof payload.oldText === 'string' ? payload.oldText : undefined
+  const singleNew = typeof payload.newText === 'string' ? payload.newText : undefined
+  if (singleOld != null && singleNew != null) {
+    const patch = synthesizePreviewPatch(filePath, singleOld, singleNew)
+    return patch || undefined
+  }
+  // edits[] 数组：把每组的 old→new 合并成一个 patch（依次拼接）
+  const edits = Array.isArray(payload.edits) ? payload.edits : undefined
+  if (edits && edits.length > 0) {
+    const patches: string[] = []
+    for (const edit of edits) {
+      if (!edit || typeof edit !== 'object') continue
+      const e = edit as Record<string, unknown>
+      const o = typeof e.oldText === 'string' ? e.oldText : undefined
+      const n = typeof e.newText === 'string' ? e.newText : undefined
+      if (o != null && n != null) {
+        const p = synthesizePreviewPatch(filePath, o, n)
+        if (p) patches.push(p)
+      }
+    }
+    if (patches.length > 0) return patches.join('\n')
+  }
+  return undefined
+}
+
 function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetadataJson): ToolBlock {
+  const isStartedToolCall = item.kind === 'tool_call'
   const detail = item.kind === 'tool_result' ? outputText(item.output) : outputText(item.arguments)
   const isPlan = isPlanItem(item)
   const summary =
@@ -518,6 +554,15 @@ function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
     const plan = extractPlanMetadata(item)
     if (plan) meta.plan = plan
   }
+  // PatchItem 流式预览：tool_call（已发起、未完成）的 file_change，arguments 里有
+  // oldText/newText 时，合成一个预览 diff（绿/红行高亮），让用户提前看到"要改什么"。
+  // tool_call_finished 会带 runtime 的精确 diff 替换它。
+  let resolvedDetail = detail
+  if (isStartedToolCall && presentation.toolKind === 'file_change' && presentation.filePath) {
+    const payload = payloadFor(item)
+    const previewPatch = synthesizeEditPreviewPatch(presentation.filePath, payload)
+    if (previewPatch) resolvedDetail = previewPatch
+  }
   return {
     kind: 'tool',
     id: toolBlockId(item),
@@ -526,7 +571,7 @@ function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
     status: toolStatus(item),
     toolKind: presentation.toolKind,
     ...(presentation.filePath ? { filePath: presentation.filePath } : {}),
-    ...(detail ? { detail } : {}),
+    ...(resolvedDetail ? { detail: resolvedDetail } : {}),
     meta
   }
 }

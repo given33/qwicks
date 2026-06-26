@@ -482,6 +482,96 @@ describe('create_plan tool mapping', () => {
   })
 })
 
+describe('PatchItem preview (streaming edit)', () => {
+  it('synthesizes a preview diff for a started edit tool_call with oldText/newText', () => {
+    const block = chatBlockFromItem({
+      id: 'item_edit_started',
+      turnId: 't1',
+      threadId: 'th1',
+      kind: 'tool_call',
+      toolKind: 'file_change',
+      toolName: 'edit',
+      callId: 'call_edit_1',
+      status: 'running',
+      arguments: {
+        path: 'src/app.ts',
+        oldText: 'const x = 1',
+        newText: 'const x = 2'
+      }
+    } as unknown as CoreTurnItemJson)
+    expect(block).not.toBeNull()
+    if (!block || block.kind !== 'tool') return
+    // detail should be a synthesized unified diff (not raw JSON)
+    expect(block.detail).toContain('--- a/src/app.ts')
+    expect(block.detail).toContain('-const x = 1')
+    expect(block.detail).toContain('+const x = 2')
+  })
+
+  it('merges edits[] array into a single preview patch', () => {
+    const block = chatBlockFromItem({
+      id: 'item_edit_multi',
+      turnId: 't1',
+      threadId: 'th1',
+      kind: 'tool_call',
+      toolKind: 'file_change',
+      toolName: 'edit',
+      callId: 'call_edit_2',
+      status: 'running',
+      arguments: {
+        path: 'src/multi.ts',
+        edits: [
+          { oldText: 'a = 1', newText: 'a = 2' },
+          { oldText: 'b = 3', newText: 'b = 4' }
+        ]
+      }
+    } as unknown as CoreTurnItemJson)
+    if (!block || block.kind !== 'tool') return
+    expect(block.detail).toContain('-a = 1')
+    expect(block.detail).toContain('+a = 2')
+    expect(block.detail).toContain('-b = 3')
+    expect(block.detail).toContain('+b = 4')
+  })
+
+  it('does NOT synthesize preview for tool_result (uses runtime diff instead)', () => {
+    const block = chatBlockFromItem({
+      id: 'item_edit_done',
+      turnId: 't1',
+      threadId: 'th1',
+      kind: 'tool_result',
+      toolKind: 'file_change',
+      toolName: 'edit',
+      callId: 'call_edit_3',
+      status: 'success',
+      output: { diff: 'runtime diff here' }
+    } as unknown as CoreTurnItemJson)
+    if (!block || block.kind !== 'tool') return
+    // tool_result uses outputText(item.output) = the runtime diff, not synthesized
+    expect(block.detail).toContain('runtime diff here')
+    expect(block.detail).not.toContain('--- a/')
+  })
+
+  it('falls back to raw arguments when oldText/newText absent (e.g. write tool)', () => {
+    const block = chatBlockFromItem({
+      id: 'item_write',
+      turnId: 't1',
+      threadId: 'th1',
+      kind: 'tool_call',
+      toolKind: 'file_change',
+      toolName: 'write',
+      callId: 'call_write_1',
+      status: 'running',
+      arguments: {
+        path: 'src/new.ts',
+        content: 'export const hello = "world"'
+      }
+    } as unknown as CoreTurnItemJson)
+    if (!block || block.kind !== 'tool') return
+    // no oldText → no preview synthesis → raw JSON arguments
+    expect(block.detail).toContain('export const hello')
+    expect(block.detail).not.toContain('--- a/')
+  })
+})
+
 describe('user input mapping', () => {
   it('maps structured user-input items without inventing submit-only options', () => {
     const item: CoreTurnItemJson = {
