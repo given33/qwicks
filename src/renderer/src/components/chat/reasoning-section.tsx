@@ -34,10 +34,19 @@ export function ReasoningSection({
   // 思考中默认展开；完成后默认折叠
   const expanded = isThinking ? true : (userExpanded ?? false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // 智能追尾：用户向上滚动查看历史时不打断（对标 Codex autoScrollToBottom 语义）
+  const stickToBottomRef = useRef(true)
 
-  // 思考中自动滚到底（流式追加），对标 Codex autoScrollToBottom
+  const handleScroll = (): void => {
+    const el = scrollRef.current
+    if (!el) return
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceToBottom < 24
+  }
+
+  // 思考中自动滚到底（流式追加），但用户主动上滚后不打断
   useEffect(() => {
-    if (!isThinking) return
+    if (!isThinking || !stickToBottomRef.current) return
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
@@ -73,6 +82,7 @@ export function ReasoningSection({
       {expanded ? (
         <div
           ref={scrollRef}
+          onScroll={handleScroll}
           className="ds-reasoning-fade mt-1 max-h-36 overflow-y-auto border-l-2 border-ds-border-muted/35 pl-3"
           style={{
             // 底部边缘渐隐，对标 Codex --edge-fade-distance
