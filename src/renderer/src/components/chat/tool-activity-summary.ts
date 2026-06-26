@@ -17,6 +17,7 @@ export type ToolActivityStats = {
   editedFileCount: number
   runningEditedFileCount: number
   createdFileCount: number
+  runningCreatedFileCount: number
   deletedFileCount: 0
   webSearchCount: number
   loadedToolCount: 0
@@ -30,6 +31,7 @@ export const EMPTY_TOOL_ACTIVITY: ToolActivityStats = {
   editedFileCount: 0,
   runningEditedFileCount: 0,
   createdFileCount: 0,
+  runningCreatedFileCount: 0,
   deletedFileCount: 0,
   webSearchCount: 0,
   loadedToolCount: 0,
@@ -50,28 +52,49 @@ type Segment = {
 
 /**
  * 统计一组 blocks 的工具活动。非 tool 块被忽略。
+ *
+ * 文件类操作（edit/write/read）使用 Set 去重：同一文件被多次编辑只算 1 个
+ * editedFile（对标 Codex 的 path Set）。命令/搜索是计数（不去重）。
  * 分类复用 tool-category.ts 的 7 类映射。
  */
 export function summarizeToolActivity(blocks: ChatBlock[]): ToolActivityStats {
+  const editedPaths = new Set<string>()
+  const runningEditedPaths = new Set<string>()
+  const createdPaths = new Set<string>()
+  const runningCreatedPaths = new Set<string>()
+  const readPaths = new Set<string>()
   const stats: ToolActivityStats = { ...EMPTY_TOOL_ACTIVITY }
   for (const block of blocks) {
     if (block.kind !== 'tool') continue
     const category = classifyToolCategory(block)
     const isRunning = block.status === 'running'
+    const filePath = block.filePath
     switch (category) {
       case 'terminal':
         stats.commandCount += 1
         if (isRunning) stats.runningCommandCount += 1
         break
       case 'edit':
-        stats.editedFileCount += 1
-        if (isRunning) stats.runningEditedFileCount += 1
+        if (filePath) {
+          editedPaths.add(filePath)
+          if (isRunning) runningEditedPaths.add(filePath)
+        } else {
+          stats.editedFileCount += 1 // 无路径退化成计数
+          if (isRunning) stats.runningEditedFileCount += 1
+        }
         break
       case 'write':
-        stats.createdFileCount += 1
+        if (filePath) {
+          createdPaths.add(filePath)
+          if (isRunning) runningCreatedPaths.add(filePath)
+        } else {
+          stats.createdFileCount += 1
+          if (isRunning) stats.runningCreatedFileCount += 1
+        }
         break
       case 'read':
-        stats.readCount += 1
+        if (filePath) readPaths.add(filePath)
+        else stats.readCount += 1 // 无路径的 read 退化成计数
         break
       case 'search':
         stats.searchCount += 1
@@ -83,6 +106,11 @@ export function summarizeToolActivity(blocks: ChatBlock[]): ToolActivityStats {
         break
     }
   }
+  stats.editedFileCount += editedPaths.size
+  stats.runningEditedFileCount += runningEditedPaths.size
+  stats.createdFileCount += createdPaths.size
+  stats.runningCreatedFileCount += runningCreatedPaths.size
+  stats.readCount += readPaths.size
   return stats
 }
 
@@ -105,8 +133,10 @@ export function formatToolActivitySummary(stats: ToolActivityStats, t: TFunc): s
     {
       leadingKey: 'toolActivitySummary.created.leading',
       nonLeadingKey: 'toolActivitySummary.created',
-      count: stats.createdFileCount,
-      runningCount: 0
+      runningLeadingKey: 'toolActivitySummary.creating.leading',
+      runningKey: 'toolActivitySummary.creating',
+      count: stats.createdFileCount - stats.runningCreatedFileCount,
+      runningCount: stats.runningCreatedFileCount
     },
     {
       leadingKey: 'toolActivitySummary.edited.leading',

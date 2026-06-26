@@ -1874,6 +1874,8 @@
   "toolActivitySummary.commands.running": "running {{count}} commands",
   "toolActivitySummary.created.leading": "Created {{count}} files",
   "toolActivitySummary.created": "created {{count}} files",
+  "toolActivitySummary.creating.leading": "Creating {{count}} files",
+  "toolActivitySummary.creating": "creating {{count}} files",
   "toolActivitySummary.edited.leading": "Edited {{count}} files",
   "toolActivitySummary.edited": "edited {{count}} files",
   "toolActivitySummary.editing.leading": "Editing {{count}} files",

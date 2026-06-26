@@ -241,6 +241,67 @@ export function splitIntoRenderGroups(
 }
 
 /**
+ * 把新管道的 RenderGroup 列表转成扁平的 ChatBlock 列表（保留折叠组的 blocks），
+ * 并标记每个折叠组的 keepExpanded（当前活动区 / forceSingle 不影响展开状态，
+ * 由渲染层决定）。
+ *
+ * 这是新管道 → 现有 ProcessSectionRow 的桥接：渲染层仍按"连续同类型 block 合并"
+ * 工作，但分组边界由 assistant-anchor 决定（更符合"回答-执行"的自然节奏）。
+ *
+ * 返回 [blocks, summarySegments]：blocks 是按段重排后的扁平列表（段间无 assistant
+ * 干扰），summarySegments 标注哪些段是折叠的工具活动群（带摘要）。
+ */
+export type PipelineSegment = {
+  /** 该段在扁平列表中的起止索引。 */
+  startIndex: number
+  endIndex: number
+  /** 摘要（仅折叠工具活动群有）。 */
+  summary?: ActivitySummaryStats
+  /** 是否当前活动区（turn 进行中）。 */
+  isCurrentActivity: boolean
+  /** 是否强制展开单个（detail level 非 STEPS_PROSE / 当前活动）。 */
+  forceSingle: boolean
+}
+
+export type PipelineResult = {
+  segments: PipelineSegment[]
+  /** 段边界信息：哪些是 single（非折叠），哪些是 collapsed-tool-activity。 */
+  groups: RenderGroup[]
+}
+
+/** 运行管道并返回段信息（不改 blocks 顺序，仅标注折叠边界）。 */
+export function analyzePipeline(
+  blocks: ChatBlock[],
+  isTurnClosed: boolean,
+  detailLevel: DetailLevel = 'STEPS_PROSE'
+): PipelineResult {
+  const groups = splitIntoRenderGroups(blocks, isTurnClosed, detailLevel)
+  const segments: PipelineSegment[] = []
+  let offset = 0
+  for (const group of groups) {
+    if (group.kind === 'single') {
+      segments.push({
+        startIndex: offset,
+        endIndex: offset + 1,
+        isCurrentActivity: false,
+        forceSingle: true
+      })
+      offset += 1
+    } else {
+      segments.push({
+        startIndex: offset,
+        endIndex: offset + group.units.length,
+        summary: group.summary,
+        isCurrentActivity: group.isCurrentActivity,
+        forceSingle: group.forceSingle
+      })
+      offset += group.units.length
+    }
+  }
+  return { segments, groups }
+}
+
+/**
  * 分类器（对标 Ve）。把单个 ChatBlock 转成 ClassifiedUnit。
  */
 export function classifyBlock(block: ChatBlock): ClassifiedUnit {

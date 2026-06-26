@@ -61,12 +61,30 @@ describe('summarizeToolActivity', () => {
       editedFileCount: 0,
       runningEditedFileCount: 0,
       createdFileCount: 0,
+      runningCreatedFileCount: 0,
       deletedFileCount: 0,
       webSearchCount: 0,
       loadedToolCount: 0,
       readCount: 0,
       searchCount: 0
     })
+  })
+
+  it('dedupes edited file paths (same file twice = 1)', () => {
+    const blocks: ChatBlock[] = [
+      tool('e1', 'edit', { toolKind: 'file_change', filePath: 'src/a.ts' }),
+      tool('e2', 'edit', { toolKind: 'file_change', filePath: 'src/a.ts' })
+    ]
+    expect(summarizeToolActivity(blocks).editedFileCount).toBe(1)
+  })
+
+  it('tracks running created file count', () => {
+    const blocks: ChatBlock[] = [
+      tool('w1', 'write', { toolKind: 'file_change', filePath: 'new.ts', status: 'running' })
+    ]
+    const stats = summarizeToolActivity(blocks)
+    expect(stats.createdFileCount).toBe(1)
+    expect(stats.runningCreatedFileCount).toBe(1)
   })
 })
 

@@ -1874,6 +1874,8 @@
   "toolActivitySummary.commands.running": "正在运行 {{count}} 条命令",
   "toolActivitySummary.created.leading": "创建了 {{count}} 个文件",
   "toolActivitySummary.created": "创建了 {{count}} 个文件",
+  "toolActivitySummary.creating.leading": "正在创建 {{count}} 个文件",
+  "toolActivitySummary.creating": "正在创建 {{count}} 个文件",
   "toolActivitySummary.edited.leading": "编辑了 {{count}} 个文件",
   "toolActivitySummary.edited": "编辑了 {{count}} 个文件",
   "toolActivitySummary.editing.leading": "正在编辑 {{count}} 个文件",
