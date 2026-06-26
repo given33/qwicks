@@ -154,6 +154,92 @@ export function summarizeActivity(units: ClassifiedUnit[]): ActivitySummaryStats
   return projectActivitySummary(acc)
 }
 
+/** 渲染分组结果（对标 Codex 的 render group 输出）。 */
+export type RenderGroup =
+  | { kind: 'single'; unit: ClassifiedUnit }
+  | {
+      kind: 'collapsed-tool-activity'
+      units: ClassifiedUnit[]
+      summary: ActivitySummaryStats
+      isCurrentActivity: boolean
+      /** 单个可折叠 item 在 detail level 非 STEPS_PROSE 时不折叠。 */
+      forceSingle: boolean
+    }
+
+/**
+ * 四阶段管道（对标 tn）。把 blocks 转成 RenderGroup 列表：
+ *
+ * 1. 分类（Ve）：每个 block → ClassifiedUnit
+ * 2. 锚点切分（Lt）：assistant-message 切出工具活动段
+ * 3. 段内折叠合并（It）：连续可折叠 item 合成 collapsed-tool-activity
+ * 4. detail level 判定：单个 exec 仅在 STEPS_PROSE 折叠；当前活动区展开
+ *
+ * @param blocks turn 的 ChatBlock 列表
+ * @param isTurnClosed turn 是否结束（影响尾部活动段是否算"当前活动"）
+ * @param detailLevel 详情级别（默认 STEPS_PROSE）
+ */
+export function splitIntoRenderGroups(
+  blocks: ChatBlock[],
+  isTurnClosed: boolean,
+  detailLevel: DetailLevel = 'STEPS_PROSE'
+): RenderGroup[] {
+  const classified = blocks.map(classifyBlock)
+  const slices = splitByAssistantAnchors(classified, isTurnClosed)
+
+  // 无活动段：所有 unit 各自作为 single 输出（assistant/reasoning/other 等）
+  if (slices.length === 0) {
+    return classified.map((unit) => ({ kind: 'single', unit }))
+  }
+
+  // 构建"段内折叠"的合并结果，同时保留非段内 unit（锚点、other）为 single
+  const groups: RenderGroup[] = []
+  let cursor = 0
+  for (const slice of slices) {
+    // 段之前的 unit（assistant-message 锚点 + 可能的 other）→ single
+    while (cursor < slice.startIndex) {
+      groups.push({ kind: 'single', unit: classified[cursor] })
+      cursor += 1
+    }
+    // 段内：把连续可折叠 item 合成 collapsed-tool-activity
+    while (cursor < slice.endIndex) {
+      const unit = classified[cursor]
+      if (!unit || !isCollapsible(unit)) {
+        // 非可折叠（段内的 other/reasoning）→ single
+        if (unit) groups.push({ kind: 'single', unit })
+        cursor += 1
+        continue
+      }
+      // 收集连续可折叠 unit（对标 It 的内层循环）
+      const runStart = cursor
+      while (cursor < slice.endIndex) {
+        const u = classified[cursor]
+        if (!u || !isCollapsible(u)) break
+        cursor += 1
+      }
+      const runUnits = classified.slice(runStart, cursor)
+      // detail level 判定（对标 tn:1623）：
+      // 单个 exec 在非 STEPS_PROSE 时不折叠（forceSingle）；当前活动区强制展开
+      const isSingle = runUnits.length === 1
+      const isCurrent = slice.isCurrentActivity
+      const singleExec = isSingle && runUnits[0].type === 'exec'
+      const forceSingle = isCurrent || (singleExec && detailLevel !== 'STEPS_PROSE')
+      groups.push({
+        kind: 'collapsed-tool-activity',
+        units: runUnits,
+        summary: summarizeActivity(runUnits),
+        isCurrentActivity: isCurrent,
+        forceSingle
+      })
+    }
+  }
+  // 段之后的尾部 unit（若有）→ single
+  while (cursor < classified.length) {
+    groups.push({ kind: 'single', unit: classified[cursor] })
+    cursor += 1
+  }
+  return groups
+}
+
 /**
  * 分类器（对标 Ve）。把单个 ChatBlock 转成 ClassifiedUnit。
  */

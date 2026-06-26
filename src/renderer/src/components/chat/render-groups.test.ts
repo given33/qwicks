@@ -7,7 +7,8 @@ import {
   summarizeActivity,
   createActivityAccumulator,
   accumulateActivity,
-  projectActivitySummary
+  projectActivitySummary,
+  splitIntoRenderGroups
 } from './render-groups'
 
 function tool(id: string, toolName: string, overrides: Partial<ToolBlock> = {}): ChatBlock {
@@ -202,5 +203,86 @@ describe('summarizeActivity (Set dedup)', () => {
     accumulateActivity(acc, units[0])
     accumulateActivity(acc, units[1])
     expect(projectActivitySummary(acc)).toEqual(summarizeActivity(units))
+  })
+})
+
+describe('splitIntoRenderGroups (four-stage pipeline)', () => {
+  it('assistant-message stays single; following tools collapse into one group', () => {
+    const blocks = [
+      assistant('a1'),
+      tool('b1', 'bash'),
+      tool('b2', 'bash'),
+      tool('e1', 'edit', { toolKind: 'file_change', filePath: 'x.ts' })
+    ]
+    const groups = splitIntoRenderGroups(blocks, true)
+    // a1 single, then one collapsed group (3 tools merged)
+    expect(groups).toHaveLength(2)
+    expect(groups[0].kind).toBe('single')
+    expect(groups[1].kind).toBe('collapsed-tool-activity')
+    if (groups[1].kind === 'collapsed-tool-activity') {
+      expect(groups[1].units).toHaveLength(3)
+      expect(groups[1].summary.commandCount).toBe(2)
+      expect(groups[1].summary.editedFileCount).toBe(1)
+      expect(groups[1].forceSingle).toBe(false)
+    }
+  })
+
+  it('multiple assistant anchors split into separate tool groups', () => {
+    const blocks = [
+      assistant('a1'),
+      tool('b1', 'bash'),
+      assistant('a2'),
+      tool('e1', 'edit', { toolKind: 'file_change', filePath: 'y.ts' })
+    ]
+    const groups = splitIntoRenderGroups(blocks, true)
+    // a1 single, group1(1 cmd), a2 single, group2(1 edit)
+    expect(groups).toHaveLength(4)
+    expect(groups[0].kind).toBe('single')
+    expect(groups[1].kind).toBe('collapsed-tool-activity')
+    expect(groups[2].kind).toBe('single')
+    expect(groups[3].kind).toBe('collapsed-tool-activity')
+  })
+
+  it('single exec in STEPS_PROSE folds into collapsed group', () => {
+    const blocks = [assistant('a1'), tool('b1', 'bash')]
+    const groups = splitIntoRenderGroups(blocks, true, 'STEPS_PROSE')
+    expect(groups[1].kind).toBe('collapsed-tool-activity')
+    if (groups[1].kind === 'collapsed-tool-activity') {
+      expect(groups[1].forceSingle).toBe(false) // STEPS_PROSE folds single exec
+    }
+  })
+
+  it('single exec in DETAILED stays single (not collapsed)', () => {
+    const blocks = [assistant('a1'), tool('b1', 'bash')]
+    const groups = splitIntoRenderGroups(blocks, true, 'DETAILED')
+    expect(groups[1].kind).toBe('collapsed-tool-activity')
+    if (groups[1].kind === 'collapsed-tool-activity') {
+      expect(groups[1].forceSingle).toBe(true) // DETAILED: single exec NOT collapsed
+    }
+  })
+
+  it('current activity (turn in progress) forces single even in STEPS_PROSE', () => {
+    const blocks = [assistant('a1'), tool('b1', 'bash', { status: 'running' })]
+    const groups = splitIntoRenderGroups(blocks, false, 'STEPS_PROSE')
+    // last slice + not closed = current activity → forceSingle
+    if (groups[1].kind === 'collapsed-tool-activity') {
+      expect(groups[1].isCurrentActivity).toBe(true)
+      expect(groups[1].forceSingle).toBe(true)
+    }
+  })
+
+  it('no tools = all singles', () => {
+    const blocks = [assistant('a1'), assistant('a2')]
+    const groups = splitIntoRenderGroups(blocks, true)
+    expect(groups.every((g) => g.kind === 'single')).toBe(true)
+    expect(groups).toHaveLength(2)
+  })
+
+  it('reasoning inside a slice stays single (not collapsible)', () => {
+    const blocks = [assistant('a1'), reasoning('r1'), tool('b1', 'bash')]
+    const groups = splitIntoRenderGroups(blocks, true)
+    // a1 single, r1 single (other, not collapsible), b1 collapsed
+    expect(groups).toHaveLength(3)
+    expect(groups[1].kind).toBe('single')
   })
 })
