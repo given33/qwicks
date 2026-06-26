@@ -966,9 +966,13 @@ export function FloatingComposer({
     ? formatGoalElapsedSeconds((activeThreadGoal.timeUsedSeconds ?? 0) + liveGoalElapsedSeconds)
     : ''
   const goalBannerLabel = activeThreadGoal
-    ? activeThreadGoal.status === 'active'
-      ? t('goalActiveHeading')
-      : t(`goalStatusShort.${activeThreadGoal.status}`)
+    ? activeThreadGoal.status === 'blocked'
+      ? `${t(`goalStatusShort.${activeThreadGoal.status}`)} ${t('goalBlockedHint')}`
+      : activeThreadGoal.status === 'active' && busy
+        ? `${t('goalActiveHeading')} ${t('goalResumingHint')}`
+        : activeThreadGoal.status === 'active'
+          ? t('goalActiveHeading')
+          : t(`goalStatusShort.${activeThreadGoal.status}`)
     : ''
   const goalMenuChecked = activeThreadGoal?.status === 'active'
   const showGoalFloater = shouldShowGoalFloater({

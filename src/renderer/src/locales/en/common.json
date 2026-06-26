@@ -1435,6 +1435,8 @@
   "goalStatusUsageLimited": "usage-limited",
   "goalStatusBudgetLimited": "budget-limited",
   "goalStatusComplete": "complete",
+  "goalResumingHint": "(auto-resuming)",
+  "goalBlockedHint": "(no progress, resume manually)",
   "goalStatusShort": {
     "active": "Active",
     "paused": "Paused",

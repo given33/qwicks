@@ -1435,6 +1435,8 @@
   "goalStatusUsageLimited": "用量受限",
   "goalStatusBudgetLimited": "预算受限",
   "goalStatusComplete": "已完成",
+  "goalResumingHint": "（自动续跑中）",
+  "goalBlockedHint": "（多次无进展，需手动继续）",
   "goalStatusShort": {
     "active": "进行中",
     "paused": "暂停",
