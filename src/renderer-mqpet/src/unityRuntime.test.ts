@@ -4,6 +4,7 @@ import {
   createUnityLoaderConfig,
   installUnityBridge,
   selectMqpetRuntime,
+  sendUnityMenuAction,
   type UnityBridgeTarget,
 } from './unityRuntime';
 
@@ -43,6 +44,23 @@ describe('MQPet Unity runtime selection', () => {
 });
 
 describe('MQPet Unity bridge', () => {
+  it('sends QWicks menu actions into the Unity WebGL bridge object', () => {
+    const SendMessage = vi.fn();
+
+    expect(sendUnityMenuAction({ SendMessage }, 'heal')).toBe(true);
+
+    expect(SendMessage).toHaveBeenCalledWith(
+      'QwicksMqpetWebGLBridge',
+      'HandleQwicksMenuAction',
+      'heal',
+    );
+  });
+
+  it('falls back when the Unity instance cannot receive menu commands', () => {
+    expect(sendUnityMenuAction(null, 'feed')).toBe(false);
+    expect(sendUnityMenuAction({}, 'feed')).toBe(false);
+  });
+
   it('forwards Unity hit boxes, dragging, and menu requests to the QWicks bridge', () => {
     const target: UnityBridgeTarget = {};
     const reportBBox = vi.fn();

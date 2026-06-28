@@ -8,6 +8,7 @@ import { createHoverMenuState, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type Hove
 import {
   createUnityLoaderConfig,
   installUnityBridge,
+  sendUnityMenuAction,
   selectMqpetRuntime,
   type UnityLoaderConfig,
 } from './unityRuntime';
@@ -15,6 +16,7 @@ import { useFrameLoop } from './useFrameLoop';
 
 type UnityInstance = {
   Quit?: () => Promise<void>;
+  SendMessage?: (gameObjectName: string, methodName: string, value?: string) => void;
 };
 
 type CreateUnityInstance = (
@@ -208,6 +210,8 @@ export function UnityMqpetStage(): React.ReactElement {
   function onPick(action: MenuPick | 'close'): void {
     applyHoverMenu(reduceHoverMenu(hoverMenu.current, { type: 'picked' }));
     if (action === 'close') return;
+    if (sendUnityMenuAction(unityInstance.current, action)) return;
+
     const panel = consolePanelForMenuAction(action);
     if (panel) void (bridge.current?.openConsolePanel?.(panel) ?? bridge.current?.toggleConsole?.());
     else void bridge.current?.toggleConsole?.();

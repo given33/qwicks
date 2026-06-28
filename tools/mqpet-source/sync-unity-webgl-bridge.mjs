@@ -89,6 +89,94 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
 #endif
     }
 
+    public void HandleQwicksMenuAction(string action)
+    {
+        string normalized = (action ?? string.Empty).Trim().ToLowerInvariant();
+        PetInteractFinal petInteract = FindObjectOfType<PetInteractFinal>();
+
+        switch (normalized)
+        {
+            case "feed":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Feed();
+                }
+                else if (InventoryManager.Instance != null)
+                {
+                    InventoryManager.Instance.OpenBag(0);
+                }
+                break;
+            case "clean":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Clean();
+                }
+                else if (InventoryManager.Instance != null)
+                {
+                    InventoryManager.Instance.OpenBag(1);
+                }
+                break;
+            case "heal":
+            case "medical":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Medical();
+                }
+                else if (InventoryManager.Instance != null)
+                {
+                    InventoryManager.Instance.OpenBag(2);
+                }
+                break;
+            case "bag":
+                if (InventoryManager.Instance != null)
+                {
+                    InventoryManager.Instance.OpenBag(0);
+                }
+                break;
+            case "shop":
+                if (ShopManager.Instance != null)
+                {
+                    ShopManager.Instance.OpenShop();
+                }
+                break;
+            case "work":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Work();
+                }
+                else if (PetDataManager.Instance != null)
+                {
+                    PetDataManager.Instance.StartWorking();
+                }
+                break;
+            case "learn":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Learn();
+                }
+                else if (PetDataManager.Instance != null)
+                {
+                    PetDataManager.Instance.StartLearning();
+                }
+                break;
+            case "map":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Map();
+                }
+                break;
+            case "status":
+                if (petInteract != null)
+                {
+                    petInteract.OnClick_Status();
+                }
+                break;
+            default:
+                Debug.LogWarning($"QWicks QQPet received unsupported menu action: {action}");
+                break;
+        }
+    }
+
     public static QwicksMqpetWebGLBridge Ensure()
     {
         if (Instance != null) return Instance;

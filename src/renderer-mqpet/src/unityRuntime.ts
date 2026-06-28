@@ -35,6 +35,10 @@ export interface QwicksMqpetUnityBridge {
   log: (message: string) => void;
 }
 
+export interface UnityMenuCommandTarget {
+  SendMessage?: (gameObjectName: string, methodName: string, value?: string) => void;
+}
+
 const MENU_PANEL: Record<'bag' | 'shop' | 'status', MqpetConsolePanelRequest> = {
   bag: { tab: 'inventory' },
   shop: { tab: 'shop' },
@@ -60,6 +64,20 @@ export function createUnityLoaderConfig(build: Extract<MqpetUnityBuildStatus, { 
     productName: 'QQPet',
     productVersion: '0.2.0',
   };
+}
+
+export function sendUnityMenuAction(
+  unityInstance: UnityMenuCommandTarget | null | undefined,
+  action: UnityMenuPanel,
+): boolean {
+  if (typeof unityInstance?.SendMessage !== 'function') return false;
+
+  try {
+    unityInstance.SendMessage('QwicksMqpetWebGLBridge', 'HandleQwicksMenuAction', action);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function installUnityBridge(target: UnityBridgeTarget, bridge: QwicksMqpetBridge): QwicksMqpetUnityBridge {

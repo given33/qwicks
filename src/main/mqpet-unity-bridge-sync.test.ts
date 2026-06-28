@@ -30,6 +30,13 @@ describe('syncUnityWebGLBridge', () => {
       expect(cs).toContain('ReportBBox(Rect rect)');
       expect(cs).toContain('SetDragging(bool dragging)');
       expect(cs).toContain('OpenMenu(string panel)');
+      expect(cs).toContain('HandleQwicksMenuAction(string action)');
+      expect(cs).toContain('PetInteractFinal petInteract = FindObjectOfType<PetInteractFinal>()');
+      expect(cs).toContain('petInteract.OnClick_Feed();');
+      expect(cs).toContain('InventoryManager.Instance.OpenBag(2);');
+      expect(cs).toContain('PetDataManager.Instance.StartWorking()');
+      expect(cs).toContain('PetDataManager.Instance.StartLearning()');
+      expect(cs).toContain('ShopManager.Instance.OpenShop();');
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
     }
