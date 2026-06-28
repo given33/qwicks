@@ -426,9 +426,24 @@ export function mergeQWicksRuntimeSettings(
       : {})
   })
   const nextModelProfiles = normalizeQWicksModelProfiles(current.modelProfiles, patch?.modelProfiles)
-  return {
+  const source = {
     ...current,
-    ...(patch ?? {}),
+    ...(patch ?? {})
+  }
+  return {
+    binaryPath: source.binaryPath,
+    port: source.port,
+    autoStart: source.autoStart,
+    apiKey: source.apiKey,
+    baseUrl: source.baseUrl,
+    providerId: source.providerId,
+    endpointFormat: normalizeModelEndpointFormat(source.endpointFormat),
+    runtimeToken: source.runtimeToken,
+    dataDir: source.dataDir,
+    model: source.model,
+    approvalPolicy: source.approvalPolicy,
+    sandboxMode: source.sandboxMode,
+    insecure: source.insecure,
     tokenEconomyMode: nextTokenEconomy.enabled,
     tokenEconomy: nextTokenEconomy,
     mcpSearch: nextMcpSearch,

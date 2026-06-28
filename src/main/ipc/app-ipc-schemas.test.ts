@@ -14,8 +14,44 @@ import {
   workspaceEntryRenamePayloadSchema,
   writeInlineCompletionPayloadSchema
 } from './app-ipc-schemas'
+import {
+  defaultClawSettings,
+  defaultKeyboardShortcuts,
+  defaultModelProviderSettings,
+  defaultQWicksRuntimeSettings,
+  defaultScheduleSettings,
+  defaultWorkflowSettings,
+  defaultWriteSettings,
+  normalizeAppSettings,
+  type AppSettingsV1
+} from '../../shared/app-settings'
 
 describe('app-ipc-schemas', () => {
+  function fullSettings(): AppSettingsV1 {
+    return {
+      version: 1,
+      locale: 'en',
+      theme: 'system',
+      uiFontScale: 'small',
+      cursorSpotlight: true,
+      provider: defaultModelProviderSettings(),
+      agents: { qwicks: defaultQWicksRuntimeSettings() },
+      workspaceRoot: '/tmp/workspace',
+      log: { enabled: true, retentionDays: 7 },
+      notifications: { turnComplete: true },
+      appBehavior: { openAtLogin: false, startMinimized: false, closeAction: 'ask', closeToTray: false },
+      keyboardShortcuts: defaultKeyboardShortcuts(),
+      write: defaultWriteSettings(),
+      claw: defaultClawSettings(),
+      schedule: defaultScheduleSettings(),
+      workflow: defaultWorkflowSettings(),
+      guiUpdate: { channel: 'stable' },
+      pet: { enabled: true, spriteScale: 1, walkEnabled: true, consoleOnLaunch: false, diaryRetentionDays: 90, growthSpeed: 1 },
+      codePromptPrefix: '',
+      disabledSkillIds: []
+    }
+  }
+
   it('normalizes runtime request paths', () => {
     const payload = runtimeRequestPayloadSchema.parse({
       path: 'v1/threads?limit=1',
@@ -180,6 +216,20 @@ describe('app-ipc-schemas', () => {
     expect(payload.write?.selectionAssist?.infographicPrompt).toBe('手绘风格信息图。')
     expect(payload.write?.selectionAssist?.quickActions).toHaveLength(2)
     expect(payload.disabledSkillIds).toEqual(['test-skill-08'])
+  })
+
+  it('accepts a normalized full settings snapshot after legacy speech-to-text fields are dropped', () => {
+    const snapshot = fullSettings()
+    ;(snapshot.agents.qwicks as unknown as Record<string, unknown>).speechToText = {
+      enabled: true,
+      providerId: 'legacy-speech',
+      model: 'legacy-asr'
+    }
+
+    const normalized = normalizeAppSettings(snapshot)
+    const payload = settingsPatchSchema.parse(normalized)
+
+    expect('speechToText' in (payload.agents?.qwicks as Record<string, unknown>)).toBe(false)
   })
 
   it('accepts the cursor spotlight preference', () => {
