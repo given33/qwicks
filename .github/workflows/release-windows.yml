@@ -1,4 +1,4 @@
-name: Build and Deploy Windows Installer
+name: Windows Installer Release
 
 on:
   push:
@@ -30,8 +30,12 @@ env:
   NODE_VERSION: 22.13.1
   DEFAULT_UPDATE_BASE_URL: http://8.138.40.16/qwicks
 
+concurrency:
+  group: qwicks-release-${{ github.event.inputs.channel || 'stable' }}
+  cancel-in-progress: false
+
 jobs:
-  build-windows:
+  installer-release:
     runs-on: windows-latest
     env:
       QWICKS_UPDATE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
@@ -43,105 +47,95 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check full-installer change set
+      - name: Classify release change
         id: full_release
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -ne "push") {
-            "needed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            @(
+              "release_kind=installer",
+              "hot_update_safe=false",
+              "code_update_needed=false",
+              "full_installer_needed=true"
+            ) | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            $summary = @'
+          ### Release change classification
+
+          - Release kind: `installer`
+          - Code update needed: `false`
+          - Full installer needed: `true`
+          - Reason: manual workflow dispatch
+
+          '@
+            $summary | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             Write-Host "Manual workflow dispatch will build and deploy a full installer."
             exit 0
           }
 
-          $base = "${{ github.event.before }}".Trim()
-          if (-not $base -or $base -match '^0+$') {
-            $base = 'HEAD~1'
-          }
-          $files = @(git diff --name-only $base $env:GITHUB_SHA)
-          # Hot-update-safe 前缀:所有纯 JS/TS 代码(renderer/preload/main 的 JS 部分/
-          # contracts/loop/server/adapters/ports/services/dream/qwicks)都是热更新安全的。
-          # 只有以下情况才需要全量 installer:electron-builder.config / package.json deps /
-          # scripts/ / .github/ / native 模块 / electron 主入口(src/main/index.ts)。
-          $hotSafePattern = '^(src/renderer/|src/preload/|src/asset/|src/contracts/|src/loop/|src/server/|src/adapters/|src/ports/|src/services/|src/dream/|src/shared/|qwicks/src/|qwicks/tests/|docs/)'
-          $hotOnly = @($files | Where-Object { $_ -and $_ -notmatch $hotSafePattern -and $_ -notmatch '^(src/main/(?!index\.ts$))' }).Count -eq 0
-          if ($hotOnly) {
-            Write-Host "Skipping full installer because this push is hot-update safe (all changes are JS/TS code)."
-            "needed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } else {
-            Write-Host "Full installer required because this push includes shell/native/CI files:"
-            $hotSafePattern = '^(src/renderer/|src/preload/|src/asset/|src/contracts/|src/loop/|src/server/|src/adapters/|src/ports/|src/services/|src/dream/|src/shared/|qwicks/src/|qwicks/tests/|docs/)'
-            $files | Where-Object { $_ -and $_ -notmatch $hotSafePattern -and $_ -notmatch '^(src/main/(?!index\.ts$))' } | ForEach-Object { Write-Host "  $_" }
-            "needed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          }
+          node scripts/classify-release-change.cjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Summarize skipped installer
+        if: ${{ steps.full_release.outputs.full_installer_needed != 'true' }}
+        shell: pwsh
+        run: |
+          $summary = @"
+          ### Windows installer
+
+          Skipped full installer for release kind `${{ steps.full_release.outputs.release_kind }}`.
+          This run did not create an installer artifact and did not deploy installer files to the server.
+
+          "@
+          $summary | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       - name: Setup Node.js
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Python
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         run: npm ci
 
       - name: Compute app version
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         id: version
         shell: pwsh
+        env:
+          MANUAL_VERSION: ${{ github.event.inputs.version }}
         run: |
-          $manual = '${{ github.event.inputs.version }}'.Trim()
-          if ($manual) {
-            $version = $manual
-          } else {
-            # Unified versioning: installer and code (hot) updates share ONE
-            # 0.2.N sequence (N = git commit count). This MUST match
-            # release-code-update.yml's formula exactly, so the two never diverge
-            # into separate series (the 0.1.x vs 0.2.x split that caused the
-            # "always shows an update / restart loop" bug). Commit count is
-            # monotonically increasing, so a newer installer is always a higher
-            # version than any earlier code update.
-            $major = 0
-            $minor = 2
-            $patch = (git rev-list --count HEAD).Trim()
-            if ($patch -notmatch '^\d+$') {
-              throw "Could not compute a monotonic patch version from git history."
-            }
-            $version = "$major.$minor.$patch"
-          }
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Version must be x.y.z, got: $version"
-          }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "QWICKS_APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Building QWicks $version on $env:QWICKS_UPDATE_CHANNEL"
+          node scripts/compute-update-version.cjs --version "$env:MANUAL_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Building QWicks $env:QWICKS_APP_VERSION on $env:QWICKS_UPDATE_CHANNEL"
 
       - name: Typecheck
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         run: npm run typecheck
 
       - name: Test stable suite
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         run: npm run test:ci
 
       - name: Build Windows installer
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         run: |
           if (Test-Path dist) { Remove-Item -Recurse -Force dist }
           npm run dist:win
 
       - name: Write release notes
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         env:
           MANUAL_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
@@ -151,12 +145,12 @@ jobs:
             $notes = $manualNotes
           } else {
             $subject = git log -1 --pretty=%s
-            $notes = "更新：$subject"
+            $notes = "Update: $subject"
           }
           Set-Content -Encoding utf8 -Path dist/release-notes.md -Value $notes
 
       - name: Write server latest.json
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         run: |
           node scripts/write-server-update-json.cjs `
@@ -167,7 +161,7 @@ jobs:
             --release-notes-file dist/release-notes.md
 
       - name: Upload build artifact
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: QWicks-${{ steps.version.outputs.version }}-win-x64
@@ -180,7 +174,7 @@ jobs:
           if-no-files-found: error
 
       - name: Deploy update files to Aliyun server
-        if: ${{ steps.full_release.outputs.needed == 'true' }}
+        if: ${{ steps.full_release.outputs.full_installer_needed == 'true' }}
         shell: pwsh
         env:
           SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST || secrets.ALIYUN_SSH_HOST || '8.138.40.16' }}
