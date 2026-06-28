@@ -35,6 +35,20 @@ describe('build/installer.nsh structure (problem 2 regression guard)', () => {
     expect(customInitBody).not.toMatch(/\$\{If\}\s+\$2\s*==\s*"INFO"/)
   })
 
+  it('does not pass shell redirection tokens to taskkill through nsExec', () => {
+    // nsExec invokes taskkill directly, not through cmd.exe. A token like 2>&1
+    // is therefore passed to taskkill as a literal argument, which makes
+    // taskkill fail with "Invalid argument/option" and leaves QWicks.exe alive.
+    const nsExecTaskkillCommands = Array.from(
+      content.matchAll(/nsExec::Exec(?:ToStack)?\s+'([^']*taskkill[^']*)'/gi),
+      (match) => match[1]
+    )
+    expect(nsExecTaskkillCommands.length).toBeGreaterThan(0)
+    for (const command of nsExecTaskkillCommands) {
+      expect(command).not.toMatch(/(?:^|\s)[12]?>&\d(?:\s|$)/)
+    }
+  })
+
   it('customCheckAppRunning re-kills defensively and never Abort (never blocks install)', () => {
     const checkMatch = content.match(/!macro\s+customCheckAppRunning([\s\S]*?)!macroend/i)
     expect(checkMatch, 'customCheckAppRunning macro not found').not.toBeNull()
