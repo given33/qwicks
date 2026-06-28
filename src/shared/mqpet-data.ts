@@ -165,7 +165,17 @@ export function startLearning(s: MqPetState, hours = 2): boolean {
 
 export function applyItem(
   s: MqPetState,
-  item: { addHunger: number; addCleanliness: number; addHealth: number; addMood: number; addCharm: number; addGrowth: number; buffDuration: number; },
+  item: {
+    addHunger: number;
+    addCleanliness: number;
+    addHealth: number;
+    addMood: number;
+    addStressResistance?: number;
+    addIntelligence?: number;
+    addCharm: number;
+    addGrowth: number;
+    buffDuration: number;
+  },
   now: number = Date.now(),
 ): MqPetState {
   const next = { ...s };
@@ -173,6 +183,8 @@ export function applyItem(
   next.cleanliness += item.addCleanliness;
   next.health += item.addHealth;
   next.mood += item.addMood;
+  next.stressResistance += item.addStressResistance ?? 0;
+  next.intelligence += item.addIntelligence ?? 0;
   if (item.addCharm > 0) {
     if (item.buffDuration > 0) {
       next.charmBuffs = [...next.charmBuffs, { amount: item.addCharm, expiresAt: now + item.buffDuration * 1000 }];

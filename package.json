@@ -34,6 +34,10 @@
     "postinstall": "node ./scripts/postinstall.cjs",
     "verify:apple": "node ./scripts/verify-apple-signing.cjs",
     "preview": "electron-vite preview",
+    "mqpet:check-unity-webgl": "node ./tools/mqpet-source/check-unity-webgl-build.mjs",
+    "mqpet:sync-unity-bridge": "node ./tools/mqpet-source/sync-unity-webgl-bridge.mjs",
+    "mqpet:sync-unity-build-script": "node ./tools/mqpet-source/sync-unity-webgl-build-script.mjs",
+    "mqpet:patch-unity-transparent-window": "node ./tools/mqpet-source/patch-transparent-window-webgl.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "mac:unquarantine": "bash ./scripts/mac-unquarantine.sh"
   },

@@ -27,6 +27,7 @@ import {
   clampPetCenterToViewport,
   finishDragSession,
   positionFromPointer,
+  shouldCaptureShellForPointerDown,
   type DragSession,
   updateDragSessionForPointerMove,
 } from './petInteraction';
@@ -256,10 +257,10 @@ export function MqpetStage(): React.ReactElement {
   }, []);
 
   function onPenguinPointerDown(e: React.PointerEvent<HTMLDivElement>): void {
-    if (e.button === 2) return;
+    if (!shouldCaptureShellForPointerDown(e.button)) return;
     e.preventDefault();
     drag.current = null;
-    bridge.current?.setDragging(false);
+    bridge.current?.setDragging(true);
     e.currentTarget.setPointerCapture?.(e.pointerId);
     drag.current = beginDragSession({ x: e.clientX, y: e.clientY }, posRef.current, e.pointerId);
     applyHoverMenu(reduceHoverMenu(hoverMenu.current, { type: 'force-close' }));

@@ -1,11 +1,12 @@
 // src/main/mqpet-ipc.ts
 // mqpet:* IPC handlers。模式移植自 pet-ipc.ts。
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import {
   getMqpetStateStore, mutateUseItem, mutateBuy, mutateWork, mutateLearn, mutateInteract,
 } from './mqpet-state-store';
 import { normalizeConsolePanelRequest } from '../shared/mqpet-console-panel';
 import { readMqpetSourceAsset } from './mqpet-source-file';
+import { resolveMqpetUnityBuild } from './mqpet-unity-build';
 
 let registered = false;
 
@@ -29,6 +30,10 @@ export function registerMqpetStateIpc(): void {
   ipcMain.handle('mqpet:learn', () => mutateLearn(store));
   ipcMain.handle('mqpet:interact', () => mutateInteract(store));
   ipcMain.handle('mqpet:get-source-asset', async (_e, sourcePath: string) => readMqpetSourceAsset(sourcePath));
+  ipcMain.handle('mqpet:get-unity-build', () => resolveMqpetUnityBuild({
+    env: process.env,
+    userDataPath: app.getPath('userData'),
+  }));
   ipcMain.handle('mqpet:toggle-console', async () => {
     const { toggleConsoleWindow } = await import('./mqpet-console-window');
     toggleConsoleWindow();

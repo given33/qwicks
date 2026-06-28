@@ -1,6 +1,7 @@
 // src/preload/mqpet.ts
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MqpetConsolePanelRequest } from '../shared/mqpet-console-panel';
+import type { MqpetUnityBuildStatus } from '../shared/mqpet-unity-build';
 
 contextBridge.exposeInMainWorld('mqpet', {
   // 上报企鹅 bbox(屏幕坐标)给主进程，用于轮询判断穿透。
@@ -31,6 +32,7 @@ contextBridge.exposeInMainWorld('mqpet', {
   learn: (): Promise<unknown> => ipcRenderer.invoke('mqpet:learn'),
   interact: (): Promise<unknown> => ipcRenderer.invoke('mqpet:interact'),
   getSourceAsset: (sourcePath: string): Promise<ArrayBuffer | null> => ipcRenderer.invoke('mqpet:get-source-asset', sourcePath),
+  getUnityBuild: (): Promise<MqpetUnityBuildStatus> => ipcRenderer.invoke('mqpet:get-unity-build'),
   toggleConsole: (): Promise<unknown> => ipcRenderer.invoke('mqpet:toggle-console'),
   openConsolePanel: (request: MqpetConsolePanelRequest): Promise<unknown> => ipcRenderer.invoke('mqpet:open-console-panel', request),
   onConsolePanelRequest: (cb: (request: MqpetConsolePanelRequest) => void): (() => void) => {

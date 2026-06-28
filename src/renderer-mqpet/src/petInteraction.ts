@@ -19,6 +19,10 @@ export interface FinishedDragSession {
   result: { wasDrag: boolean; wasClick: boolean } | null;
 }
 
+export function shouldCaptureShellForPointerDown(button: number): boolean {
+  return button === 0;
+}
+
 export function beginDragSession(
   pointer: DragPoint,
   petPosition: DragPoint,

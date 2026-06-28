@@ -133,4 +133,21 @@ describe('applyItem', () => {
     expect(next.charmBuffs).toHaveLength(1);
     expect(effectiveCharm(next)).toBe(30);
   });
+  it('applies original Config stat triples to stress, intelligence, and charm within source caps', () => {
+    const s = { ...defaultState(), level: 30 };
+    const next = applyItem(s, {
+      addHunger: 0,
+      addCleanliness: 0,
+      addHealth: 0,
+      addMood: 0,
+      addStressResistance: 4,
+      addIntelligence: 5,
+      addCharm: 6,
+      addGrowth: 0,
+      buffDuration: 0,
+    });
+    expect(next.stressResistance).toBe(s.stressResistance + 4);
+    expect(next.intelligence).toBe(s.intelligence + 5);
+    expect(next.charm).toBe(s.charm + 6);
+  });
 });

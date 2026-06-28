@@ -1,13 +1,19 @@
 import { BrowserWindow, ipcMain, screen } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import {
+  computeMqpetShellInteraction,
+  normalizeMqpetBBox,
+  type MqpetBBox,
+} from './mqpet-window-shell';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 let mqpetWindow: BrowserWindow | null = null;
 let ipcRegistered = false;
-let penguinBBox: { x: number; y: number; w: number; h: number } | null = null;
+let penguinBBox: MqpetBBox | null = null;
 let isDragging = false;
+let draggingStartedAt = 0;
 let pollTimer: NodeJS.Timeout | null = null;
 let keepAliveTimer: NodeJS.Timeout | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -34,38 +40,26 @@ function getCurrentVirtualDesktopBounds(): { x: number; y: number; width: number
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-function isPointOnPenguin(px: number, py: number): boolean {
-  if (!penguinBBox) return false;
-  const pad = 8;
-  return px >= penguinBBox.x - pad && px <= penguinBBox.x + penguinBBox.w + pad
-    && py >= penguinBBox.y - pad && py <= penguinBBox.y + penguinBBox.h + pad;
-}
-
 function startClickThroughPoll(): void {
   if (pollTimer) return;
   pollTimer = setInterval(() => {
     const win = getMqpetWindow();
     if (!win || win.isDestroyed()) return;
-    if (isDragging) {
-      if (!currentlyInteractive) {
-        currentlyInteractive = true;
-        win.setIgnoreMouseEvents(false, { forward: false });
-      }
-      return;
+    const decision = computeMqpetShellInteraction({
+      bbox: penguinBBox,
+      cursor: screen.getCursorScreenPoint(),
+      windowBounds: win.getBounds(),
+      dragging: isDragging,
+      draggingStartedAt,
+      now: Date.now(),
+    });
+    if (decision.shouldClearDragging) {
+      isDragging = false;
+      draggingStartedAt = 0;
     }
-    if (!penguinBBox) {
-      if (currentlyInteractive) {
-        currentlyInteractive = false;
-        win.setIgnoreMouseEvents(true, { forward: true });
-      }
-      return;
-    }
-    const cursor = screen.getCursorScreenPoint();
-    const bounds = win.getBounds();
-    const onPenguin = isPointOnPenguin(cursor.x - bounds.x, cursor.y - bounds.y);
-    if (onPenguin !== currentlyInteractive) {
-      currentlyInteractive = onPenguin;
-      win.setIgnoreMouseEvents(!onPenguin, { forward: !onPenguin });
+    if (decision.interactive !== currentlyInteractive) {
+      currentlyInteractive = decision.interactive;
+      win.setIgnoreMouseEvents(!decision.interactive, { forward: !decision.interactive });
     }
   }, 50);
 }
@@ -128,11 +122,13 @@ function stopHeartbeatWatch(): void {
 export function registerMqpetIpc(): void {
   if (ipcRegistered) return;
   ipcRegistered = true;
-  ipcMain.on('mqpet:penguin-bbox', (_event, bbox: { x: number; y: number; w: number; h: number } | null) => {
-    penguinBBox = bbox;
+  ipcMain.on('mqpet:penguin-bbox', (_event, bbox: MqpetBBox | null) => {
+    penguinBBox = normalizeMqpetBBox(bbox);
   });
   ipcMain.on('mqpet:dragging', (_event, dragging: boolean) => {
-    isDragging = Boolean(dragging);
+    const next = Boolean(dragging);
+    isDragging = next;
+    draggingStartedAt = next ? Date.now() : 0;
   });
   ipcMain.on('mqpet:renderer-log', (_event, msg: string) => {
     console.log(`[mqpet-renderer] ${msg}`);
@@ -193,6 +189,7 @@ export function createMqpetWindow(): BrowserWindow {
     stopHeartbeatWatch();
     penguinBBox = null;
     isDragging = false;
+    draggingStartedAt = 0;
     currentlyInteractive = false;
     mqpetWindow = null;
   });
@@ -241,5 +238,9 @@ export function destroyMqpetWindow(): void {
   stopHeartbeatWatch();
   const win = getMqpetWindow();
   if (win && !win.isDestroyed()) win.destroy();
+  penguinBBox = null;
+  isDragging = false;
+  draggingStartedAt = 0;
+  currentlyInteractive = false;
   mqpetWindow = null;
 }

@@ -4,6 +4,7 @@ import {
   clampPetCenterToViewport,
   finishDragSession,
   positionFromPointer,
+  shouldCaptureShellForPointerDown,
   shouldStartDrag,
   updateDragSessionForPointerMove,
 } from './petInteraction';
@@ -50,5 +51,13 @@ describe('MQPet drag interaction', () => {
         12,
       ),
     ).toEqual({ x: 60, y: 528 });
+  });
+
+  it('captures the shell on primary pointer down before the drag threshold is crossed', () => {
+    expect(shouldCaptureShellForPointerDown(0)).toBe(true);
+  });
+
+  it('does not capture the shell for right-click menu opens', () => {
+    expect(shouldCaptureShellForPointerDown(2)).toBe(false);
   });
 });

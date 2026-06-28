@@ -13,11 +13,13 @@ type RuffleApi = {
   };
 };
 
+type RuffleGlobal = Partial<RuffleApi> & {
+  config?: Record<string, unknown>;
+};
+
 declare global {
   interface Window {
-    RufflePlayer?: RuffleApi & {
-      config?: Record<string, unknown>;
-    };
+    RufflePlayer?: RuffleGlobal;
   }
 }
 
@@ -44,9 +46,10 @@ function rufflePublicPath(): string {
 function loadRuffleScript(): Promise<void> {
   if (ruffleScriptPromise) return ruffleScriptPromise;
 
-  window.RufflePlayer = window.RufflePlayer ?? {};
-  window.RufflePlayer.config = {
-    ...(window.RufflePlayer.config ?? {}),
+  const rufflePlayer = window.RufflePlayer ?? {};
+  window.RufflePlayer = rufflePlayer;
+  rufflePlayer.config = {
+    ...(rufflePlayer.config ?? {}),
     autoplay: 'on',
     backgroundColor: null,
     contextMenu: 'off',
@@ -60,7 +63,7 @@ function loadRuffleScript(): Promise<void> {
   };
 
   ruffleScriptPromise = new Promise((resolve, reject) => {
-    if (window.RufflePlayer?.newest) {
+    if (typeof window.RufflePlayer?.newest === 'function') {
       resolve();
       return;
     }
