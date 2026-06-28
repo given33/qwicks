@@ -21,6 +21,57 @@ export const TurnItemStatus = z.enum([
 ])
 export type TurnItemStatus = z.infer<typeof TurnItemStatus>
 
+export const ToolActivityKind = z.enum([
+  'command_execution',
+  'file_change',
+  'mcp_tool_call',
+  'dynamic_tool_call',
+  'multi_agent_action',
+  'web_search',
+  'generic_tool'
+])
+export type ToolActivityKind = z.infer<typeof ToolActivityKind>
+
+export const ToolCategory = z.enum([
+  'command',
+  'file',
+  'mcp',
+  'dynamic',
+  'multi_agent',
+  'web',
+  'generic'
+])
+export type ToolCategory = z.infer<typeof ToolCategory>
+
+export const ToolProviderKind = z.enum([
+  'built-in',
+  'mcp',
+  'web',
+  'skill',
+  'memory',
+  'gui',
+  'delegation',
+  'image',
+  'audio',
+  'video'
+])
+export type ToolProviderKind = z.infer<typeof ToolProviderKind>
+
+export const ToolActionType = z.enum([
+  'read',
+  'search',
+  'list_files',
+  'write',
+  'edit',
+  'execute',
+  'approval',
+  'delegate',
+  'fetch',
+  'generate',
+  'call'
+])
+export type ToolActionType = z.infer<typeof ToolActionType>
+
 export const TurnItemBase = z.object({
   id: z.string().min(1),
   turnId: z.string().min(1),
@@ -78,6 +129,10 @@ export const ToolCallTurnItem = TurnItemBase.extend({
   toolName: z.string().min(1),
   callId: z.string().min(1),
   toolKind: z.enum(['tool_call', 'command_execution', 'file_change']),
+  activityKind: ToolActivityKind.optional(),
+  toolCategory: ToolCategory.optional(),
+  providerKind: ToolProviderKind.optional(),
+  actionType: ToolActionType.optional(),
   arguments: z.record(z.string(), z.unknown()),
   summary: z.string().optional()
 })
@@ -88,6 +143,10 @@ export const ToolResultTurnItem = TurnItemBase.extend({
   toolName: z.string().min(1),
   callId: z.string().min(1),
   toolKind: z.enum(['tool_call', 'command_execution', 'file_change']),
+  activityKind: ToolActivityKind.optional(),
+  toolCategory: ToolCategory.optional(),
+  providerKind: ToolProviderKind.optional(),
+  actionType: ToolActionType.optional(),
   output: z.unknown(),
   isError: z.boolean().default(false)
 })

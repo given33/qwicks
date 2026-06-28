@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatBlock } from '../../agent/types'
-import { deriveTurnSections } from './derive-turn-sections'
+import { deriveTurnRenderModel, deriveTurnSections } from './derive-turn-sections'
 import type { Turn } from './message-timeline-turns'
 
 function sections(blocks: ChatBlock[]) {
@@ -28,6 +28,88 @@ function processingSections(input: {
 }
 
 describe('deriveTurnSections', () => {
+  it('deriveTurnRenderModel exposes final assistant separately from work items', () => {
+    const result = deriveTurnRenderModel({
+      turn: {
+        blocks: [
+          { kind: 'assistant', id: 'intro', text: 'I will inspect this.' },
+          {
+            kind: 'tool',
+            id: 'tool_read',
+            summary: 'read',
+            status: 'success',
+            toolKind: 'tool_call'
+          },
+          { kind: 'assistant', id: 'final', text: 'Done.' }
+        ]
+      } satisfies Turn,
+      isProcessing: false,
+      liveProcessText: '',
+      liveContent: '',
+      workspaceRoot: '/tmp'
+    })
+
+    expect(result.finalAssistantItems.map((block) => block.id)).toEqual(['final'])
+    expect(result.workItems.map((block) => block.id)).toEqual(['intro', 'tool_read'])
+    expect(result.pendingInteractionItems).toEqual([])
+  })
+
+  it('deriveTurnRenderModel keeps streaming live assistant out of work items', () => {
+    const result = deriveTurnRenderModel({
+      turn: { blocks: [] } satisfies Turn,
+      isProcessing: true,
+      liveProcessText: 'thinking',
+      liveContent: 'streaming answer',
+      workspaceRoot: '/tmp'
+    })
+
+    expect(result.workItems).toEqual([
+      { kind: 'reasoning', id: 'live-reasoning', text: 'thinking' }
+    ])
+    expect(result.liveAssistantText).toBe('streaming answer')
+    expect(result.finalAssistantItems).toEqual([])
+  })
+
+  it('deriveTurnRenderModel separates pending approval and user input interactions', () => {
+    const pendingApproval: ChatBlock = {
+      kind: 'approval',
+      id: 'approval_1',
+      approvalId: 'appr_1',
+      summary: 'Run command',
+      status: 'pending'
+    }
+    const pendingInput: ChatBlock = {
+      kind: 'user_input',
+      id: 'input_1',
+      requestId: 'input_1',
+      questions: [],
+      status: 'pending'
+    }
+    const result = deriveTurnRenderModel({
+      turn: {
+        blocks: [
+          pendingApproval,
+          pendingInput,
+          {
+            kind: 'tool',
+            id: 'tool_1',
+            summary: 'bash',
+            status: 'running',
+            toolKind: 'command_execution'
+          }
+        ]
+      } satisfies Turn,
+      isProcessing: true,
+      liveProcessText: '',
+      liveContent: '',
+      workspaceRoot: '/tmp'
+    })
+
+    expect(result.pendingInteractionItems).toEqual([pendingApproval, pendingInput])
+    expect(result.forceOpenItemIds).toEqual(new Set(['approval_1', 'input_1']))
+    expect(result.workItems.map((block) => block.id)).toEqual(['tool_1'])
+  })
+
   it('renders the final assistant answer as content even when reasoning was persisted after it', () => {
     const result = sections([
       { kind: 'assistant', id: 'answer', text: '你好！' },

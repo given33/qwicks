@@ -6,6 +6,7 @@ import type {
   ReviewEventPayload,
   RuntimeStatusEventPayload,
   ThreadEventSink,
+  TraceSpan,
   ToolBlock,
   ToolEventPayload,
   UserInputQuestion
@@ -49,6 +50,7 @@ const LEGACY_RUNTIME_STREAM_RECOVERING_VALUE = 'runtimeStreamRecovering'
 const COMPLETION_NOTIFICATION_DEDUPE_LIMIT = 200
 export const MAX_WATCHED_COMPLETION_NOTIFICATIONS = 200
 export const MAX_PENDING_CLAW_FEISHU_MIRRORS = 50
+const MAX_RAW_RUNTIME_EVENTS_PER_TURN = 200
 const completionNotificationKeys: string[] = []
 const completionNotificationKeySet = new Set<string>()
 const watchCompletionNotificationKeys = new Map<string, string>()
@@ -227,6 +229,29 @@ function runtimeEventStartedAt(createdAt: string | undefined, now = Date.now()):
   if (parsed > now + CLOCK_SKEW_TOLERANCE_MS) return now
   if (now - parsed > MAX_RUNTIME_EVENT_TIMER_AGE_MS) return now
   return parsed
+}
+
+function traceDurationMs(startedAt: string, endedAt?: string): number | undefined {
+  if (!endedAt) return undefined
+  const start = Date.parse(startedAt)
+  const end = Date.parse(endedAt)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined
+  return Math.max(0, end - start)
+}
+
+function mergeTraceSpan(current: TraceSpan | undefined, next: TraceSpan): TraceSpan {
+  const merged: TraceSpan = {
+    ...(current ?? {}),
+    ...next,
+    attrs: {
+      ...(current?.attrs ?? {}),
+      ...(next.attrs ?? {})
+    }
+  }
+  if (Object.keys(merged.attrs ?? {}).length === 0) delete merged.attrs
+  const durationMs = traceDurationMs(merged.startedAt, merged.endedAt)
+  if (durationMs !== undefined) merged.durationMs = durationMs
+  return merged
 }
 
 export function forkedMessageCount(blocks: ChatBlock[]): number {
@@ -590,6 +615,50 @@ export function buildThreadEventSink(
         error: clearRuntimeStreamRecoveringError(s.error)
       }))
     },
+    onRuntimeEvent: (ev) => {
+      if (!isCurrentStream()) return
+      const turnId = typeof ev.turnId === 'string' && ev.turnId.trim()
+        ? ev.turnId.trim()
+        : get().currentTurnId ?? undefined
+      if (!turnId) return
+      set((s) => {
+        const current = s.runtimeEventsByTurnId[turnId] ?? []
+        return {
+          runtimeEventsByTurnId: {
+            ...s.runtimeEventsByTurnId,
+            [turnId]: [...current, ev].slice(-MAX_RAW_RUNTIME_EVENTS_PER_TURN)
+          }
+        }
+      })
+    },
+    onTraceSpan: (ev) => {
+      if (!isCurrentStream()) return
+      const turnId = ev.turnId?.trim() || get().currentTurnId || ''
+      if (!turnId) return
+      set((s) => {
+        const spans = s.traceSpansByTurnId[turnId] ?? {}
+        const nextSpan = mergeTraceSpan(spans[ev.spanId], {
+          traceId: ev.traceId,
+          spanId: ev.spanId,
+          ...(ev.parentSpanId ? { parentSpanId: ev.parentSpanId } : {}),
+          name: ev.name,
+          spanKind: ev.spanKind,
+          spanStatus: ev.spanStatus,
+          startedAt: ev.startedAt,
+          ...(ev.endedAt ? { endedAt: ev.endedAt } : {}),
+          ...(ev.attrs ? { attrs: ev.attrs } : {})
+        })
+        return {
+          traceSpansByTurnId: {
+            ...s.traceSpansByTurnId,
+            [turnId]: {
+              ...spans,
+              [ev.spanId]: nextSpan
+            }
+          }
+        }
+      })
+    },
     onUserMessage: (ev) =>
       set((s) => {
         if (!isCurrentStream()) return {}
@@ -719,9 +788,10 @@ export function buildThreadEventSink(
             summary: ev.summary || cur.summary,
             status: ev.status,
             toolKind: ev.toolKind ?? cur.toolKind,
+            activityKind: ev.activityKind ?? cur.activityKind,
             detail: ev.detail ?? cur.detail,
             filePath: ev.filePath ?? cur.filePath,
-            meta: ev.meta ?? cur.meta
+            meta: ev.meta ? { ...(cur.meta ?? {}), ...ev.meta } : cur.meta
           }
           const blocks = [...s.blocks]
           blocks[idx] = next
@@ -743,6 +813,7 @@ export function buildThreadEventSink(
           summary: ev.summary,
           status: ev.status,
           toolKind: ev.toolKind,
+          activityKind: ev.activityKind,
           detail: ev.detail,
           filePath: ev.filePath,
           meta: ev.meta

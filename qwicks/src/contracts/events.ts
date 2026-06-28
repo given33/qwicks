@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TurnItem } from './items.js'
+import { ToolActivityKind, ToolActionType, ToolCategory, ToolProviderKind, TurnItem } from './items.js'
 import { ThreadGoalSchema, ThreadTodoListSchema } from './threads.js'
 import { UsageSnapshotSchema } from './usage.js'
 import { RuntimeErrorSeverity } from './errors.js'
@@ -24,6 +24,9 @@ export const RuntimeEventKind = z.enum([
   'assistant_text_delta',
   'assistant_reasoning_delta',
   'tool_call_ready',
+  'trace_span_started',
+  'trace_span_updated',
+  'trace_span_ended',
   'tool_result_upload_wait',
   'tool_storm_suppressed',
   'tool_catalog_changed',
@@ -169,9 +172,41 @@ export const ToolCallReadyEvent = RuntimeEventBase.extend({
   kind: z.literal('tool_call_ready'),
   toolName: z.string().min(1),
   callId: z.string().min(1),
+  activityKind: ToolActivityKind.optional(),
+  toolCategory: ToolCategory.optional(),
+  providerKind: ToolProviderKind.optional(),
+  actionType: ToolActionType.optional(),
   readyCount: z.number().int().positive()
 })
 export type ToolCallReadyEvent = z.infer<typeof ToolCallReadyEvent>
+
+export const TraceSpanKind = z.enum([
+  'turn',
+  'model',
+  'tool',
+  'approval',
+  'delegation',
+  'storage',
+  'runtime'
+])
+export type TraceSpanKind = z.infer<typeof TraceSpanKind>
+
+export const TraceSpanStatus = z.enum(['running', 'ok', 'error', 'aborted'])
+export type TraceSpanStatus = z.infer<typeof TraceSpanStatus>
+
+export const TraceSpanEvent = RuntimeEventBase.extend({
+  kind: z.enum(['trace_span_started', 'trace_span_updated', 'trace_span_ended']),
+  traceId: z.string().min(1),
+  spanId: z.string().min(1),
+  parentSpanId: z.string().min(1).optional(),
+  name: z.string().min(1),
+  spanKind: TraceSpanKind,
+  spanStatus: TraceSpanStatus,
+  startedAt: z.string(),
+  endedAt: z.string().optional(),
+  attrs: z.record(z.string(), z.unknown()).optional()
+})
+export type TraceSpanEvent = z.infer<typeof TraceSpanEvent>
 
 export const ToolUploadStatusEvent = RuntimeEventBase.extend({
   kind: z.literal('tool_result_upload_wait'),
@@ -308,6 +343,7 @@ export const RuntimeEvent = z.discriminatedUnion('kind', [
   ApprovalEvent,
   UserInputEvent,
   ToolCallReadyEvent,
+  TraceSpanEvent,
   ToolUploadStatusEvent,
   ToolStormSuppressedEvent,
   ToolCatalogEvent,

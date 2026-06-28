@@ -13,6 +13,46 @@ import type {
 import type { ApprovalPolicy, SandboxMode } from '@shared/app-settings'
 
 export type ToolItemKind = 'tool_call' | 'command_execution' | 'file_change'
+export type ToolActivityKind =
+  | 'command_execution'
+  | 'file_change'
+  | 'mcp_tool_call'
+  | 'dynamic_tool_call'
+  | 'multi_agent_action'
+  | 'web_search'
+  | 'generic_tool'
+export type ToolCategory =
+  | 'command'
+  | 'file'
+  | 'mcp'
+  | 'dynamic'
+  | 'multi_agent'
+  | 'web'
+  | 'generic'
+export type ToolProviderKind =
+  | 'built-in'
+  | 'mcp'
+  | 'web'
+  | 'skill'
+  | 'memory'
+  | 'gui'
+  | 'delegation'
+  | 'image'
+  | 'audio'
+  | 'video'
+export type ToolActionType =
+  | 'read'
+  | 'search'
+  | 'list_files'
+  | 'write'
+  | 'edit'
+  | 'execute'
+  | 'approval'
+  | 'delegate'
+  | 'fetch'
+  | 'generate'
+  | 'call'
+export type ConversationDetailLevel = 'simple' | 'technical' | 'debug'
 export type RuntimeErrorSeverity = 'info' | 'warning' | 'error'
 
 export type AttachmentReference = {
@@ -74,6 +114,44 @@ export type RuntimeDisclosureMetadata = {
   skillInjectionBytes?: number
   child?: RuntimeChildMetadata
   sources?: WebCitationSource[]
+}
+
+export type TraceSpanKind =
+  | 'turn'
+  | 'model'
+  | 'tool'
+  | 'approval'
+  | 'delegation'
+  | 'storage'
+  | 'runtime'
+
+export type TraceSpanStatus = 'running' | 'ok' | 'error' | 'aborted'
+
+export type TraceSpan = {
+  traceId: string
+  spanId: string
+  parentSpanId?: string
+  name: string
+  spanKind: TraceSpanKind
+  spanStatus: TraceSpanStatus
+  startedAt: string
+  endedAt?: string
+  durationMs?: number
+  attrs?: Record<string, unknown>
+}
+
+export type TraceSpanEventPayload = TraceSpan & {
+  eventKind: 'trace_span_started' | 'trace_span_updated' | 'trace_span_ended'
+  threadId?: string
+  turnId?: string
+}
+
+export type RawRuntimeEvent = Record<string, unknown> & {
+  kind?: string
+  seq?: number
+  timestamp?: string
+  threadId?: string
+  turnId?: string
 }
 
 export type UserInputOption = {
@@ -180,6 +258,7 @@ export type ToolBlock = {
   summary: string
   status: 'running' | 'success' | 'error'
   toolKind?: ToolItemKind
+  activityKind?: ToolActivityKind
   /** Full text content from runtime: stdout/stderr or unified patch text */
   detail?: string
   /** Resolved file path for file_change items, when known */
@@ -294,6 +373,7 @@ export type ToolEventPayload = {
   summary: string
   status: 'running' | 'success' | 'error'
   toolKind?: ToolItemKind
+  activityKind?: ToolActivityKind
   detail?: string
   filePath?: string
   meta?: Record<string, unknown>
@@ -414,6 +494,8 @@ export type ThreadEventSink = {
   onUserInput(req: UserInputRequestPayload): void
   onUserInputStatus(ev: UserInputStatusPayload): void
   onRuntimeStatus?(ev: RuntimeStatusEventPayload): void
+  onRuntimeEvent?(ev: RawRuntimeEvent): void
+  onTraceSpan?(ev: TraceSpanEventPayload): void
   onRuntimeError?(ev: RuntimeErrorEventPayload): void
   /** 模型连接重试:覆盖模型 live block 显示"正在重连(第 x/5 次)"。 */
   onModelRetry?(ev: ModelRetryEventPayload): void

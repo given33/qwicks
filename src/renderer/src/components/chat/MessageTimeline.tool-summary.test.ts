@@ -15,10 +15,21 @@ const labels: Record<string, string> = {
   toolBuiltinGrep: 'Search',
   toolBuiltinFind: 'Find',
   toolBuiltinLs: 'List',
-  toolBuiltinBash: 'Bash'
+  toolBuiltinBash: 'Bash',
+  toolActionMcp: 'Used MCP',
+  toolActionDynamic: 'Used dynamic tool',
+  toolActionMultiAgent: 'Delegated',
+  toolActionWeb: 'Searched web',
+  groupMcp: 'Used {{count}} MCP tools',
+  groupDynamic: 'Used {{count}} dynamic tools',
+  groupMultiAgent: 'Delegated {{count}} tasks',
+  groupWeb: 'Searched {{count}} pages'
 }
 
-const t = (key: string) => labels[key] ?? (key === 'toolActionCommand' ? 'Ran command' : key)
+const t = (key: string, opts?: Record<string, unknown>) => {
+  const template = labels[key] ?? (key === 'toolActionCommand' ? 'Ran command' : key)
+  return template.replace(/\{\{\s*count\s*\}\}/g, String(opts?.count ?? ''))
+}
 
 const activeThread: NormalizedThread = {
   id: 'thr_1',
@@ -119,6 +130,52 @@ describe('MessageTimeline tool summaries', () => {
         t
       )
     ).toBe('Ran command npm test')
+  })
+
+  it('summarizes Codex-style activity kinds with distinct labels', () => {
+    expect(
+      summarizeToolBlock(
+        toolBlock({
+          summary: 'docs_read',
+          activityKind: 'mcp_tool_call',
+          meta: { toolName: 'docs_read' }
+        }),
+        t
+      )
+    ).toBe('Used MCP docs_read')
+
+    expect(
+      summarizeToolBlock(
+        toolBlock({
+          summary: 'generate_image',
+          activityKind: 'dynamic_tool_call',
+          meta: { toolName: 'generate_image' }
+        }),
+        t
+      )
+    ).toBe('Used dynamic tool generate_image')
+
+    expect(
+      summarizeToolBlock(
+        toolBlock({
+          summary: 'delegate_task: research',
+          activityKind: 'multi_agent_action',
+          meta: { toolName: 'delegate_task' }
+        }),
+        t
+      )
+    ).toBe('Delegated research')
+
+    expect(
+      summarizeToolBlock(
+        toolBlock({
+          summary: 'web_search: qwicks',
+          activityKind: 'web_search',
+          meta: { toolName: 'web_search' }
+        }),
+        t
+      )
+    ).toBe('Searched web qwicks')
   })
 })
 
@@ -391,6 +448,36 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
     expect(html).not.toContain('needle')
     expect(html).not.toContain('read detail should stay tucked away')
     expect(html).not.toContain('grep detail should stay tucked away')
+  })
+
+  it('renders activity-specific process section labels', () => {
+    const html = renderToStaticMarkup(
+      createElement(ProcessSectionRow, {
+        section: {
+          id: 'execution-mcp',
+          kind: 'execution',
+          category: 'mcp',
+          blocks: [
+            toolBlock({
+              id: 'tool_mcp_1',
+              summary: 'docs_read',
+              activityKind: 'mcp_tool_call',
+              meta: { toolName: 'docs_read' }
+            }),
+            toolBlock({
+              id: 'tool_mcp_2',
+              summary: 'docs_search',
+              activityKind: 'mcp_tool_call',
+              meta: { toolName: 'docs_search' }
+            })
+          ]
+        },
+        processing: false,
+        viewportRef: { current: null }
+      })
+    )
+
+    expect(html).toContain('Used 2 MCP tools')
   })
 
   it('auto-expands pending request_user_input while keeping other tool details tucked away', () => {
@@ -700,5 +787,162 @@ describe('MessageTimeline QWicks runtime metadata smoke', () => {
 
     expect(html).toContain('ds-chat-answer')
     expect(html).toContain('hello')
+  })
+
+  it('hides detailed process work in simple mode while keeping the final answer visible', () => {
+    const blocks: ChatBlock[] = [
+      { kind: 'user', id: 'user_1', text: 'inspect the file' },
+      toolBlock({
+        id: 'tool_read',
+        summary: 'read: file',
+        activityKind: 'command_execution',
+        detail: 'raw tool output',
+        meta: { toolName: 'read' },
+        filePath: '/tmp/project/src/app.ts'
+      }),
+      { kind: 'assistant', id: 'assistant_1', text: 'The file is fine.' }
+    ]
+
+    const html = renderToStaticMarkup(
+      createElement(MessageTimeline, {
+        blocks,
+        liveReasoning: '',
+        live: '',
+        activeThreadId: 'thr_1',
+        runtimeConnection: 'ready',
+        conversationDetailLevel: 'simple',
+        onRetryConnection: () => undefined,
+        onOpenSettings: () => undefined
+      })
+    )
+
+    expect(html).toContain('The file is fine.')
+    expect(html).not.toContain('Read')
+    expect(html).not.toContain('/tmp/project/src/app.ts')
+    expect(html).not.toContain('raw tool output')
+  })
+
+  it('renders trace tree and raw runtime events in debug mode', () => {
+    const blocks: ChatBlock[] = [
+      { kind: 'user', id: 'user_1', turnId: 'turn_1', text: 'trace this' },
+      { kind: 'assistant', id: 'assistant_1', turnId: 'turn_1', text: 'done' }
+    ]
+
+    const html = renderToStaticMarkup(
+      createElement(MessageTimeline, {
+        blocks,
+        liveReasoning: '',
+        live: '',
+        activeThreadId: 'thr_1',
+        runtimeConnection: 'ready',
+        conversationDetailLevel: 'debug',
+        traceSpansByTurnId: {
+          turn_1: {
+            span_turn: {
+              traceId: 'trace_1',
+              spanId: 'span_turn',
+              name: 'turn',
+              spanKind: 'turn',
+              spanStatus: 'ok',
+              startedAt: '2026-06-28T00:00:00.000Z',
+              endedAt: '2026-06-28T00:00:01.000Z',
+              durationMs: 1000,
+              attrs: { model: 'gpt-5' }
+            },
+            span_model: {
+              traceId: 'trace_1',
+              spanId: 'span_model',
+              parentSpanId: 'span_turn',
+              name: 'model.call',
+              spanKind: 'model',
+              spanStatus: 'ok',
+              startedAt: '2026-06-28T00:00:00.100Z',
+              endedAt: '2026-06-28T00:00:00.900Z',
+              durationMs: 800
+            }
+          }
+        },
+        runtimeEventsByTurnId: {
+          turn_1: [
+            {
+              kind: 'trace_span_started',
+              seq: 10,
+              timestamp: '2026-06-28T00:00:00.000Z',
+              threadId: 'thr_1',
+              turnId: 'turn_1',
+              spanId: 'span_turn'
+            }
+          ]
+        },
+        onRetryConnection: () => undefined,
+        onOpenSettings: () => undefined
+      })
+    )
+
+    expect(html).toContain('Trace tree')
+    expect(html).toContain('turn')
+    expect(html).toContain('model.call')
+    expect(html).toContain('1.0s')
+    expect(html).toContain('Raw events')
+    expect(html).toContain('trace_span_started')
+  })
+
+  it('renders a multi-agent working and done panel with child links', () => {
+    const blocks: ChatBlock[] = [
+      { kind: 'user', id: 'user_1', text: 'delegate research' },
+      toolBlock({
+        id: 'tool_child_1',
+        summary: 'delegate_task: docs',
+        activityKind: 'multi_agent_action',
+        status: 'running',
+        meta: {
+          toolName: 'delegate_task',
+          child: {
+            parentThreadId: 'thr_1',
+            parentTurnId: 'turn_1',
+            childId: 'child_docs',
+            childLabel: 'docs',
+            childStatus: 'running',
+            childSeq: 1
+          }
+        }
+      }),
+      toolBlock({
+        id: 'tool_child_2',
+        summary: 'delegate_task: tests',
+        activityKind: 'multi_agent_action',
+        status: 'success',
+        meta: {
+          toolName: 'delegate_task',
+          child: {
+            parentThreadId: 'thr_1',
+            parentTurnId: 'turn_1',
+            childId: 'child_tests',
+            childLabel: 'tests',
+            childStatus: 'completed',
+            childSeq: 2
+          }
+        }
+      })
+    ]
+
+    const html = renderToStaticMarkup(
+      createElement(MessageTimeline, {
+        blocks,
+        liveReasoning: '',
+        live: '',
+        activeThreadId: 'thr_1',
+        runtimeConnection: 'ready',
+        conversationDetailLevel: 'technical',
+        onRetryConnection: () => undefined,
+        onOpenSettings: () => undefined
+      })
+    )
+
+    expect(html).toContain('Agent panel')
+    expect(html).toContain('1 working')
+    expect(html).toContain('1 done')
+    expect(html).toContain('child_docs')
+    expect(html).toContain('child_tests')
   })
 })

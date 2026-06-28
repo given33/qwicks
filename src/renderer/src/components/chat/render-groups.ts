@@ -11,8 +11,8 @@
  *
  * 纯函数，无 React 依赖，易单测。
  */
-import type { ChatBlock, ToolBlock } from '../../agent/types'
-import { classifyToolCategory, type ToolCategory } from './tool-category'
+import type { ChatBlock, ToolActivityKind, ToolBlock } from '../../agent/types'
+import { classifyToolActivityKind, classifyToolCategory, type ToolCategory } from './tool-category'
 
 /** 分类后的活动类型（对标 Codex 的 classified.type）。 */
 export type RenderActivityType =
@@ -21,6 +21,9 @@ export type RenderActivityType =
   | 'patch'
   | 'read'
   | 'web'
+  | 'mcp'
+  | 'dynamic'
+  | 'multi-agent'
   | 'other'
 
 /** 单个 block 的分类结果（对标 Ve 返回值，简化版）。 */
@@ -32,6 +35,7 @@ export type ClassifiedUnit = {
   filePath?: string
   /** 工具分类细分（terminal/edit/write/read/search/web）。 */
   category?: ToolCategory
+  activityKind?: ToolActivityKind
 }
 
 /** 详情级别（对标 conversationDetailLevel，简化为 2 级）。 */
@@ -109,6 +113,12 @@ export function accumulateActivity(acc: ActivityAccumulator, unit: ClassifiedUni
     case 'web':
       acc.webSearchCount += 1
       if (unit.isRunning) acc.runningWebSearchCount += 1
+      break
+    case 'mcp':
+    case 'dynamic':
+    case 'multi-agent':
+      acc.commandCount += 1
+      if (unit.isRunning) acc.runningCommandCount += 1
       break
     default:
       break
@@ -214,6 +224,7 @@ export function splitIntoRenderGroups(
       while (cursor < slice.endIndex) {
         const u = classified[cursor]
         if (!u || !isCollapsible(u)) break
+        if (u.activityKind !== unit.activityKind) break
         cursor += 1
       }
       const runUnits = classified.slice(runStart, cursor)
@@ -315,24 +326,32 @@ export function classifyBlock(block: ChatBlock): ClassifiedUnit {
     return { block, type: 'other', isRunning: false }
   }
   // tool block — 按 tool-category 细分
-  const category = classifyToolCategory(block as ToolBlock)
-  const isRunning = (block as ToolBlock).status === 'running'
-  const filePath = (block as ToolBlock).filePath
+  const toolBlock = block as ToolBlock
+  const category = classifyToolCategory(toolBlock)
+  const activityKind = classifyToolActivityKind(toolBlock)
+  const isRunning = toolBlock.status === 'running'
+  const filePath = toolBlock.filePath
   switch (category) {
     case 'terminal':
-      return { block, type: 'exec', isRunning, filePath, category }
+      return { block, type: 'exec', isRunning, filePath, category, activityKind }
     case 'edit':
-      return { block, type: 'patch', isRunning, filePath, category }
+      return { block, type: 'patch', isRunning, filePath, category, activityKind }
     case 'write':
-      return { block, type: 'patch', isRunning, filePath, category }
+      return { block, type: 'patch', isRunning, filePath, category, activityKind }
     case 'read':
-      return { block, type: 'read', isRunning, filePath, category }
+      return { block, type: 'read', isRunning, filePath, category, activityKind }
     case 'search':
-      return { block, type: 'read', isRunning, filePath, category }
+      return { block, type: 'read', isRunning, filePath, category, activityKind }
     case 'web':
-      return { block, type: 'web', isRunning, filePath, category }
+      return { block, type: 'web', isRunning, filePath, category, activityKind }
+    case 'mcp':
+      return { block, type: 'mcp', isRunning, filePath, category, activityKind }
+    case 'dynamic':
+      return { block, type: 'dynamic', isRunning, filePath, category, activityKind }
+    case 'multi-agent':
+      return { block, type: 'multi-agent', isRunning, filePath, category, activityKind }
     default:
-      return { block, type: 'exec', isRunning, filePath, category }
+      return { block, type: 'exec', isRunning, filePath, category, activityKind }
   }
 }
 
@@ -345,7 +364,10 @@ export function isCollapsible(unit: ClassifiedUnit): boolean {
     unit.type === 'exec' ||
     unit.type === 'patch' ||
     unit.type === 'read' ||
-    unit.type === 'web'
+    unit.type === 'web' ||
+    unit.type === 'mcp' ||
+    unit.type === 'dynamic' ||
+    unit.type === 'multi-agent'
   )
 }
 

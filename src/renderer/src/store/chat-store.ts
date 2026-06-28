@@ -148,6 +148,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   usageRefreshKey: 0,
   lastTurnUsage: null,
   memoryStatusByTurnId: {},
+  conversationDetailLevel: 'technical',
+  traceSpansByTurnId: {},
+  runtimeEventsByTurnId: {},
   busy: false,
   error: null,
   runtimeErrorDetail: null,
@@ -172,6 +175,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sidePanel: { open: false, activeSideId: null },
   clawChannels: [],
   activeClawChannelId: '',
+  setConversationDetailLevel: (level) => set({ conversationDetailLevel: level }),
 
   ...createClawActions({
     set,

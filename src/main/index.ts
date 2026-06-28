@@ -56,6 +56,7 @@ import { setQWicksUnexpectedExitHandler, type QWicksUnexpectedExitInfo } from '.
 import { RestartBudget, type QWicksRuntimeStatus } from './qwicks-runtime-supervisor'
 import { configureLogger, logError, logWarn, pruneOnStartup } from './logger'
 import {
+  currentCodeOrShellVersion,
   deactivateActiveCodePackage,
   isHotCodePath,
   resolveHotCodePreloadPath,
@@ -1648,7 +1649,7 @@ app.whenReady().then(async () => {
       queueRuntimeMcpConfigApply(settings)
     },
     showTurnCompleteNotification,
-    getAppVersion: () => app.getVersion(),
+    getAppVersion: () => currentCodeOrShellVersion(),
     readGuiUpdateState,
     loadGuiUpdaterModule,
     resolveLogDirectory,

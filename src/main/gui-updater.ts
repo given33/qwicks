@@ -276,11 +276,13 @@ function sanitizeConsoleValue(value: unknown): string {
 
 function toGuiInfo(updateInfo: UpdateInfo, hasUpdate: boolean, manualOnly = false): Extract<GuiUpdateInfo, { ok: true }> {
   const latestVersion = updateInfo.version.trim()
+  const currentVersion = currentGuiVersion()
+  const effectiveHasUpdate = hasUpdate && isNewerVersion(latestVersion, currentVersion)
   return {
     ok: true,
-    currentVersion: currentGuiVersion(),
+    currentVersion,
     latestVersion,
-    hasUpdate,
+    hasUpdate: effectiveHasUpdate,
     releaseUrl: releaseUrlForVersion(latestVersion),
     releaseDate: updateInfo.releaseDate,
     channel: configuredChannel,

@@ -1,7 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactElement, RefObject } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, FileEdit, FilePlus, FileText, Globe, Minimize2, SearchCode, Terminal, Wrench } from 'lucide-react'
+import { Cable, ChevronDown, ChevronRight, FileEdit, FilePlus, FileText, Globe, Minimize2, Network, SearchCode, Sparkles, Terminal, Wrench } from 'lucide-react'
 import type { ChatBlock, ToolBlock } from '../../agent/types'
 import { extractUnifiedDiffText } from '../../lib/diff-stats'
 import { useDeferredRender } from '../../hooks/use-deferred-render'
@@ -349,9 +349,15 @@ function CategoryIcon({
             ? FileEdit
             : category === 'write'
               ? FilePlus
-              : category === 'web'
-                ? Globe
-                : Wrench
+            : category === 'web'
+              ? Globe
+              : category === 'mcp'
+                ? Cable
+                : category === 'dynamic'
+                  ? Sparkles
+                  : category === 'multi-agent'
+                    ? Network
+                    : Wrench
   return <Icon className={className} strokeWidth={1.9} />
 }
 
@@ -746,7 +752,18 @@ function summarizeExecutionSection(
     if (toolCount > 0) {
       const key = categoryGroupKey(category)
       // Categories with singular/plural i18n variants use the {{count}} form.
-      return t(key, { count: toolCount })
+      const translated = t(key, { count: toolCount })
+      if (translated !== key) return translated
+      switch (category) {
+        case 'mcp':
+          return `Used ${toolCount} MCP ${toolCount === 1 ? 'tool' : 'tools'}`
+        case 'dynamic':
+          return `Used ${toolCount} dynamic ${toolCount === 1 ? 'tool' : 'tools'}`
+        case 'multi-agent':
+          return `Delegated ${toolCount} ${toolCount === 1 ? 'task' : 'tasks'}`
+        default:
+          return translated
+      }
     }
   }
 
@@ -938,6 +955,24 @@ function builtInToolLabel(
   }
 }
 
+function activityToolLabel(
+  block: ToolBlock,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | undefined {
+  switch (block.activityKind) {
+    case 'mcp_tool_call':
+      return t('toolActionMcp')
+    case 'dynamic_tool_call':
+      return t('toolActionDynamic')
+    case 'multi_agent_action':
+      return t('toolActionMultiAgent')
+    case 'web_search':
+      return t('toolActionWeb')
+    default:
+      return undefined
+  }
+}
+
 function extractToolName(summary: string): string {
   const match = summary.trim().match(/^([a-z0-9_-]+)\s*:/i)
   return match?.[1] ?? ''
@@ -1061,7 +1096,7 @@ export function summarizeToolBlock(
   const rawSummary = block.summary?.trim() ?? ''
   const metaToolName = readMetaString(block.meta, 'toolName')
   const toolName = extractToolName(rawSummary) || metaToolName || ''
-  const label = builtInToolLabel(toolName, t) || humanizeToolName(toolName) || formatToolTitle(block, t)
+  const label = activityToolLabel(block, t) || builtInToolLabel(toolName, t) || humanizeToolName(toolName) || formatToolTitle(block, t)
   const sourceText = [rawSummary, block.detail ?? ''].filter(Boolean).join('\n')
   const filePath = toolFilePath(block)
   const pattern =

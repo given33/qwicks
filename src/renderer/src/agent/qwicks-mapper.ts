@@ -16,6 +16,8 @@ import type {
   ThreadDeltaEvent,
   ThreadEventSink,
   ThreadUsageSnapshot,
+  TraceSpanEventPayload,
+  ToolActivityKind,
   ToolBlock,
   ToolEventPayload,
   UserInputQuestion
@@ -203,6 +205,64 @@ const TOOL_KIND_BY_NAME: ReadonlyMap<string, ToolBlock['toolKind']> = new Map([
   ['create_file', 'file_change'],
   ['create_plan', 'file_change']
 ])
+
+const TOOL_ACTIVITY_KINDS: ReadonlySet<ToolActivityKind> = new Set([
+  'command_execution',
+  'file_change',
+  'mcp_tool_call',
+  'dynamic_tool_call',
+  'multi_agent_action',
+  'web_search',
+  'generic_tool'
+])
+
+const TOOL_CATEGORIES = new Set(['command', 'file', 'mcp', 'dynamic', 'multi_agent', 'web', 'generic'])
+const TOOL_PROVIDER_KINDS = new Set([
+  'built-in',
+  'mcp',
+  'web',
+  'skill',
+  'memory',
+  'gui',
+  'delegation',
+  'image',
+  'audio',
+  'video'
+])
+const TOOL_ACTION_TYPES = new Set([
+  'read',
+  'search',
+  'list_files',
+  'write',
+  'edit',
+  'execute',
+  'approval',
+  'delegate',
+  'fetch',
+  'generate',
+  'call'
+])
+
+const DYNAMIC_TOOL_NAME_FRAGMENTS = [
+  'image',
+  'audio',
+  'video',
+  'speech',
+  'music',
+  'computer',
+  'skill',
+  'memory'
+] as const
+
+function normalizeToolActivityKind(value: unknown): ToolActivityKind | undefined {
+  return typeof value === 'string' && TOOL_ACTIVITY_KINDS.has(value as ToolActivityKind)
+    ? value as ToolActivityKind
+    : undefined
+}
+
+function normalizeSetValue(value: unknown, allowed: ReadonlySet<string>): string | undefined {
+  return typeof value === 'string' && allowed.has(value) ? value : undefined
+}
 
 function payloadFor(item: CoreTurnItemJson): Record<string, unknown> {
   if (item.kind === 'tool_result') {
@@ -411,12 +471,26 @@ function applyCommandResultMeta(meta: Record<string, unknown>, item: CoreTurnIte
 
 function inferToolPresentation(item: CoreTurnItemJson): {
   toolKind: ToolBlock['toolKind']
+  activityKind: ToolBlock['activityKind']
   filePath?: string
   command?: string
 } {
   const payload = payloadFor(item)
   const filePath = readStructuredString(payload, ...FILE_PATH_KEYS)
   const command = readStructuredString(payload, ...COMMAND_KEYS)
+  const explicitActivityKind = normalizeToolActivityKind(item.activityKind)
+  const inferActivityKind = (toolKind: ToolBlock['toolKind']): ToolActivityKind => {
+    if (explicitActivityKind) return explicitActivityKind
+    if (toolKind === 'command_execution') return 'command_execution'
+    if (toolKind === 'file_change') return 'file_change'
+    const toolName = item.toolName?.trim().toLowerCase() ?? ''
+    if (extractToolSources(item)) return 'web_search'
+    if (toolName === 'web_search' || toolName.startsWith('web_')) return 'web_search'
+    if (toolName.startsWith('mcp_') || toolName.includes('_mcp_')) return 'mcp_tool_call'
+    if (toolName === 'delegate_task' || toolName.startsWith('delegate_')) return 'multi_agent_action'
+    if (DYNAMIC_TOOL_NAME_FRAGMENTS.some((fragment) => toolName.includes(fragment))) return 'dynamic_tool_call'
+    return 'generic_tool'
+  }
 
   if (
     item.toolKind === 'tool_call' ||
@@ -425,6 +499,7 @@ function inferToolPresentation(item: CoreTurnItemJson): {
   ) {
     return {
       toolKind: item.toolKind,
+      activityKind: inferActivityKind(item.toolKind),
       ...(filePath ? { filePath } : {}),
       ...(command ? { command } : {})
     }
@@ -435,6 +510,7 @@ function inferToolPresentation(item: CoreTurnItemJson): {
   if (byName) {
     return {
       toolKind: byName,
+      activityKind: inferActivityKind(byName),
       ...(filePath ? { filePath } : {}),
       ...(command ? { command } : {})
     }
@@ -444,12 +520,12 @@ function inferToolPresentation(item: CoreTurnItemJson): {
   // on the payload; if both are present, the explicit command wins
   // (matches the previous heuristic and what the tests assert).
   if (command) {
-    return { toolKind: 'command_execution', command }
+    return { toolKind: 'command_execution', activityKind: inferActivityKind('command_execution'), command }
   }
   if (filePath) {
-    return { toolKind: 'file_change', filePath }
+    return { toolKind: 'file_change', activityKind: inferActivityKind('file_change'), filePath }
   }
-  return { toolKind: 'tool_call' }
+  return { toolKind: 'tool_call', activityKind: inferActivityKind('tool_call') }
 }
 
 function isPlanItem(item: CoreTurnItemJson): boolean {
@@ -548,6 +624,13 @@ function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
   const generatedFiles = extractToolGeneratedFiles(item)
   if (generatedFiles) meta.generatedFiles = generatedFiles
   const presentation = inferToolPresentation(item)
+  meta.activityKind = presentation.activityKind
+  const toolCategory = normalizeSetValue(item.toolCategory, TOOL_CATEGORIES)
+  const providerKind = normalizeSetValue(item.providerKind, TOOL_PROVIDER_KINDS)
+  const actionType = normalizeSetValue(item.actionType, TOOL_ACTION_TYPES)
+  if (toolCategory) meta.toolCategory = toolCategory
+  if (providerKind) meta.providerKind = providerKind
+  if (actionType) meta.actionType = actionType
   if (presentation.command) meta.command = presentation.command
   if (presentation.toolKind === 'command_execution') applyCommandResultMeta(meta, item)
   if (isPlan) {
@@ -570,6 +653,7 @@ function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
     summary,
     status: toolStatus(item),
     toolKind: presentation.toolKind,
+    activityKind: presentation.activityKind,
     ...(presentation.filePath ? { filePath: presentation.filePath } : {}),
     ...(resolvedDetail ? { detail: resolvedDetail } : {}),
     meta
@@ -603,6 +687,7 @@ export function mergeChatBlocks(blocks: ChatBlock[]): ChatBlock[] {
       detail: block.detail ?? existing.detail,
       filePath: block.filePath ?? existing.filePath,
       toolKind: block.toolKind ?? existing.toolKind,
+      activityKind: block.activityKind ?? existing.activityKind,
       meta: { ...(existing.meta ?? {}), ...(block.meta ?? {}) }
     }
   }
@@ -970,6 +1055,7 @@ function toolEventFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
     summary: block.summary,
     status: block.status,
     toolKind: block.toolKind,
+    activityKind: block.activityKind,
     detail: block.detail,
     filePath: block.filePath,
     meta: block.meta
@@ -1070,18 +1156,65 @@ function toolReadyFromEvent(event: CoreRuntimeEventJson): ToolEventPayload | nul
   const callId = typeof event.callId === 'string' && event.callId.trim() ? event.callId.trim() : ''
   const toolName = typeof event.toolName === 'string' && event.toolName.trim() ? event.toolName.trim() : ''
   if (!callId || !toolName) return null
+  const activityKind =
+    normalizeToolActivityKind(event.activityKind) ??
+    inferToolPresentation({
+      id: event.itemId ?? `item_${callId}`,
+      turnId: event.turnId ?? '',
+      threadId: event.threadId ?? '',
+      role: 'tool',
+      status: 'running',
+      createdAt: event.timestamp ?? '',
+      kind: 'tool_call',
+      toolName,
+      callId,
+      toolKind: 'tool_call',
+      arguments: {}
+    }).activityKind
   return {
     itemId: `tool_${callId}`,
     summary: toolName,
     status: 'running',
     toolKind: 'tool_call',
+    activityKind,
     meta: {
       ...(event.itemId ? { sourceItemId: event.itemId } : {}),
       callId,
       toolName,
+      activityKind,
+      ...(normalizeSetValue(event.toolCategory, TOOL_CATEGORIES) ? { toolCategory: event.toolCategory } : {}),
+      ...(normalizeSetValue(event.providerKind, TOOL_PROVIDER_KINDS) ? { providerKind: event.providerKind } : {}),
+      ...(normalizeSetValue(event.actionType, TOOL_ACTION_TYPES) ? { actionType: event.actionType } : {}),
       ...(typeof event.readyCount === 'number' ? { readyCount: event.readyCount } : {}),
       runtimeStatus: 'tool_call_ready'
     }
+  }
+}
+
+function traceSpanFromEvent(event: CoreRuntimeEventJson): TraceSpanEventPayload | null {
+  if (
+    event.kind !== 'trace_span_started' &&
+    event.kind !== 'trace_span_updated' &&
+    event.kind !== 'trace_span_ended'
+  ) {
+    return null
+  }
+  if (!event.traceId || !event.spanId || !event.name || !event.spanKind || !event.spanStatus || !event.startedAt) {
+    return null
+  }
+  return {
+    eventKind: event.kind,
+    threadId: event.threadId,
+    turnId: event.turnId,
+    traceId: event.traceId,
+    spanId: event.spanId,
+    ...(event.parentSpanId ? { parentSpanId: event.parentSpanId } : {}),
+    name: event.name,
+    spanKind: event.spanKind,
+    spanStatus: event.spanStatus,
+    startedAt: event.startedAt,
+    ...(event.endedAt ? { endedAt: event.endedAt } : {}),
+    ...(event.attrs ? { attrs: event.attrs } : {})
   }
 }
 
@@ -1173,7 +1306,15 @@ export async function dispatchQWicksRuntimeEvent(
   sink: ThreadEventSink,
   handleApprovalRequest: (event: CoreRuntimeEventJson, sink: ThreadEventSink) => Promise<void>
 ): Promise<void> {
+  sink.onRuntimeEvent?.(event)
   switch (event.kind) {
+    case 'trace_span_started':
+    case 'trace_span_updated':
+    case 'trace_span_ended': {
+      const trace = traceSpanFromEvent(event)
+      if (trace) sink.onTraceSpan?.(trace)
+      return
+    }
     case 'assistant_text_delta':
       emitDelta(event, sink, 'agent_message')
       return

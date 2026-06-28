@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { SubagentToolPolicy, type SubagentsCapabilityConfig } from '../contracts/capabilities.js'
 import type { RuntimeEventRecorder } from '../services/runtime-event-recorder.js'
+import type { TraceRecorder, TraceSpan } from '../services/trace-recorder.js'
 import type { UsageSnapshot } from '../contracts/usage.js'
 
 const ChildRunUsage = z.object({
@@ -137,6 +138,7 @@ export class DelegationRuntime {
     config: SubagentsCapabilityConfig
     store: FileDelegationStore
     events?: RuntimeEventRecorder
+    trace?: TraceRecorder
     nowIso?: () => string
     idGenerator?: () => string
     executor?: ChildRunExecutor
@@ -175,6 +177,7 @@ export class DelegationRuntime {
 
     const queuedAt = this.now()
     const id = this.options.idGenerator?.() ?? `child_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+    let traceSpan: TraceSpan | undefined
     let record = ChildRunRecord.parse({
       id,
       parentThreadId: input.parentThreadId,
@@ -191,6 +194,7 @@ export class DelegationRuntime {
     })
     await this.options.store.upsert(record)
     await this.recordChildEvent(record)
+    traceSpan = await this.startChildTrace(record)
 
     try {
       await this.acquireSlot(input.signal)
@@ -204,6 +208,7 @@ export class DelegationRuntime {
       })
       await this.options.store.upsert(record)
       await this.recordChildEvent(record)
+      await this.endChildTrace(traceSpan, record)
       return record
     }
 
@@ -212,6 +217,7 @@ export class DelegationRuntime {
     record = ChildRunRecord.parse({ ...record, status: 'running', startedAt, queuedMs, updatedAt: startedAt })
     await this.options.store.upsert(record)
     await this.recordChildEvent(record)
+    await this.updateChildTrace(traceSpan, record)
     try {
       const executor: ChildRunExecutor = this.options.executor ?? defaultExecutor
       const result = await executor({
@@ -240,6 +246,7 @@ export class DelegationRuntime {
       })
       await this.options.store.upsert(record)
       await this.recordChildEvent(record)
+      await this.endChildTrace(traceSpan, record)
       this.recordExternalUsage(record)
       return record
     } catch (error) {
@@ -253,6 +260,7 @@ export class DelegationRuntime {
       })
       await this.options.store.upsert(record)
       await this.recordChildEvent(record)
+      await this.endChildTrace(traceSpan, record)
       return record
     } finally {
       this.releaseSlot()
@@ -384,6 +392,43 @@ export class DelegationRuntime {
         ...(usage.costCny !== undefined ? { costCny: usage.costCny } : {})
       }
     })
+  }
+
+  private async startChildTrace(record: ChildRunRecord): Promise<TraceSpan | undefined> {
+    return this.options.trace?.startSpan({
+      threadId: record.parentThreadId,
+      turnId: record.parentTurnId,
+      name: `delegation.${record.label ?? record.id}`,
+      kind: 'delegation',
+      attrs: this.childTraceAttrs(record)
+    })
+  }
+
+  private async updateChildTrace(span: TraceSpan | undefined, record: ChildRunRecord): Promise<void> {
+    await this.options.trace?.updateSpan(span, { attrs: this.childTraceAttrs(record) })
+  }
+
+  private async endChildTrace(span: TraceSpan | undefined, record: ChildRunRecord): Promise<void> {
+    await this.options.trace?.endSpan(span, {
+      status: record.status === 'completed' ? 'ok' : record.status === 'aborted' ? 'aborted' : 'error',
+      attrs: this.childTraceAttrs(record)
+    })
+  }
+
+  private childTraceAttrs(record: ChildRunRecord): Record<string, unknown> {
+    return {
+      childId: record.id,
+      childStatus: record.status,
+      ...(record.label ? { childLabel: record.label } : {}),
+      ...(record.model ? { model: record.model } : {}),
+      ...(record.profile ? { profile: record.profile } : {}),
+      ...(record.toolPolicy ? { toolPolicy: record.toolPolicy } : {}),
+      ...(record.queuedMs !== undefined ? { queuedMs: record.queuedMs } : {}),
+      ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
+      ...(record.toolInvocations !== undefined ? { toolInvocations: record.toolInvocations } : {}),
+      ...(record.usage.totalTokens > 0 ? { totalTokens: record.usage.totalTokens } : {}),
+      ...(record.error ? { error: record.error } : {})
+    }
   }
 
   private recordExternalUsage(record: ChildRunRecord): void {

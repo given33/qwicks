@@ -5,9 +5,10 @@ import type {
   ToolCallLike,
   ToolExecutionUpdate
 } from '../../ports/tool-host.js'
+import { inferToolActionType, inferToolActivityKind, inferToolCategory } from '../../ports/tool-host.js'
 import type { ApprovalRequest } from '../../domain/approval.js'
 import { createApprovalRequest } from '../../domain/approval.js'
-import type { TurnItem } from '../../contracts/items.js'
+import type { ToolActionType, ToolActivityKind, ToolCategory, ToolProviderKind, TurnItem } from '../../contracts/items.js'
 import { makeToolResultItem, makeApprovalItem } from '../../domain/item.js'
 import { buildBuiltinLocalTools } from './builtin-tools.js'
 import { CapabilityRegistry } from './capability-registry.js'
@@ -37,6 +38,7 @@ export type LocalTool = {
   description: string
   inputSchema: Record<string, unknown>
   toolKind: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
   /**
    * Tool policy. `auto` runs the tool without asking. `on-request` and
    * `suggest` always ask the user. `never` blocks the tool. `untrusted`
@@ -112,14 +114,14 @@ export class LocalToolHost implements ToolHost {
     if (context.abortSignal.aborted) {
       throw new Error('tool call aborted before start')
     }
-    const { tool } = this.registry.resolveTool(call.toolName, context, call.providerId)
+    const { tool, provider } = this.registry.resolveTool(call.toolName, context, call.providerId)
     if (tool.policy === 'never') {
       throw new Error(`tool ${call.toolName} is disabled by policy`)
     }
     const sandboxBlock = sandboxBlockForTool(tool, context)
     if (sandboxBlock) {
       return {
-        item: this.errorToolResult(context, call, tool, sandboxBlock.message, sandboxBlock.code),
+        item: this.errorToolResult(context, call, tool, sandboxBlock.message, sandboxBlock.code, provider.kind),
         approved: false
       }
     }
@@ -131,21 +133,28 @@ export class LocalToolHost implements ToolHost {
       })
     } catch (error) {
       return {
-        item: this.errorToolResult(context, call, tool, hookErrorMessage(error), 'hook_failed'),
+        item: this.errorToolResult(context, call, tool, hookErrorMessage(error), 'hook_failed', provider.kind),
         approved: false
       }
     }
     if (preHooks.denied) {
       return {
-        item: this.errorToolResult(context, preHooks.call, tool, preHooks.denied, 'hook_denied'),
+        item: this.errorToolResult(context, preHooks.call, tool, preHooks.denied, 'hook_denied', provider.kind),
         approved: false
       }
     }
     const activeCall = preHooks.call
+    const activityKind = activeCall.activityKind ?? tool.activityKind
+    const toolProtocol = toolProtocolFields({
+      call: activeCall,
+      tool,
+      providerKind: provider.kind,
+      activityKind
+    })
     const readValidation = this.readTracker.validateBeforeTool({ context, call: activeCall })
     if (!readValidation.ok) {
       return {
-        item: this.errorToolResult(context, activeCall, tool, readValidation.message, 'read_before_edit_required'),
+        item: this.errorToolResult(context, activeCall, tool, readValidation.message, 'read_before_edit_required', provider.kind),
         approved: false
       }
     }
@@ -157,7 +166,8 @@ export class LocalToolHost implements ToolHost {
           activeCall,
           tool,
           runtimeBlock.message,
-          runtimeBlock.code
+          runtimeBlock.code,
+          provider.kind
         ),
         approved: false
       }
@@ -199,6 +209,7 @@ export class LocalToolHost implements ToolHost {
           callId: activeCall.callId,
           toolName: activeCall.toolName,
           toolKind: activeCall.toolKind ?? tool.toolKind,
+          ...toolProtocol,
           output: update.output,
           isError: update.isError,
           status: 'running'
@@ -212,7 +223,7 @@ export class LocalToolHost implements ToolHost {
       if (context.abortSignal.aborted) throw error
       const message = error instanceof Error ? error.message : String(error)
       return {
-        item: this.errorToolResult(context, activeCall, tool, message, 'tool_execution_failed'),
+        item: this.errorToolResult(context, activeCall, tool, message, 'tool_execution_failed', provider.kind),
         approved: true
       }
     }
@@ -225,7 +236,7 @@ export class LocalToolHost implements ToolHost {
       })
     } catch (error) {
       return {
-        item: this.errorToolResult(context, activeCall, tool, hookErrorMessage(error), 'hook_failed'),
+        item: this.errorToolResult(context, activeCall, tool, hookErrorMessage(error), 'hook_failed', provider.kind),
         approved: true
       }
     }
@@ -245,6 +256,7 @@ export class LocalToolHost implements ToolHost {
       callId: activeCall.callId,
       toolName: activeCall.toolName,
       toolKind: activeCall.toolKind ?? tool.toolKind,
+      ...toolProtocol,
       output,
       isError
     })
@@ -305,8 +317,10 @@ export class LocalToolHost implements ToolHost {
     call: ToolCallLike,
     tool: LocalTool,
     message: string,
-    code: string
+    code: string,
+    providerKind?: ToolProviderKind
   ): TurnItem {
+    const activityKind = call.activityKind ?? tool.activityKind
     return makeToolResultItem({
       id: `item_${call.callId}`,
       turnId: context.turnId,
@@ -314,6 +328,7 @@ export class LocalToolHost implements ToolHost {
       callId: call.callId,
       toolName: call.toolName,
       toolKind: call.toolKind ?? tool.toolKind,
+      ...toolProtocolFields({ call, tool, providerKind, activityKind }),
       output: { code, error: message },
       isError: true
     })
@@ -324,6 +339,7 @@ export class LocalToolHost implements ToolHost {
     tool: Omit<LocalTool, 'policy' | 'toolKind'> & {
       policy?: LocalTool['policy']
       toolKind?: LocalTool['toolKind']
+      activityKind?: LocalTool['activityKind']
     }
   ): LocalTool {
     return {
@@ -332,9 +348,46 @@ export class LocalToolHost implements ToolHost {
       description: tool.description,
       inputSchema: tool.inputSchema,
       toolKind: tool.toolKind ?? 'tool_call',
+      ...(tool.activityKind ? { activityKind: tool.activityKind } : {}),
       execute: tool.execute,
       ...(tool.shouldAdvertise ? { shouldAdvertise: tool.shouldAdvertise } : {})
     }
+  }
+}
+
+function toolProtocolFields(input: {
+  call: ToolCallLike
+  tool: LocalTool
+  providerKind?: ToolProviderKind
+  activityKind?: ToolActivityKind
+}): {
+  activityKind: ToolActivityKind
+  toolCategory: ToolCategory
+  providerKind?: ToolProviderKind
+  actionType: ToolActionType
+} {
+  const toolKind = input.call.toolKind ?? input.tool.toolKind
+  const activityKind = inferToolActivityKind({
+    activityKind: input.activityKind,
+    providerKind: input.call.providerKind ?? input.providerKind,
+    toolKind,
+    toolName: input.call.toolName
+  })
+  const providerKind = input.call.providerKind ?? input.providerKind
+  return {
+    activityKind,
+    toolCategory: inferToolCategory({
+      activityKind,
+      providerKind,
+      toolKind,
+      toolName: input.call.toolName
+    }),
+    ...(providerKind ? { providerKind } : {}),
+    actionType: inferToolActionType({
+      providerKind,
+      toolKind,
+      toolName: input.call.toolName
+    })
   }
 }
 

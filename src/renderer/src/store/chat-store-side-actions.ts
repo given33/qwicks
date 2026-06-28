@@ -161,6 +161,7 @@ function buildSideSink(sideId: string, ctx: SideContext, sinceSeq = 0): ThreadEv
               summary: ev.summary || cur.summary,
               status: ev.status,
               toolKind: ev.toolKind ?? cur.toolKind,
+              activityKind: ev.activityKind ?? cur.activityKind,
               detail: ev.detail ?? cur.detail,
               filePath: ev.filePath ?? cur.filePath,
               meta: ev.meta ?? cur.meta
@@ -175,6 +176,7 @@ function buildSideSink(sideId: string, ctx: SideContext, sinceSeq = 0): ThreadEv
               summary: ev.summary,
               status: ev.status,
               toolKind: ev.toolKind,
+              activityKind: ev.activityKind,
               detail: ev.detail,
               filePath: ev.filePath,
               meta: ev.meta

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolBlock } from '../../agent/types'
 import {
+  classifyToolActivityKind,
   classifyToolCategory,
   categoryGroupKey,
   toolDurationMs,
@@ -20,6 +21,50 @@ function tool(overrides: Partial<ToolBlock> & { meta?: Record<string, unknown> }
 }
 
 describe('classifyToolCategory', () => {
+  it('prefers explicit activityKind over web sources and toolName heuristics', () => {
+    const block = tool({
+      activityKind: 'mcp_tool_call',
+      meta: {
+        activityKind: 'mcp_tool_call',
+        toolName: 'web_search',
+        sources: [{ url: 'https://example.com' }]
+      }
+    })
+
+    expect(classifyToolActivityKind(block)).toBe('mcp_tool_call')
+    expect(classifyToolCategory(block)).toBe('mcp')
+  })
+
+  it('maps explicit activityKind values to distinct UI categories', () => {
+    expect(
+      classifyToolCategory(
+        tool({
+          activityKind: 'command_execution',
+          meta: { toolName: 'web_search', sources: [{ url: 'https://example.com' }] }
+        })
+      )
+    ).toBe('terminal')
+    expect(
+      classifyToolCategory(
+        tool({
+          activityKind: 'file_change',
+          meta: { toolName: 'web_search', sources: [{ url: 'https://example.com' }] }
+        })
+      )
+    ).toBe('edit')
+    expect(
+      classifyToolCategory(
+        tool({
+          activityKind: 'generic_tool',
+          meta: { toolName: 'web_search', sources: [{ url: 'https://example.com' }] }
+        })
+      )
+    ).toBe('other')
+    expect(classifyToolCategory(tool({ activityKind: 'dynamic_tool_call' }))).toBe('dynamic')
+    expect(classifyToolCategory(tool({ activityKind: 'multi_agent_action' }))).toBe('multi-agent')
+    expect(classifyToolCategory(tool({ activityKind: 'web_search' }))).toBe('web')
+  })
+
   it('classifies terminal commands by toolName', () => {
     expect(classifyToolCategory(tool({ summary: 'bash: x', meta: { toolName: 'bash' } }))).toBe('terminal')
     expect(classifyToolCategory(tool({ meta: { toolName: 'shell' } }))).toBe('terminal')

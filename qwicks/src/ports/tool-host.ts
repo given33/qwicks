@@ -1,23 +1,127 @@
 import type { ApprovalPolicy, SandboxMode } from '../contracts/policy.js'
 import type { ApprovalRequest } from '../domain/approval.js'
-import type { TurnItem } from '../contracts/items.js'
+import type {
+  ToolActionType,
+  ToolActivityKind,
+  ToolCategory,
+  ToolProviderKind,
+  TurnItem
+} from '../contracts/items.js'
 import type { ModelCapabilityMetadata } from '../contracts/capabilities.js'
 import type {
   UserInputRequest,
   UserInputResolution
 } from './user-input-gate.js'
 
-export type ToolProviderKind =
-  | 'built-in'
-  | 'mcp'
-  | 'web'
-  | 'skill'
-  | 'memory'
-  | 'gui'
-  | 'delegation'
-  | 'image'
-  | 'audio'
-  | 'video'
+const DYNAMIC_TOOL_PROVIDER_KINDS = new Set<ToolProviderKind>([
+  'skill',
+  'memory',
+  'gui',
+  'image',
+  'audio',
+  'video'
+])
+
+const COMMAND_TOOL_NAMES = new Set(['shell', 'bash', 'terminal', 'run_command', 'exec'])
+const FILE_TOOL_NAMES = new Set([
+  'write',
+  'edit',
+  'write_file',
+  'read_file',
+  'edit_file',
+  'apply_patch',
+  'create_file',
+  'create_plan'
+])
+const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch', 'search_web'])
+
+export function inferToolActivityKind(input: {
+  activityKind?: ToolActivityKind
+  providerKind?: ToolProviderKind
+  toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  toolName?: string
+}): ToolActivityKind {
+  if (input.activityKind) return input.activityKind
+  if (input.providerKind === 'web') return 'web_search'
+  if (input.providerKind === 'mcp') return 'mcp_tool_call'
+  if (input.providerKind === 'delegation') return 'multi_agent_action'
+  if (input.providerKind && DYNAMIC_TOOL_PROVIDER_KINDS.has(input.providerKind)) return 'dynamic_tool_call'
+  if (input.toolKind === 'command_execution') return 'command_execution'
+  if (input.toolKind === 'file_change') return 'file_change'
+  const toolName = input.toolName?.trim().toLowerCase() ?? ''
+  if (COMMAND_TOOL_NAMES.has(toolName)) return 'command_execution'
+  if (FILE_TOOL_NAMES.has(toolName)) return 'file_change'
+  if (WEB_TOOL_NAMES.has(toolName) || toolName.startsWith('web_')) return 'web_search'
+  if (toolName.startsWith('mcp_')) return 'mcp_tool_call'
+  if (toolName === 'delegate_task' || toolName.startsWith('delegate_')) return 'multi_agent_action'
+  if (
+    toolName.includes('image') ||
+    toolName.includes('audio') ||
+    toolName.includes('video') ||
+    toolName.includes('speech') ||
+    toolName.includes('computer')
+  ) {
+    return 'dynamic_tool_call'
+  }
+  return 'generic_tool'
+}
+
+export function inferToolCategory(input: {
+  activityKind?: ToolActivityKind
+  providerKind?: ToolProviderKind
+  toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  toolName?: string
+}): ToolCategory {
+  const activityKind = inferToolActivityKind(input)
+  switch (activityKind) {
+    case 'command_execution':
+      return 'command'
+    case 'file_change':
+      return 'file'
+    case 'mcp_tool_call':
+      return 'mcp'
+    case 'dynamic_tool_call':
+      return 'dynamic'
+    case 'multi_agent_action':
+      return 'multi_agent'
+    case 'web_search':
+      return 'web'
+    default:
+      return 'generic'
+  }
+}
+
+export function inferToolActionType(input: {
+  providerKind?: ToolProviderKind
+  toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  toolName?: string
+}): ToolActionType {
+  if (input.providerKind === 'delegation') return 'delegate'
+  if (input.providerKind === 'web') return 'search'
+  if (input.toolKind === 'command_execution') return 'execute'
+  if (input.toolKind === 'file_change') {
+    const toolName = input.toolName?.trim().toLowerCase() ?? ''
+    return toolName.includes('write') || toolName.includes('create') ? 'write' : 'edit'
+  }
+  const toolName = input.toolName?.trim().toLowerCase() ?? ''
+  if (toolName === 'delegate_task' || toolName.startsWith('delegate_')) return 'delegate'
+  if (toolName === 'grep' || toolName === 'find' || toolName.includes('search')) return 'search'
+  if (toolName === 'ls' || toolName.includes('list')) return 'list_files'
+  if (toolName === 'read' || toolName.includes('read')) return 'read'
+  if (toolName.includes('write') || toolName.includes('create')) return 'write'
+  if (toolName.includes('edit') || toolName.includes('patch')) return 'edit'
+  if (toolName.startsWith('web_') || WEB_TOOL_NAMES.has(toolName)) return 'search'
+  if (
+    toolName.includes('image') ||
+    toolName.includes('audio') ||
+    toolName.includes('video') ||
+    toolName.includes('speech') ||
+    toolName.includes('music')
+  ) {
+    return 'generate'
+  }
+  return 'call'
+}
 
 export type ToolProviderPolicy = {
   id: string
@@ -108,6 +212,10 @@ export type ToolCallLike = {
   toolName: string
   providerId?: string
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
+  toolCategory?: ToolCategory
+  providerKind?: ToolProviderKind
+  actionType?: ToolActionType
   arguments: Record<string, unknown>
 }
 
@@ -140,6 +248,9 @@ export interface ToolHost {
     description: string
     inputSchema: Record<string, unknown>
     toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+    activityKind?: ToolActivityKind
+    toolCategory?: ToolCategory
+    actionType?: ToolActionType
     providerId?: string
     providerKind?: ToolProviderKind
   }[]>

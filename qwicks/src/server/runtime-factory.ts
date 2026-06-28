@@ -64,6 +64,7 @@ import type { SessionStore } from '../ports/session-store.js'
 import type { ThreadStore } from '../ports/thread-store.js'
 import { QWICKS_SYSTEM_PROMPT } from '../prompt/qwicks-system-prompt.js'
 import { RuntimeEventRecorder } from '../services/runtime-event-recorder.js'
+import { TraceRecorder } from '../services/trace-recorder.js'
 import { LlmDebugRecorder } from '../services/llm-debug-recorder.js'
 import { ThreadService } from '../services/thread-service.js'
 import { TurnService } from '../services/turn-service.js'
@@ -172,6 +173,7 @@ export async function createQWicksServeRuntime(
   const nowIso = () => new Date().toISOString()
   const allocateSeq = (threadId: string) => eventBus.allocateSeq(threadId)
   const events = new RuntimeEventRecorder({ eventBus, sessionStore, allocateSeq, nowIso })
+  const trace = new TraceRecorder({ events, ids, nowIso })
   let prefix = createImmutablePrefix({
     systemPrompt: QWICKS_SYSTEM_PROMPT,
     pinnedConstraints: [
@@ -244,6 +246,7 @@ export async function createQWicksServeRuntime(
     threadStore,
     sessionStore,
     events,
+    trace,
     inflight,
     steering,
     compactor,
@@ -446,6 +449,7 @@ export async function createQWicksServeRuntime(
         config: mergeBuiltinSubagentProfiles(options.capabilities.subagents),
         store: new FileDelegationStore(join(options.dataDir, 'child-runs')),
         events,
+        trace,
         nowIso,
         executor: meshSlot.executor,
         recordExternalUsage: (threadId, usage) => {
@@ -559,6 +563,7 @@ export async function createQWicksServeRuntime(
     toolHost,
     usage: usageService,
     events,
+    trace,
     turns: turnService,
     inflight,
     steering,
