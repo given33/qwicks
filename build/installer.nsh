@@ -87,6 +87,37 @@
   Pop $0
   Pop $1
   Sleep 500
+  ; DIAGNOSTIC: write a marker so we can confirm this macro actually runs, and
+  ; test whether the install-dir app.asar is renameable (the real condition the
+  ; built-in _CHECK_APP_RUNNING / atomicRMDir cares about).
+  FileOpen $0 "$TEMP\qwicks-checkapp-marker.txt" w
+  FileWrite $0 "customCheckAppRunning executed$\r$\n"
+  FileClose $0
   ; Deliberately do NOT call Abort -- that would cancel the install. Falling
   ; through lets the install proceed unconditionally.
+!macroend
+
+; DIAGNOSTIC: customInstall runs right before files are copied (installSection
+; line 81). Write a marker to prove we reach this stage, and dump which files
+; in the install dir are currently locked (cannot be renamed).
+!macro customInstall
+  FileOpen $0 "$TEMP\qwicks-custominstall-marker.txt" w
+  FileWrite $0 "customInstall executed$\r$\n"
+  FileClose $0
+  ; Try to rename app.asar to detect locks (the operation atomicRMDir does).
+  ClearErrors
+  Rename "$INSTDIR\resources\app.asar" "$TEMP\qwicks-asar-rename-test"
+  ${if} ${Errors}
+    FileOpen $0 "$TEMP\qwicks-asar-LOCKED.txt" w
+    FileWrite $0 "app.asar is LOCKED during customInstall$\r$\n"
+    FileClose $0
+    ; rename it back is impossible if locked; clear error and continue
+    ClearErrors
+  ${else}
+    ; rename back
+    Rename "$TEMP\qwicks-asar-rename-test" "$INSTDIR\resources\app.asar"
+    FileOpen $0 "$TEMP\qwicks-asar-OK.txt" w
+    FileWrite $0 "app.asar was renameable$\r$\n"
+    FileClose $0
+  ${endif}
 !macroend

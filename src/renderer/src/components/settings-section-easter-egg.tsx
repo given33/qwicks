@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { FolderPlus, Trash2 } from 'lucide-react'
 import { UI_MODE_DEFAULT } from '../lib/ui-mode'
 import { useUiPluginStore } from '../store/ui-plugin-store'
-import { petFigure } from '../lib/pet-figure'
+import { petFigure } from '../lib/mqpet-figure'
 import { SettingsCard, SettingRow } from './settings-controls'
 
 type ModeCard = {

@@ -2,12 +2,12 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-// M2 形象换皮：旧的 iqwicks_*.png 已移除，预装插件改用暖黄形象姿态帧。
-import petWalkRef from '../asset/img/pet/walk.png?url'
-import petWaveRef from '../asset/img/pet/wave.png?url'
-import petSleepRef from '../asset/img/pet/sleep.png?url'
-import petSitRef from '../asset/img/pet/sit.png?url'
-import petStandRef from '../asset/img/pet/stand.png?url'
+// 形象换皮：预装插件改用 MQPet 企鹅形象姿态帧。
+import petWalkRef from '../asset/img/mqpet/ui-figures/walk.png?url'
+import petWaveRef from '../asset/img/mqpet/ui-figures/wave.png?url'
+import petSleepRef from '../asset/img/mqpet/ui-figures/sleep.png?url'
+import petSitRef from '../asset/img/mqpet/ui-figures/sit.png?url'
+import petStandRef from '../asset/img/mqpet/ui-figures/stand.png?url'
 import { UI_PLUGIN_BUNDLED_IQWICKS_ID } from '../shared/ui-plugin'
 import { seedUiPlugin, uiPluginsRootDir } from './services/ui-plugin-service'
 
@@ -16,7 +16,7 @@ import { seedUiPlugin, uiPluginsRootDir } from './services/ui-plugin-service'
  * 首次启动时自动安装进 ~/.qwicks/ui-plugins/iqwicks/。
  * 安装只做一次(种子标记),用户删掉后不会被强行复活。
  *
- * M2 后角色形象统一为暖黄形象(旧的坤鸡美术已移除)。
+ * 形象统一为 MQPet 企鹅形象。
  */
 
 const BUNDLED_SEED_MARKER = '.bundled-seed-v2'

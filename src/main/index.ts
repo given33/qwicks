@@ -8,10 +8,10 @@ import {
   devServerHintUrl,
   type SettingsSecretCipher
 } from './settings-store'
-// M2 形象换皮：app 图标改用暖黄形象（旧 qwicks.png/qwicks_mac.png/qwicks_tray.png 已移除）
-import qwicksLogoPng from '../asset/img/pet/stand.png?url'
-import qwicksMacLogoPng from '../asset/img/pet/pet_mac.png?url'
-import qwicksTrayPng from '../asset/img/pet/pet_tray.png?url'
+// app 图标改用 MQPet 企鹅形象（stand 帧）
+import qwicksLogoPng from '../asset/img/mqpet/icons/mqpet_logo.png?url'
+import qwicksMacLogoPng from '../asset/img/mqpet/icons/mqpet_mac.png?url'
+import qwicksTrayPng from '../asset/img/mqpet/icons/mqpet_tray.png?url'
 import { createAppIcon, pickTrayIcon, prepareTrayIcon } from './app-icon'
 import { buildTrayMenuTemplate, parseTrayThreads, type TrayThreadSummary } from './tray-session-menu'
 import { configureLinuxWaylandImeSwitches } from './app-command-line'
@@ -91,10 +91,11 @@ import {
 import { webhookUrl } from './claw-runtime-helpers'
 import { createTelegramRuntime, type TelegramRuntime, verifyTelegramBotToken } from './telegram-runtime'
 import { isQWicksHealthResponseBody } from './qwicks-health'
-import { createPetWindow, isPetWindowVisible, registerPetIpc, relayoutPetWindowToDisplays, setPetWindowVisible } from './pet-window'
-import { getPetStateStore } from './pet-state-store'
-import { registerPetStateIpc } from './pet-ipc'
-import { toggleConsoleWindow } from './pet-console-window'
+import { createMqpetWindow, isMqpetWindowVisible, registerMqpetIpc, relayoutMqpetWindowToDisplays, setMqpetWindowVisible } from './mqpet-window'
+import { getMqpetStateStore } from './mqpet-state-store'
+import { registerMqpetStateIpc } from './mqpet-ipc'
+import { toggleConsoleWindow } from './mqpet-console-window'
+import { scheduleMqpetStartup } from './mqpet-startup'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -448,7 +449,7 @@ function quitFromTray(): void {
 
 /** 托盘"显示/隐藏桌面宠物"切换（M1-T8）。切换后刷新托盘菜单文案。 */
 function togglePetFromTray(): void {
-  setPetWindowVisible(!isPetWindowVisible())
+  setMqpetWindowVisible(!isMqpetWindowVisible())
   void refreshTrayMenu().catch((error) => {
     console.warn('[qwicks-gui] failed to refresh tray after pet toggle:', error)
   })
@@ -467,7 +468,7 @@ function createTrayMenu(settings: AppSettingsV1, threads: TrayThreadSummary[]): 
   return Menu.buildFromTemplate(buildTrayMenuTemplate({
     locale: settings.locale,
     threads,
-    petVisible: isPetWindowVisible(),
+    petVisible: isMqpetWindowVisible(),
     actions: {
       openThread: (threadId) => dispatchTrayAction({ type: 'open-thread', threadId }),
       newChat: () => dispatchTrayAction({ type: 'new-chat' }),
@@ -1665,20 +1666,28 @@ app.whenReady().then(async () => {
   createWindow({ suppressInitialShow: shouldStartHidden(initial) })
   traceStartup('createWindow:returned')
 
-  // 桌面宠物透明置顶窗口（M1）。注册穿透切换 IPC + 创建窗口 + 监听显示器变化重铺。
-  // 受 settings.pet.enabled 控制；关掉则不创建宠物窗口（后台保活也随之失效）。
-  registerPetIpc()
-  // M4 生存系统：启动状态 store（读盘+离线补算+30s tick）+ 注册照料 IPC
-  registerPetStateIpc()
-  void getPetStateStore().start()
-  screen.on('display-metrics-changed', () => relayoutPetWindowToDisplays())
-  screen.on('display-added', () => relayoutPetWindowToDisplays())
-  screen.on('display-removed', () => relayoutPetWindowToDisplays())
-  if (initial.pet.enabled) {
-    createPetWindow()
-    traceStartup('pet window:created')
+  // MQPet 桌面宠物透明置顶窗口。注册穿透切换 IPC + 创建窗口 + 监听显示器变化重铺。
+  registerMqpetIpc()
+  // 启动状态 store（读盘+离线补算+5s tick）+ 注册照料 IPC
+  registerMqpetStateIpc()
+  screen.on('display-metrics-changed', () => relayoutMqpetWindowToDisplays())
+  screen.on('display-added', () => relayoutMqpetWindowToDisplays())
+  screen.on('display-removed', () => relayoutMqpetWindowToDisplays())
+  const mqpetEnabled = (initial as { mqpet?: { enabled?: boolean } }).mqpet?.enabled ?? true
+  if (mqpetEnabled) {
+    // 延迟创建企鹅窗口：先让 QWicks 主窗口显示，再出现企鹅。
+    scheduleMqpetStartup({
+      enabled: mqpetEnabled,
+      mainWindow,
+      requestIdleCallback: (globalThis as { requestIdleCallback?: (cb: () => void) => unknown }).requestIdleCallback,
+      create: () => {
+        void getMqpetStateStore().start()
+        createMqpetWindow()
+        traceStartup('mqpet window:created')
+      }
+    })
   } else {
-    traceStartup('pet window:disabled by settings')
+    traceStartup('mqpet window:disabled by settings')
   }
   void loadGuiUpdaterModule()
     .then((module) => module.showPostUpdateReleaseNotes())
@@ -1730,8 +1739,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   isQuitting = true
   stopRuntimeWatchdog()
-  // M4: flush 宠物状态到盘（防丢）
-  void getPetStateStore().stop().catch(() => {})
+  // flush MQPet 状态到盘（防丢）
+  void getMqpetStateStore().stop().catch(() => {})
   // 更新安装触发的退出：QWicks runtime 子进程已在 installGuiUpdate 的
   // runBeforeInstallUpdate()（即 stopManagedRuntimesForQuit）里停止过，立即放行，
   // 否则下面的 preventDefault 会阻止 app 退出，electron-updater 的 will-quit

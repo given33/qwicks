@@ -7,7 +7,7 @@ import {
   type KeyboardShortcutBindingsV1,
   type KeyboardShortcutCommandId
 } from '@shared/keyboard-shortcuts'
-import { petFigure } from '../lib/pet-figure'
+import { petFigure } from '../lib/mqpet-figure'
 import { useKeyboardShortcutSettings } from '../lib/keyboard-shortcut-settings'
 import { useChatStore } from '../store/chat-store'
 

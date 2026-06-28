@@ -27,13 +27,12 @@ import { WorkMetaRow } from './message-timeline-cards'
 import { deriveTurnTimer } from './turn-timer'
 
 describe('AnimatedWorkLogo', () => {
-  it('ships the warm-yellow pet figure assets (M2 reskin)', async () => {
+  it('ships the MQPet penguin figure assets', async () => {
     const nodeFs = 'node:fs/promises'
     const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    // M2 换皮后旧 qwicks_*.png / iqwicks_*.png 已移除，全部用暖黄形象帧。
-    // 只验证关键帧存在且是合法 PNG。
-    for (const pose of ['stand', 'walk', 'wave', 'sleep', 'sit'] as const) {
-      const figure = await readFile(new URL(`../../../../asset/img/pet/${pose}.png`, import.meta.url))
+    // 形象已从暖黄换为 MQPet 企鹅。验证关键姿态帧存在且是合法 PNG。
+    for (const pose of ['walk', 'wave', 'sleep', 'sit', 'stand'] as const) {
+      const figure = await readFile(new URL(`../../../../asset/img/mqpet/ui-figures/${pose}.png`, import.meta.url))
       const dims = pngDimensions(figure)
       expect(dims.width).toBeGreaterThan(0)
       expect(dims.height).toBeGreaterThan(0)
@@ -326,11 +325,11 @@ describe('AnimatedWorkLogo', () => {
     expect(baseShellCss).not.toContain("[data-focus-mode='on'] .ds-runtime-wake-shell::before")
   })
 
-  it('ships warm-yellow pet icon assets for app/tray (M2 reskin)', async () => {
+  it('ships MQPet penguin icon assets for app/tray', async () => {
     const nodeFs = 'node:fs/promises'
     const { readFile } = await import(/* @vite-ignore */ nodeFs)
-    // M2 换皮：app/tray 图标改用暖黄形象，旧 qwicks*.png 已移除。
-    for (const name of ['pet/stand.png', 'pet/pet_mac.png', 'pet/pet_tray.png'] as const) {
+    // app/tray 图标改用 MQPet 企鹅形象。
+    for (const name of ['mqpet/icons/mqpet_logo.png', 'mqpet/icons/mqpet_mac.png', 'mqpet/icons/mqpet_tray.png'] as const) {
       const icon = await readFile(new URL(`../../../../asset/img/${name}`, import.meta.url))
       const dims = pngDimensions(icon)
       expect(dims.width).toBeGreaterThan(0)

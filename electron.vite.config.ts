@@ -1,6 +1,20 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { cpSync } from 'fs'
+
+function copyMqpetSpritesPlugin() {
+  return {
+    name: 'copy-mqpet-sprites',
+    closeBundle(): void {
+      cpSync(
+        resolve('src/asset/img/mqpet/sprites'),
+        resolve('out/renderer/assets/mqpet-sprites'),
+        { recursive: true }
+      )
+    }
+  }
+}
 
 export default defineConfig({
   main: {
@@ -20,7 +34,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/preload/index.ts'),
-          pet: resolve('src/preload/pet.ts')
+          mqpet: resolve('src/preload/mqpet.ts')
         },
         output: {
           format: 'cjs',
@@ -33,22 +47,26 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
-        '@rendererPet': resolve('src/renderer-pet/src'),
-        '@rendererConsole': resolve('src/renderer-console/src'),
-        '@petAssets': resolve('src/asset/img/pet'),
+        '@rendererMqpet': resolve('src/renderer-mqpet/src'),
+        '@rendererMqconsole': resolve('src/renderer-mqconsole/src'),
+        '@mqpetAssets': resolve('src/asset/img/mqpet'),
         '@shared': resolve('src/shared')
       }
     },
     build: {
       rollupOptions: {
-        // 多页：主窗口 index + 桌面宠物 pet + 控制台 console。html 都在 src/renderer/。
+        // 多页：主窗口 index + MQPet(mqpet/mqconsole)。各 html 与其 renderer 源码同根。
         input: {
           index: resolve('src/renderer/index.html'),
-          pet: resolve('src/renderer/pet.html'),
-          console: resolve('src/renderer/console.html')
+          mqpet: resolve('src/renderer/mqpet.html'),
+          mqconsole: resolve('src/renderer/mqconsole.html')
         }
       }
     },
-    plugins: [react()]
+    server: {
+      // dev 模式允许访问项目根，使 mqpet.html 能引用 src/renderer-mqpet/ 下的 main.tsx
+      fs: { allow: [resolve('.')] }
+    },
+    plugins: [react(), copyMqpetSpritesPlugin()]
   }
 })

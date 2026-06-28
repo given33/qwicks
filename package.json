@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "npm run build:qwicks && electron-vite dev",
+    "dev:fast": "node ./scripts/ensure-qwicks-install.cjs && electron-vite dev",
+    "dev:qwicks-watch": "node ./scripts/ensure-qwicks-install.cjs && npm --prefix qwicks run build -- --watch",
     "build": "npm run build:qwicks && electron-vite build",
     "build:qwicks": "node ./scripts/ensure-qwicks-install.cjs && npm --prefix qwicks run build",
     "lint": "eslint .",

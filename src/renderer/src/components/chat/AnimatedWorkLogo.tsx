@@ -2,21 +2,21 @@ import type { ReactElement } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { UiPluginFigureSlot } from '@shared/ui-plugin'
 import { useUiPluginFigure } from '../../store/ui-plugin-store'
-import { petFigure } from '../../lib/pet-figure'
+import { petFigure } from '../../lib/mqpet-figure'
 
-// M2 形象换皮：旧的 qwicks_*.png / iqwicks_*.png 两套美术已移除，
-// 全部指向暖黄形象的对应姿态帧。变量名保留以最小化下游逻辑改动——
-// 双图 CSS 过渡、彩蛋、庆祝等机制原样工作，只是底层图换成暖黄形象。
-const qwicksLogo = petFigure('walk')        // 原 qwicks_bird（工作 logo 主体）
-const qwicksSurfFigure = petFigure('walk')   // 原 qwicks_surf
-const qwicksGreetFigure = petFigure('wave')  // 原 qwicks_greet
-const qwicksSleepFigure = petFigure('sleep') // 原 qwicks_sleep
-const qwicksSitFigure = petFigure('sit')     // 原 qwicks_sit
-const iqwicksFigure = petFigure('walk')      // 原 iqwicks（运球）
-const iqwicksRunFigure = petFigure('walk')   // 原 iqwicks_run
-const iqwicksBobaFigure = petFigure('sit')   // 原 iqwicks_boba（喝奶茶→坐着）
-const iqwicksWaveFigure = petFigure('wave')  // 原 iqwicks_wave
-const iqwicksSleepFigure = petFigure('sleep') // 原 iqwicks_sleep
+// 形象换皮：旧的暖黄形象已移除，全部指向 MQPet 企鹅形象的对应姿态帧。
+// 变量名保留以最小化下游逻辑改动——双图 CSS 过渡、彩蛋、庆祝等机制原样工作，
+// 只是底层图换成企鹅形象。
+const qwicksLogo = petFigure('walk')        // 工作logo 主体
+const qwicksSurfFigure = petFigure('walk')
+const qwicksGreetFigure = petFigure('wave')
+const qwicksSleepFigure = petFigure('sleep')
+const qwicksSitFigure = petFigure('sit')
+const iqwicksFigure = petFigure('walk')
+const iqwicksRunFigure = petFigure('walk')
+const iqwicksBobaFigure = petFigure('sit')
+const iqwicksWaveFigure = petFigure('wave')
+const iqwicksSleepFigure = petFigure('sleep')
 
 /* UI 插件按槽位覆盖默认 QWicks 形象时的回退链 */
 export const UI_PLUGIN_STATE_SLOTS: Record<QWicksStateFigureKind, readonly UiPluginFigureSlot[]> = {
