@@ -104,6 +104,27 @@ describe('thread event sink binding', () => {
     expect(getState().turnReasoningFirstAtByUserId['user-current']).toEqual(expect.any(Number))
   })
 
+  it('keeps tool-result upload waits out of visible timeline blocks', () => {
+    const { getState, set, get } = makeSinkHarness({
+      activeThreadId: 'thread-current',
+      blocks: [{ kind: 'user', id: 'user-current', text: 'run tools' }],
+      liveReasoning: 'private reasoning before tool results'
+    })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+
+    sink.onRuntimeStatus?.({
+      kind: 'tool_result_upload_wait',
+      itemId: 'runtime_status_turn-current_tool_upload_wait',
+      turnId: 'turn-current',
+      createdAt: '2026-06-03T10:00:00.000Z',
+      toolResultCount: 2
+    })
+
+    expect(getState().blocks).toEqual([{ kind: 'user', id: 'user-current', text: 'run tools' }])
+    expect(getState().liveReasoning).toBe('private reasoning before tool results')
+    expect(getState().busy).toBe(true)
+  })
+
   it('preserves activityKind across live tool insert and update events', () => {
     const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current' })
     const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })

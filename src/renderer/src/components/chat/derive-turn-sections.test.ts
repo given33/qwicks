@@ -63,9 +63,7 @@ describe('deriveTurnSections', () => {
       workspaceRoot: '/tmp'
     })
 
-    expect(result.workItems).toEqual([
-      { kind: 'reasoning', id: 'live-reasoning', text: 'thinking' }
-    ])
+    expect(result.workItems).toEqual([])
     expect(result.liveAssistantText).toBe('streaming answer')
     expect(result.finalAssistantItems).toEqual([])
   })
@@ -119,7 +117,35 @@ describe('deriveTurnSections', () => {
     expect(result.assistantContentBlocks).toEqual([
       { kind: 'assistant', id: 'answer', text: '你好！' }
     ])
-    expect(result.processBlocks.map((block) => block.kind)).toEqual(['reasoning'])
+    expect(result.processBlocks).toEqual([])
+  })
+
+  it('strips think tags from assistant content without surfacing the private text', () => {
+    const result = sections([
+      {
+        kind: 'assistant',
+        id: 'answer',
+        text: '<think>Let me inspect the store first.</think>The store is ready.'
+      }
+    ])
+
+    expect(result.assistantContentBlocks).toEqual([
+      { kind: 'assistant', id: 'answer', text: 'The store is ready.' }
+    ])
+    expect(result.processBlocks).toEqual([])
+  })
+
+  it('drops assistant blocks that only contain think-tagged private text', () => {
+    const result = sections([
+      {
+        kind: 'assistant',
+        id: 'thinking-only',
+        text: '<think>Do not show this in the main timeline.</think>'
+      }
+    ])
+
+    expect(result.assistantContentBlocks).toEqual([])
+    expect(result.processBlocks).toEqual([])
   })
 
   it('uses the last assistant text as final content without duplicating it in process work', () => {
@@ -230,6 +256,29 @@ describe('deriveTurnSections', () => {
 
     expect(result.assistantContentBlocks).toEqual([])
     expect(result.processBlocks.map((block) => block.kind)).toEqual(['tool'])
+  })
+
+  it('hides historical tool-result upload wait status blocks from process work', () => {
+    const result = sections([
+      {
+        kind: 'system',
+        id: 'runtime_status_turn_1_tool_upload_wait',
+        text: '已收到 1 个工具结果，正在等待模型继续…'
+      },
+      {
+        kind: 'system',
+        id: 'runtime_status_tool_catalog_fp_next',
+        text: 'Tool catalog changed'
+      }
+    ])
+
+    expect(result.processBlocks).toEqual([
+      {
+        kind: 'system',
+        id: 'runtime_status_tool_catalog_fp_next',
+        text: 'Tool catalog changed'
+      }
+    ])
   })
 
   it('surfaces generated media blocks outside the collapsed process work', () => {
@@ -367,7 +416,7 @@ describe('deriveTurnSections', () => {
     expect(result.turnFileChanges[0]?.detail).toContain('+new detail')
   })
 
-  it('keeps live reasoning in the process timeline; live assistant is rendered separately by MessageTimeline', () => {
+  it('keeps live reasoning out of the main process timeline; live assistant is rendered separately by MessageTimeline', () => {
     // The streaming assistant text is rendered as a dedicated MessageBubble
     // by MessageTimeline (`<MessageBubble block={{ kind: 'assistant',
     // id: 'live-assistant', text: liveContent }} />`). It must NOT also
@@ -380,9 +429,7 @@ describe('deriveTurnSections', () => {
     })
 
     expect(result.assistantContentBlocks).toEqual([])
-    expect(result.processBlocks).toEqual([
-      { kind: 'reasoning', id: 'live-reasoning', text: 'private reasoning' }
-    ])
+    expect(result.processBlocks).toEqual([])
   })
 
   it('keeps assistant content in chronological process order while a later tool is still running', () => {

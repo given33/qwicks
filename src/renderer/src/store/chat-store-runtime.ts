@@ -1020,6 +1020,12 @@ export function buildThreadEventSink(
           base.busy = true
           armBusyWatchdog(set, get)
         }
+        if (ev.kind === 'tool_result_upload_wait') {
+          return {
+            ...base,
+            error: clearRuntimeStreamRecoveringError(s.error)
+          }
+        }
         const flushed = flushLiveBlocks(s)
         const baseBlocks = flushed.blocks ?? s.blocks
         const text = runtimeStatusText(ev)
