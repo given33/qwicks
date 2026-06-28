@@ -398,7 +398,7 @@ export function MqpetStage(): React.ReactElement {
             placeItems: 'center',
           }}
         >
-          <RadialMenu onPick={onPick} />
+          <RadialMenu onPick={onPick} getSourceAsset={bridge.current?.getSourceAsset} />
         </div>
       )}
     </div>

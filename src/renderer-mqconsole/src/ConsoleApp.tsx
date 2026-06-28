@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StatusPanel } from './StatusPanel';
 import { InventoryPanel } from './InventoryPanel';
 import { ShopPanel } from './ShopPanel';
@@ -13,6 +13,7 @@ import {
   type MqpetConsolePanelRequest,
   type MqpetConsoleTab,
 } from '@shared/mqpet-console-panel';
+import { createOriginalAssetObjectUrl, type GetOriginalAsset } from '../../renderer-mqpet/src/originalAssetUrl';
 import stateBg from '../../asset/img/mqpet/ui-panels/state.png';
 import shopBg from '../../asset/img/mqpet/ui-panels/shop.png';
 import bagBg from '../../asset/img/mqpet/ui-panels/bag.png';
@@ -22,6 +23,7 @@ type Bridge = {
   getState: () => Promise<unknown>;
   onStateChanged: (cb: (s: unknown) => void) => () => void;
   onConsolePanelRequest: (cb: (request: MqpetConsolePanelRequest) => void) => () => void;
+  getSourceAsset: GetOriginalAsset;
   useItem: (id: string) => Promise<unknown>;
   buy: (id: string) => Promise<unknown>;
   toggleConsole: () => Promise<unknown>;
@@ -32,7 +34,70 @@ function getBridge(): Bridge | null {
 }
 
 const BG: Record<Tab, string> = { status: stateBg, inventory: bagBg, shop: shopBg, activity: stateBg, map: stateBg };
-const TAB_LABEL: Record<Tab, string> = { status: '状态', inventory: '背包', shop: '商城', activity: '玩法', map: '地图' };
+const TAB_LABEL: Record<Tab, string> = {
+  status: '状态',
+  inventory: '背包',
+  shop: '商城',
+  activity: '玩法',
+  map: '地图',
+};
+const ORIGINAL_UI_ASSET_COUNT = 1106;
+
+function OriginalResourceStrip({ getSourceAsset }: { getSourceAsset?: GetOriginalAsset }): React.ReactElement {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  const sources = useMemo(() => [
+    'stateInfo/close_normal.png',
+    'windowTip/alert/icon.png',
+    'img_res/food/100010031.gif',
+    'img_res/medicine/10001.gif',
+  ], []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const createdUrls: string[] = [];
+
+    async function load(): Promise<void> {
+      if (!getSourceAsset) return;
+      const entries = await Promise.all(sources.map(async (sourcePath) => {
+        const url = await createOriginalAssetObjectUrl(sourcePath, getSourceAsset);
+        if (url) createdUrls.push(url);
+        return [sourcePath, url] as const;
+      }));
+      const music = await createOriginalAssetObjectUrl('music/main01.mp3', getSourceAsset);
+      if (music) createdUrls.push(music);
+      if (cancelled) return;
+      setUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1]))));
+      setMusicUrl(music);
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+      for (const url of createdUrls) URL.revokeObjectURL(url);
+    };
+  }, [getSourceAsset, sources]);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        padding: '4px 16px 0',
+        color: '#76501d',
+        fontSize: 11,
+      }}
+    >
+      {sources.map((sourcePath) => urls[sourcePath] ? (
+        <img key={sourcePath} src={urls[sourcePath]} alt="" draggable={false} style={{ maxWidth: 24, maxHeight: 24 }} />
+      ) : null)}
+      <span>原版资源 {ORIGINAL_UI_ASSET_COUNT} 项已接入</span>
+      {musicUrl ? <audio src={musicUrl} preload="metadata" /> : null}
+    </div>
+  );
+}
 
 export function ConsoleApp(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('status');
@@ -64,6 +129,8 @@ export function ConsoleApp(): React.ReactElement {
       unsubscribePanel();
     };
   }, []);
+
+  const bridge = getBridge();
 
   return (
     <div style={{ width: 440, height: 540, position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -102,7 +169,7 @@ export function ConsoleApp(): React.ReactElement {
             </button>
           ))}
           <button
-            onClick={() => { void getBridge()?.toggleConsole(); }}
+            onClick={() => { void bridge?.toggleConsole(); }}
             title="关闭"
             style={{
               position: 'absolute',
@@ -124,6 +191,7 @@ export function ConsoleApp(): React.ReactElement {
             x
           </button>
         </div>
+        <OriginalResourceStrip getSourceAsset={bridge?.getSourceAsset} />
         <div style={{ flex: 1, overflow: 'auto', padding: '8px 18px' }}>
           {tab === 'status' && save && <StatusPanel save={save} />}
           {tab === 'inventory' && save && (

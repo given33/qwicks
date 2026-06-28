@@ -6,17 +6,18 @@ export interface MenuSegment {
   icon: string;
   action: MenuAction;
   color: string;
+  sourcePath: string;
 }
 
 export const MENU_SEGMENTS: MenuSegment[] = [
-  { label: '喂食', icon: 'F', action: 'feed', color: '#8bc34a' },
-  { label: '洗澡', icon: 'B', action: 'clean', color: '#4fc3f7' },
-  { label: '医疗', icon: 'M', action: 'heal', color: '#f06292' },
-  { label: '打工', icon: 'W', action: 'work', color: '#ffb74d' },
-  { label: '学习', icon: 'L', action: 'learn', color: '#9575cd' },
-  { label: '地图', icon: 'P', action: 'map', color: '#4db6ac' },
-  { label: '状态', icon: 'S', action: 'status', color: '#7986cb' },
-  { label: '关闭', icon: 'X', action: 'close', color: '#e57373' },
+  { label: '喂食', icon: 'F', action: 'feed', color: '#8bc34a', sourcePath: 'Menu/ditu01.png' },
+  { label: '洗澡', icon: 'B', action: 'clean', color: '#4fc3f7', sourcePath: 'Menu/ditu02.png' },
+  { label: '医疗', icon: 'M', action: 'heal', color: '#f06292', sourcePath: 'Menu/ditu03.png' },
+  { label: '打工', icon: 'W', action: 'work', color: '#ffb74d', sourcePath: 'Menu/ditu04.png' },
+  { label: '学习', icon: 'L', action: 'learn', color: '#9575cd', sourcePath: 'Menu/ditu05.png' },
+  { label: '地图', icon: 'P', action: 'map', color: '#4db6ac', sourcePath: 'Menu/ditu06.png' },
+  { label: '状态', icon: 'S', action: 'status', color: '#7986cb', sourcePath: 'Menu/ditu07.png' },
+  { label: '关闭', icon: 'X', action: 'close', color: '#e57373', sourcePath: 'Menu/ditu09.png' },
 ];
 
 export const MENU_TOTAL = MENU_SEGMENTS.length;

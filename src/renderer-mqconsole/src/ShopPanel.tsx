@@ -1,4 +1,3 @@
-// src/renderer-mqconsole/src/ShopPanel.tsx
 import { useState } from 'react';
 import { MQ_ITEMS, type MqMainCategory, type MqSubCategory } from '@shared/mqpet-catalog';
 import type { MqPetSave } from '@shared/mqpet-state';
@@ -9,7 +8,9 @@ const SUBS: Record<MqMainCategory, MqSubCategory[]> = {
   DressUp: ['Background', 'Props'],
 };
 const MAIN_LABEL: Record<MqMainCategory, string> = { Feeding: '喂养', Function: '功能', DressUp: '装扮' };
+
 type Bridge = { buy: (id: string) => Promise<unknown> };
+
 function getBridge(): Bridge | null {
   return typeof window !== 'undefined' ? (window as unknown as { mqpet?: Bridge }).mqpet ?? null : null;
 }
@@ -18,20 +19,29 @@ export function ShopPanel({ save }: { save: MqPetSave }): React.ReactElement {
   const [main, setMain] = useState<MqMainCategory>('Feeding');
   const [sub, setSub] = useState<MqSubCategory>('Food');
   const [page, setPage] = useState(0);
-  const PER = 8;
+  const perPage = 8;
   const items = MQ_ITEMS.filter((it) => it.main === main && it.sub === sub);
-  const maxPage = Math.max(0, Math.ceil(items.length / PER) - 1);
-  const pageItems = items.slice(page * PER, page * PER + PER);
+  const maxPage = Math.max(0, Math.ceil(items.length / perPage) - 1);
+  const pageItems = items.slice(page * perPage, page * perPage + perPage);
   const gold = Math.floor(save.state.gold);
   const lvl = save.state.level;
+
   return (
-    <div style={{ padding: 12 }}>
+    <div style={{ padding: 12, color: '#5a3a10' }}>
       <div style={{ marginBottom: 8 }}>元宝: {gold}</div>
       <div style={{ marginBottom: 8 }}>
         {(['Feeding', 'Function', 'DressUp'] as MqMainCategory[]).map((m) => (
-          <button key={m} onClick={() => { setMain(m); setSub(SUBS[m][0]); setPage(0); }}
-            style={{ marginRight: 4, background: main === m ? '#ffe082' : 'transparent',
-                     border: '1px solid #f9a825', padding: '2px 8px', cursor: 'pointer' }}>
+          <button
+            key={m}
+            onClick={() => { setMain(m); setSub(SUBS[m][0]); setPage(0); }}
+            style={{
+              marginRight: 4,
+              background: main === m ? '#ffe082' : 'transparent',
+              border: '1px solid #f9a825',
+              padding: '2px 8px',
+              cursor: 'pointer',
+            }}
+          >
             {MAIN_LABEL[m]}
           </button>
         ))}
@@ -41,17 +51,30 @@ export function ShopPanel({ save }: { save: MqPetSave }): React.ReactElement {
           const locked = lvl < it.unlockLevel;
           const afford = gold >= it.price && !locked;
           return (
-            <button key={it.id} disabled={!afford}
+            <button
+              key={it.id}
+              disabled={!afford}
               onClick={() => { void getBridge()?.buy(it.id); }}
-              style={{ background: '#fff', border: '1px solid #f9a825', padding: 4, textAlign: 'center',
-                       opacity: afford ? 1 : 0.5, cursor: afford ? 'pointer' : 'not-allowed' }}>
+              style={{
+                background: '#fff',
+                border: '1px solid #f9a825',
+                padding: 4,
+                textAlign: 'center',
+                opacity: afford ? 1 : 0.5,
+                cursor: afford ? 'pointer' : 'not-allowed',
+              }}
+            >
               <div>{it.name}</div>
-              <div style={{ color: gold >= it.price ? '#8B4513' : 'red' }}>{it.price}</div>
-              <div style={{ color: locked ? 'red' : 'green' }}>{locked ? `需${it.unlockLevel}级` : `${it.unlockLevel}级`}</div>
+              <div style={{ color: gold >= it.price ? '#8B4513' : 'red' }}>{it.price} 元宝</div>
+              <div style={{ color: locked ? 'red' : 'green' }}>{locked ? `需要 ${it.unlockLevel} 级` : `${it.unlockLevel} 级可用`}</div>
             </button>
           );
         })}
-        {pageItems.length === 0 && <div style={{ gridColumn: 'span 4', textAlign: 'center', color: '#999' }}>此分类下无商品</div>}
+        {pageItems.length === 0 && (
+          <div style={{ gridColumn: 'span 4', textAlign: 'center', color: '#8a7b63', paddingTop: 24 }}>
+            这个分类下还没有商品
+          </div>
+        )}
       </div>
       <div style={{ marginTop: 8, textAlign: 'center' }}>
         <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={{ cursor: page === 0 ? 'default' : 'pointer' }}>上一页</button>

@@ -22,6 +22,13 @@ const MODE_LABEL: Record<MqpetActivityMode, string> = {
   learn: '学习',
 };
 
+const ACTIVITY_LABEL: Record<string, string> = {
+  Idle: '休息中',
+  Working: '打工中',
+  Learning: '学习中',
+  Playing: '互动中',
+};
+
 export function ActivityPanel({
   save,
   mode,
@@ -72,9 +79,11 @@ export function ActivityPanel({
 
       <div style={{ border: '1px solid #e0a64a', background: 'rgba(255,255,255,0.72)', padding: 10, marginBottom: 10 }}>
         <div style={{ fontWeight: 'bold', marginBottom: 6 }}>
-          {MODE_LABEL[mode]} | 等级 {state.level} | 当前 {state.activity}
+          {MODE_LABEL[mode]} | 等级 {state.level} | 当前 {ACTIVITY_LABEL[state.activity]}
         </div>
-        <div>体力 {Math.floor(state.stamina)} | 饥饿 {Math.floor(state.hunger)} | 清洁 {Math.floor(state.cleanliness)} | 健康 {Math.floor(state.health)}</div>
+        <div>
+          体力 {Math.floor(state.stamina)} | 饥饿 {Math.floor(state.hunger)} | 清洁 {Math.floor(state.cleanliness)} | 健康 {Math.floor(state.health)}
+        </div>
         <div style={{ marginTop: 6 }}>
           {mode === 'work'
             ? `工资 ${wage} - 成本 ${cost}，每 tick 净得 ${workNet} 元宝，默认 4 tick`

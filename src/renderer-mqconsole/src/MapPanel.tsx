@@ -12,7 +12,7 @@ export function MapPanel(): React.ReactElement {
     <div style={{ padding: 12, fontSize: 13, color: '#5a3a10' }}>
       <div style={{ fontWeight: 'bold', marginBottom: 8 }}>QQPet 地图</div>
       <div style={{ marginBottom: 10 }}>
-        源工程里地图入口已接到菜单，当前可复用的地图角色动画如下，后续打工、学习小游戏可以挂到这些节点。
+        地图入口已经接到桌宠菜单。当前先复用源工程里可用的地图角色动画，后续打工、学习、农场、钓鱼和小游戏会挂到这些节点上。
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
         {MAP_NODES.map((node) => (
