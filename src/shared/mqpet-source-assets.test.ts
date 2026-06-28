@@ -8,8 +8,12 @@ import {
   concernAnimationFor,
   consolePanelForMenuAction,
   interactionAnimationForId,
+  resolveOriginalActionAsset,
+  sourceMoodForPetState,
+  sourceStageForLevel,
   stageAssetForLevel,
 } from './mqpet-source-assets';
+import { defaultState } from './mqpet-data';
 
 describe('MQPet source asset map', () => {
   it('binds all evolution stages to the same source desktop pet prefab', () => {
@@ -50,5 +54,83 @@ describe('MQPet source asset map', () => {
     expect(consolePanelForMenuAction('learn')).toEqual({ tab: 'activity', mode: 'learn' });
     expect(consolePanelForMenuAction('map')).toEqual({ tab: 'map' });
     expect(consolePanelForMenuAction('status')).toEqual({ tab: 'status' });
+  });
+
+  it('maps QWicks level stages to original pet source stages', () => {
+    expect(sourceStageForLevel(1)).toBe('Egg');
+    expect(sourceStageForLevel(9)).toBe('Egg');
+    expect(sourceStageForLevel(10)).toBe('Kid');
+    expect(sourceStageForLevel(29)).toBe('Kid');
+    expect(sourceStageForLevel(30)).toBe('Adult');
+  });
+
+  it('resolves original stage and gender action resources from pet/Action', () => {
+    expect(resolveOriginalActionAsset({ gender: 'GG', sourceStage: 'Egg', action: 'stand' })).toMatchObject({
+      format: 'swf',
+      sourcePath: 'Action/GG/Egg/Stand.swf',
+    });
+    expect(resolveOriginalActionAsset({ gender: 'MM', sourceStage: 'Kid', action: 'clean' })).toMatchObject({
+      format: 'swf',
+      sourcePath: 'Action/MM/Kid/Clean.swf',
+    });
+    expect(resolveOriginalActionAsset({ gender: 'GG', sourceStage: 'Adult', action: 'eat', variant: 1 })).toMatchObject({
+      sourcePath: 'Action/GG/Adult/Eat2.swf',
+    });
+  });
+
+  it('uses adult mood folders for original adult stand and play resources', () => {
+    expect(resolveOriginalActionAsset({
+      gender: 'MM',
+      sourceStage: 'Adult',
+      mood: 'peaceful',
+      action: 'stand',
+    })).toMatchObject({
+      sourcePath: 'Action/MM/Adult/peaceful/Stand.swf',
+    });
+    expect(resolveOriginalActionAsset({
+      gender: 'GG',
+      sourceStage: 'Adult',
+      mood: 'happy',
+      action: 'play',
+      variant: 0,
+    })).toMatchObject({
+      sourcePath: 'Action/GG/Adult/happy/play/P1.swf',
+    });
+  });
+
+  it('falls back to stage-level folders when a mood-specific original action is not available', () => {
+    expect(resolveOriginalActionAsset({
+      gender: 'GG',
+      sourceStage: 'Kid',
+      mood: 'happy',
+      action: 'play',
+      variant: 27,
+    })).toMatchObject({
+      sourcePath: 'Action/GG/Kid/play/P28.swf',
+    });
+    expect(resolveOriginalActionAsset({
+      gender: 'MM',
+      sourceStage: 'Egg',
+      mood: 'sad',
+      action: 'interact',
+      variant: 0,
+    })).toMatchObject({
+      sourcePath: 'Action/MM/Egg/interact/E1.swf',
+    });
+  });
+
+  it('derives original adult mood from pet stats', () => {
+    expect(sourceMoodForPetState({
+      ...defaultState(),
+      level: 30,
+      hunger: 8000,
+      cleanliness: 8000,
+      mood: 3900,
+      health: 180,
+    })).toBe('happy');
+    expect(sourceMoodForPetState({ ...defaultState(), level: 30, hunger: 100 })).toBe('upset');
+    expect(sourceMoodForPetState({ ...defaultState(), level: 30, health: 20 })).toBe('prostrate');
+    expect(sourceMoodForPetState({ ...defaultState(), level: 30, mood: 100 })).toBe('sad');
+    expect(sourceMoodForPetState({ ...defaultState(), level: 1 })).toBe('peaceful');
   });
 });

@@ -14,6 +14,7 @@ import {
   onStatusFeedback,
   onTick,
   pickFromShuffleBag,
+  sourceActionForFsm,
   statusFeedbackForPetState,
   type ShuffleBag,
 } from './mqpet-fsm';
@@ -123,6 +124,25 @@ describe('animForFsm', () => {
       'Pet_Idle',
       'Pet_Idle',
     ]);
+  });
+});
+
+describe('sourceActionForFsm', () => {
+  it('maps FSM states to original QQPet source action buckets', () => {
+    expect(sourceActionForFsm({ kind: 'Boot' })).toBe('enter');
+    expect(sourceActionForFsm({ kind: 'Idle', idleTime: 0 })).toBe('stand');
+    expect(sourceActionForFsm({ kind: 'Bored', animId: 0, elapsed: 0 })).toBe('play');
+    expect(sourceActionForFsm({ kind: 'Interact', animId: 0, elapsed: 0, remaining: 0 })).toBe('play');
+    expect(sourceActionForFsm({ kind: 'Question', elapsed: 0 })).toBe('speak');
+    expect(sourceActionForFsm({ kind: 'Dragging' })).toBe('stand');
+    expect(sourceActionForFsm({ kind: 'Feed', animId: 0, elapsed: 0 })).toBe('eat');
+    expect(sourceActionForFsm({ kind: 'Clean', elapsed: 0 })).toBe('clean');
+    expect(sourceActionForFsm({ kind: 'LevelUp', elapsed: 0 })).toBe('levelUp');
+    expect(sourceActionForFsm({ kind: 'Concern', concern: 'hunger', animId: 0, elapsed: 0 })).toBe('interact');
+    expect(sourceActionForFsm({ kind: 'Dying', phase: 'Die', elapsed: 0 })).toBe('die');
+    expect(sourceActionForFsm({ kind: 'Dying', phase: 'Bury', elapsed: 0 })).toBe('bury');
+    expect(sourceActionForFsm({ kind: 'Dead' })).toBe('bury');
+    expect(sourceActionForFsm({ kind: 'Revive', elapsed: 0 })).toBe('revive');
   });
 });
 

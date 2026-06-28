@@ -1,6 +1,17 @@
-import { statusFeedbackForPetState, STATUS_FEEDBACK_COOLDOWN_MS } from '@shared/mqpet-fsm';
+import {
+  sourceActionForFsm,
+  statusFeedbackForPetState,
+  STATUS_FEEDBACK_COOLDOWN_MS,
+  type MqPetFsm,
+} from '@shared/mqpet-fsm';
 import type { MqPetSave } from '@shared/mqpet-state';
 import { stageOf, type MqPetState } from '@shared/mqpet-data';
+import {
+  resolveOriginalActionAsset,
+  sourceMoodForPetState,
+  sourceStageForLevel,
+  type MqPetSourceAssetRef,
+} from '@shared/mqpet-source-assets';
 
 export type StageAnimationEvent = 'feed' | 'clean' | 'level-up' | 'death' | 'revive' | 'stage-change';
 
@@ -52,4 +63,17 @@ export function shouldApplyStatusFeedback(
   if (!statusFeedbackForPetState(save.state)) return false;
   if (lastFeedbackAt <= 0) return true;
   return now - lastFeedbackAt >= STATUS_FEEDBACK_COOLDOWN_MS;
+}
+
+export function sourceAssetForStageFrame(save: MqPetSave | null, fsm: MqPetFsm): MqPetSourceAssetRef | null {
+  if (!save) return null;
+  const action = sourceActionForFsm(fsm);
+  const variant = 'animId' in fsm ? fsm.animId : undefined;
+  return resolveOriginalActionAsset({
+    gender: 'GG',
+    sourceStage: sourceStageForLevel(save.state.level),
+    mood: sourceMoodForPetState(save.state),
+    action,
+    variant,
+  });
 }

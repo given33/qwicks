@@ -7,6 +7,7 @@ import {
   concernAnimationFor,
   interactionAnimationForId,
   stageAssetForStage,
+  type MqPetSourceActionKind,
 } from './mqpet-source-assets';
 
 export type MqPetConcern = 'health' | 'hunger' | 'cleanliness' | 'mood';
@@ -235,5 +236,23 @@ export function animForFsm(s: MqPetFsm, stage: MqPetStage = 'Egg'): string {
     case 'Dying': return s.phase;
     case 'Dead': return 'Bury';
     case 'Revive': return 'Revive';
+  }
+}
+
+export function sourceActionForFsm(s: MqPetFsm): MqPetSourceActionKind {
+  switch (s.kind) {
+    case 'Boot': return 'enter';
+    case 'Idle': return 'stand';
+    case 'Bored': return 'play';
+    case 'Interact': return 'play';
+    case 'Question': return 'speak';
+    case 'Dragging': return 'stand';
+    case 'Feed': return 'eat';
+    case 'Clean': return 'clean';
+    case 'LevelUp': return 'levelUp';
+    case 'Concern': return 'interact';
+    case 'Dying': return s.phase === 'Die' ? 'die' : 'bury';
+    case 'Dead': return 'bury';
+    case 'Revive': return 'revive';
   }
 }

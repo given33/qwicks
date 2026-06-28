@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   animationEventForItemEffect,
   animationEventForSaveChange,
+  sourceAssetForStageFrame,
   shouldApplyStatusFeedback,
   type StageSnapshot,
 } from './mqpetStageEvents';
@@ -41,5 +42,42 @@ describe('MQPet status feedback gate', () => {
     expect(shouldApplyStatusFeedback(save, 10_000, 0)).toBe(true);
     expect(shouldApplyStatusFeedback(save, 11_000, 10_000)).toBe(false);
     expect(shouldApplyStatusFeedback(save, 40_001, 10_000)).toBe(true);
+  });
+});
+
+describe('MQPet original source frame resolver', () => {
+  it('resolves the current overlay FSM state to original pet source assets', () => {
+    const adultHappy = {
+      ...defaultSave(0),
+      state: {
+        ...defaultState(),
+        level: 30,
+        hunger: 8000,
+        cleanliness: 8000,
+        mood: 3900,
+        health: 180,
+      },
+    };
+
+    expect(sourceAssetForStageFrame(adultHappy, { kind: 'Idle', idleTime: 0 })).toMatchObject({
+      action: 'stand',
+      mood: 'happy',
+      sourceStage: 'Adult',
+      sourcePath: 'Action/GG/Adult/happy/Stand.swf',
+    });
+
+    expect(sourceAssetForStageFrame(adultHappy, { kind: 'Feed', animId: 1, elapsed: 0 })).toMatchObject({
+      action: 'eat',
+      sourcePath: 'Action/GG/Adult/Eat2.swf',
+    });
+
+    expect(sourceAssetForStageFrame(
+      { ...defaultSave(0), state: { ...defaultState(), level: 10 } },
+      { kind: 'Clean', elapsed: 0 },
+    )).toMatchObject({
+      action: 'clean',
+      sourceStage: 'Kid',
+      sourcePath: 'Action/GG/Kid/Clean.swf',
+    });
   });
 });

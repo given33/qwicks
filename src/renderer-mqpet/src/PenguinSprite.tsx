@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAnim, type MqAnim } from '@shared/mqpet-anims';
+import type { MqPetSourceAssetRef } from '@shared/mqpet-source-assets';
 import { createMqpetSpriteBaseUrl, createStaticSpriteResolver, preloadSpriteNames } from './spriteResolver';
 import { fitMqpetSpriteAtDesktopScale } from './spriteLayout';
 import { useFrameLoop } from './useFrameLoop';
@@ -32,11 +33,13 @@ function resolveAnim(animName: string): MqAnim | undefined {
 
 export function PenguinSprite({
   animName,
+  sourceAsset,
   width = 128,
   height = 144,
   onComplete,
 }: {
   animName: string;
+  sourceAsset?: MqPetSourceAssetRef | null;
   width?: number;
   height?: number;
   onComplete?: () => void;
@@ -115,6 +118,10 @@ export function PenguinSprite({
 
   return (
     <div
+      data-source-action={sourceAsset?.action}
+      data-source-path={sourceAsset?.sourcePath}
+      data-source-stage={sourceAsset?.sourceStage}
+      data-source-mood={sourceAsset?.mood}
       style={{
         width,
         height,

@@ -1,8 +1,38 @@
-import { stageOf, type MqPetStage } from './mqpet-data';
+import { stageOf, statLimit, STAT_CONFIG, type MqPetStage } from './mqpet-data';
 import type { MqpetConsolePanelRequest } from './mqpet-console-panel';
+import {
+  ORIGINAL_QQPET_ACTION_ASSETS,
+  type OriginalQqpetActionFormat,
+  type OriginalQqpetActionGender,
+  type OriginalQqpetActionIndexEntry,
+  type OriginalQqpetActionMood,
+  type OriginalQqpetActionStage,
+} from './mqpet-original-action-index';
 
 export type MqPetSourceMenuAction = 'feed' | 'clean' | 'heal' | 'work' | 'learn' | 'map' | 'status';
 export type MqPetSourceAnimName = string;
+export type MqPetSourceGender = OriginalQqpetActionGender;
+export type MqPetSourceStage = OriginalQqpetActionStage;
+export type MqPetSourceMood = OriginalQqpetActionMood;
+export type MqPetSourceActionKind = OriginalQqpetActionIndexEntry['action'];
+
+export interface MqPetSourceAssetRef {
+  gender: MqPetSourceGender;
+  sourceStage: MqPetSourceStage;
+  mood?: MqPetSourceMood;
+  action: MqPetSourceActionKind;
+  name: string;
+  sourcePath: string;
+  format: OriginalQqpetActionFormat;
+}
+
+export interface MqPetOriginalActionRequest {
+  gender?: MqPetSourceGender;
+  sourceStage: MqPetSourceStage;
+  mood?: MqPetSourceMood;
+  action: MqPetSourceActionKind;
+  variant?: number;
+}
 
 export interface MqPetStageAsset {
   prefabGuid: string;
@@ -61,12 +91,101 @@ export const MQPET_CONCERN_ANIMS = {
   mood: ['M1', 'M2'],
 } as const satisfies Record<'health' | 'hunger' | 'cleanliness' | 'mood', readonly MqPetSourceAnimName[]>;
 
+const DEFAULT_SOURCE_GENDER: MqPetSourceGender = 'GG';
+const DEFAULT_SOURCE_MOOD: MqPetSourceMood = 'peaceful';
+
+const ACTION_ASSETS = ORIGINAL_QQPET_ACTION_ASSETS as readonly MqPetSourceAssetRef[];
+
+function sourceStageForStage(stage: MqPetStage): MqPetSourceStage {
+  switch (stage) {
+    case 'Egg':
+      return 'Egg';
+    case 'Toddler':
+      return 'Kid';
+    case 'Mature':
+      return 'Adult';
+  }
+}
+
+function normalizeVariant(variant: number | undefined, length: number): number {
+  if (length <= 0) return 0;
+  if (variant === undefined) return 0;
+  return wrapIndex(variant, length);
+}
+
+function compareAssetNames(left: MqPetSourceAssetRef, right: MqPetSourceAssetRef): number {
+  return left.name.localeCompare(right.name, 'en', { numeric: true, sensitivity: 'base' });
+}
+
+function candidatesFor(request: Required<Omit<MqPetOriginalActionRequest, 'mood' | 'variant'>> & {
+  mood?: MqPetSourceMood;
+}): MqPetSourceAssetRef[] {
+  return ACTION_ASSETS
+    .filter((asset) => {
+      if (asset.gender !== request.gender) return false;
+      if (asset.sourceStage !== request.sourceStage) return false;
+      if (asset.action !== request.action) return false;
+      if (request.mood !== undefined) return asset.mood === request.mood;
+      return asset.mood === undefined;
+    })
+    .slice()
+    .sort(compareAssetNames);
+}
+
 export function stageAssetForStage(stage: MqPetStage): MqPetStageAsset {
   return MQPET_STAGE_ASSETS[stage];
 }
 
 export function stageAssetForLevel(level: number): MqPetStageAsset {
   return stageAssetForStage(stageOf(level));
+}
+
+export function sourceStageForLevel(level: number): MqPetSourceStage {
+  return sourceStageForStage(stageOf(level));
+}
+
+export function sourceMoodForPetState(state: {
+  level: number;
+  hunger: number;
+  cleanliness: number;
+  health: number;
+  mood: number;
+}): MqPetSourceMood {
+  if (sourceStageForLevel(state.level) !== 'Adult') return DEFAULT_SOURCE_MOOD;
+
+  const hungerLimit = statLimit(state.level, STAT_CONFIG.hungerClean);
+  const moodLimit = statLimit(state.level, STAT_CONFIG.mood);
+  const healthLimit = statLimit(state.level, STAT_CONFIG.health);
+
+  if (state.health <= Math.max(20, healthLimit * 0.2)) return 'prostrate';
+  if (state.mood <= moodLimit * 0.2) return 'sad';
+  if (state.hunger <= hungerLimit * 0.2 || state.cleanliness <= hungerLimit * 0.2) return 'upset';
+  if (state.mood >= moodLimit * 0.85 && state.health >= healthLimit * 0.75) return 'happy';
+  return DEFAULT_SOURCE_MOOD;
+}
+
+export function resolveOriginalActionAsset(request: MqPetOriginalActionRequest): MqPetSourceAssetRef | null {
+  const gender = request.gender ?? DEFAULT_SOURCE_GENDER;
+  const stageRequest = {
+    gender,
+    sourceStage: request.sourceStage,
+    action: request.action,
+  };
+
+  const candidateGroups = [
+    request.mood ? candidatesFor({ ...stageRequest, mood: request.mood }) : [],
+    request.mood && request.mood !== DEFAULT_SOURCE_MOOD
+      ? candidatesFor({ ...stageRequest, mood: DEFAULT_SOURCE_MOOD })
+      : [],
+    candidatesFor(stageRequest),
+  ];
+
+  for (const group of candidateGroups) {
+    if (group.length === 0) continue;
+    return group[normalizeVariant(request.variant, group.length)] ?? null;
+  }
+
+  return null;
 }
 
 function wrapIndex(index: number, length: number): number {

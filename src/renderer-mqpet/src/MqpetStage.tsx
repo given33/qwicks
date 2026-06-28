@@ -21,7 +21,7 @@ import type { MqPetSave } from '@shared/mqpet-state';
 import { PenguinSprite } from './PenguinSprite';
 import { RadialMenu, type MenuPick } from './RadialMenu';
 import { createHoverMenuState, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
-import { animationEventForStateUpdate, shouldApplyStatusFeedback } from './mqpetStageEvents';
+import { animationEventForStateUpdate, shouldApplyStatusFeedback, sourceAssetForStageFrame } from './mqpetStageEvents';
 import {
   beginDragSession,
   clampPetCenterToViewport,
@@ -346,6 +346,7 @@ export function MqpetStage(): React.ReactElement {
     || fsm.kind === 'Dying' || fsm.kind === 'Revive' || fsm.kind === 'Dead';
 
   const currentStage = stageOf(saveRef.current?.state.level ?? 1);
+  const sourceAsset = sourceAssetForStageFrame(saveRef.current, fsm);
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
@@ -371,7 +372,13 @@ export function MqpetStage(): React.ReactElement {
           zIndex: 2,
         }}
       >
-        <PenguinSprite animName={animForFsm(fsm, currentStage)} width={PENGUIN_W} height={PENGUIN_H} onComplete={onAnimComplete} />
+        <PenguinSprite
+          animName={animForFsm(fsm, currentStage)}
+          sourceAsset={sourceAsset}
+          width={PENGUIN_W}
+          height={PENGUIN_H}
+          onComplete={onAnimComplete}
+        />
       </div>
 
       {menuOpen && !isActionPlaying && (
