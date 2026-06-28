@@ -104,6 +104,146 @@ describe('thread event sink binding', () => {
     expect(getState().turnReasoningFirstAtByUserId['user-current']).toEqual(expect.any(Number))
   })
 
+  it('preserves activityKind across live tool insert and update events', () => {
+    const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current' })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+
+    sink.onTool({
+      itemId: 'tool_call_1',
+      summary: 'mcp_docs_read',
+      status: 'running',
+      toolKind: 'tool_call',
+      activityKind: 'mcp_tool_call',
+      meta: { activityKind: 'mcp_tool_call', toolName: 'mcp_docs_read' }
+    })
+
+    expect(getState().blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_call_1',
+      activityKind: 'mcp_tool_call',
+      meta: { activityKind: 'mcp_tool_call' }
+    })
+
+    sink.onTool({
+      itemId: 'tool_call_1',
+      summary: 'mcp_docs_read',
+      status: 'success',
+      toolKind: 'tool_call',
+      detail: 'ok'
+    })
+
+    expect(getState().blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_call_1',
+      activityKind: 'mcp_tool_call',
+      detail: 'ok'
+    })
+
+    sink.onTool({
+      itemId: 'tool_call_1',
+      summary: 'web_search',
+      status: 'success',
+      activityKind: 'web_search',
+      meta: { activityKind: 'web_search', toolName: 'web_search' }
+    })
+
+    expect(getState().blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_call_1',
+      activityKind: 'web_search',
+      meta: { activityKind: 'web_search' }
+    })
+  })
+
+  it('preserves stable tool protocol fields across live tool insert and update events', () => {
+    const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current' })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+
+    sink.onTool({
+      itemId: 'tool_call_1',
+      summary: 'web_search',
+      status: 'running',
+      activityKind: 'web_search',
+      meta: {
+        activityKind: 'web_search',
+        toolCategory: 'web',
+        providerKind: 'web',
+        actionType: 'search'
+      }
+    })
+
+    sink.onTool({
+      itemId: 'tool_call_1',
+      summary: 'web_search',
+      status: 'success',
+      detail: 'done'
+    })
+
+    expect(getState().blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_call_1',
+      meta: {
+        activityKind: 'web_search',
+        toolCategory: 'web',
+        providerKind: 'web',
+        actionType: 'search'
+      }
+    })
+  })
+
+  it('merges trace span lifecycle events and keeps bounded raw runtime events by turn', () => {
+    const { getState, set, get } = makeSinkHarness({
+      activeThreadId: 'thread-current',
+      traceSpansByTurnId: {},
+      runtimeEventsByTurnId: {}
+    })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+
+    sink.onRuntimeEvent?.({
+      kind: 'trace_span_started',
+      seq: 10,
+      timestamp: '2026-06-28T00:00:00.000Z',
+      threadId: 'thread-current',
+      turnId: 'turn-current',
+      traceId: 'trace_1',
+      spanId: 'span_turn'
+    })
+    sink.onTraceSpan?.({
+      eventKind: 'trace_span_started',
+      threadId: 'thread-current',
+      turnId: 'turn-current',
+      traceId: 'trace_1',
+      spanId: 'span_turn',
+      name: 'turn',
+      spanKind: 'turn',
+      spanStatus: 'running',
+      startedAt: '2026-06-28T00:00:00.000Z'
+    })
+    sink.onTraceSpan?.({
+      eventKind: 'trace_span_ended',
+      threadId: 'thread-current',
+      turnId: 'turn-current',
+      traceId: 'trace_1',
+      spanId: 'span_turn',
+      name: 'turn',
+      spanKind: 'turn',
+      spanStatus: 'ok',
+      startedAt: '2026-06-28T00:00:00.000Z',
+      endedAt: '2026-06-28T00:00:02.500Z'
+    })
+
+    expect(getState().traceSpansByTurnId['turn-current'].span_turn).toMatchObject({
+      spanId: 'span_turn',
+      name: 'turn',
+      spanKind: 'turn',
+      spanStatus: 'ok',
+      durationMs: 2500
+    })
+    expect(getState().runtimeEventsByTurnId['turn-current']).toEqual([
+      expect.objectContaining({ kind: 'trace_span_started', seq: 10 })
+    ])
+  })
+
   it('drops replayed deltas at or below the subscription floor', () => {
     const { getState, set, get } = makeSinkHarness({ activeThreadId: 'thread-current', lastSeq: 100 })
     const sink = buildThreadEventSink(set, get, {

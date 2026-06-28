@@ -1,9 +1,12 @@
 import type {
   AttachmentReference,
   ChatBlock,
+  ConversationDetailLevel,
   NormalizedThread,
+  RawRuntimeEvent,
   RuntimeConnectionStatus,
   ReviewTarget,
+  TraceSpan,
   ThreadGoal,
   ThreadGoalStatus,
   ThreadTodoList,
@@ -192,6 +195,9 @@ export type ChatState = {
    * DreamMemoryStatusIndicator 从此 map 读取对应 turn 的状态渲染到 assistant message。
    */
   memoryStatusByTurnId: Record<string, DreamTurnMemoryStatus>
+  conversationDetailLevel: ConversationDetailLevel
+  traceSpansByTurnId: Record<string, Record<string, TraceSpan>>
+  runtimeEventsByTurnId: Record<string, RawRuntimeEvent[]>
   busy: boolean
   error: string | null
   runtimeErrorDetail: string | null
@@ -335,6 +341,7 @@ export type ChatState = {
   selectInspectorItem: (id: string | null) => void
   applyI18nFromSettings: (locale: 'en' | 'zh') => Promise<void>
   reloadUiSettings: () => Promise<void>
+  setConversationDetailLevel: (level: ConversationDetailLevel) => void
 }
 
 export type ChatStoreSet = (

@@ -5,8 +5,7 @@ import type {
   ToolCallLike,
   ToolHostContext,
   ToolHostResult,
-  GuiPlanContext,
-  ToolProviderKind
+  GuiPlanContext
 } from '../ports/tool-host.js'
 import type { ModelCapabilityMetadata } from '../contracts/capabilities.js'
 import { DEFAULT_APPROVAL_POLICY, DEFAULT_SANDBOX_MODE } from '../contracts/policy.js'
@@ -17,6 +16,7 @@ import type { UserInputGate, UserInputResolution } from '../ports/user-input-gat
 import type { UsageService } from '../services/usage-service.js'
 import type { TurnService } from '../services/turn-service.js'
 import type { RuntimeEventRecorder } from '../services/runtime-event-recorder.js'
+import type { TraceRecorder } from '../services/trace-recorder.js'
 import type { PipelineStage } from '../contracts/events.js'
 import type { RuntimeErrorSeverity } from '../contracts/errors.js'
 import type { IdGenerator } from '../ports/id-generator.js'
@@ -51,7 +51,7 @@ import {
 } from '../domain/item.js'
 import { touchThread } from '../domain/thread.js'
 import { repairModelHistoryItems } from '../domain/model-history-repair.js'
-import type { TurnItem } from '../contracts/items.js'
+import type { ToolProviderKind, TurnItem } from '../contracts/items.js'
 import type { ThreadGoal, ThreadTodoList } from '../contracts/threads.js'
 import { modelCapabilitiesForModel, type ContextCompactionConfig } from './model-context-profile.js'
 import type { SkillRuntime } from '../skills/skill-runtime.js'
@@ -440,6 +440,7 @@ export type AgentLoopOptions = {
   toolHost: ToolHost
   usage: UsageService
   events: RuntimeEventRecorder
+  trace?: TraceRecorder
   turns: TurnService
   inflight: InflightTracker
   steering: SteeringQueue
@@ -594,8 +595,16 @@ export class AgentLoop {
       await this.failTurn(threadId, turnId, 'no abort controller for turn')
       return 'failed'
     }
+    const traceSpan = this.opts.trace?.getTurnSpan(turnId) ?? await this.opts.trace?.startSpan({
+      threadId,
+      turnId,
+      name: 'turn',
+      kind: 'turn',
+      attrs: { threadId, turnId }
+    })
     if (signal.aborted) {
       await this.opts.turns.finishTurn({ threadId, turnId, status: 'aborted' })
+      await this.opts.trace?.endSpan(traceSpan, { status: 'aborted', attrs: { status: 'aborted' } })
       return 'aborted'
     }
     let goalTimer: GoalElapsedTimer | null = null
@@ -673,6 +682,13 @@ export class AgentLoop {
       finalError = message
       return 'failed'
     } finally {
+      await this.opts.trace?.endSpan(traceSpan, {
+        status: finalStatus === 'completed' ? 'ok' : finalStatus === 'aborted' ? 'aborted' : 'error',
+        attrs: {
+          status: finalStatus ?? 'failed',
+          ...(finalError ? { error: finalError } : {})
+        }
+      })
       await this.finishGoalElapsedTimer(threadId, goalTimer)
       // Decide cross-turn goal resume before clearing the per-turn progress
       // marker it reads.
@@ -1175,7 +1191,16 @@ export class AgentLoop {
     const tools = await this.opts.toolHost.listTools(toolContext)
     const toolSpecs: ModelToolSpec[] = tools
     const toolProviderMetadata = new Map(
-      tools.map((tool) => [tool.name, { providerId: tool.providerId, providerKind: tool.providerKind }])
+      tools.map((tool) => [
+        tool.name,
+        {
+          providerId: tool.providerId,
+          providerKind: tool.providerKind,
+          activityKind: tool.activityKind,
+          toolCategory: tool.toolCategory,
+          actionType: tool.actionType
+        }
+      ])
     )
     const toolCatalog = buildToolCatalogFingerprint(toolSpecs)
     const toolCatalogDrift = this.recordToolCatalogFingerprint({
@@ -1254,6 +1279,7 @@ export class AgentLoop {
     }
     if (toolCatalogDrift.kind === 'breaking') return 'stop'
     const toolKinds = new Map(toolSpecs.map((tool) => [tool.name, tool.toolKind]))
+    const toolActivityKinds = new Map(toolSpecs.map((tool) => [tool.name, tool.activityKind]))
     const createPlanSatisfied = planTurnActive
       ? hasSuccessfulCreatePlanResult(historyItems, turnId)
       : false
@@ -1396,134 +1422,181 @@ export class AgentLoop {
       model: request.model,
       ...modelClientDiagnostics
     })
-    for await (const chunk of this.opts.model.stream(request)) {
-      if (signal.aborted) {
-        await persistAccumulatedResponse()
-        return 'aborted'
+    const modelSpan = await this.opts.trace?.startSpan({
+      threadId,
+      turnId,
+      name: 'model.call',
+      kind: 'model',
+      attrs: {
+        model: request.model,
+        provider: this.opts.model.provider,
+        historyItems: request.history.length,
+        toolCount: request.tools.length,
+        ...(request.providerId ? { providerId: request.providerId } : {}),
+        ...(request.requiredToolName ? { requiredToolName: request.requiredToolName } : {})
       }
-      switch (chunk.kind) {
-        case 'assistant_text_delta':
-          textItemId ||= this.opts.ids.next('item_text')
-          textAccumulator.value += chunk.text
-          await this.opts.events.record({
-            kind: 'assistant_text_delta',
-            threadId,
-            turnId,
-            itemId: textItemId,
-            item: makeAssistantTextItem({
-              id: textItemId,
-              turnId,
+    })
+    try {
+      for await (const chunk of this.opts.model.stream(request)) {
+        if (signal.aborted) {
+          await persistAccumulatedResponse()
+          await this.opts.trace?.endSpan(modelSpan, { status: 'aborted', attrs: { stopReason: 'aborted' } })
+          return 'aborted'
+        }
+        switch (chunk.kind) {
+          case 'assistant_text_delta':
+            textItemId ||= this.opts.ids.next('item_text')
+            textAccumulator.value += chunk.text
+            await this.opts.events.record({
+              kind: 'assistant_text_delta',
               threadId,
-              text: chunk.text,
-              status: 'running'
+              turnId,
+              itemId: textItemId,
+              item: makeAssistantTextItem({
+                id: textItemId,
+                turnId,
+                threadId,
+                text: chunk.text,
+                status: 'running'
+              })
             })
-          })
-          break
-        case 'assistant_reasoning_delta':
-          reasoningItemId ||= this.opts.ids.next('item_reasoning')
-          reasoningAccumulator.value += chunk.text
-          await this.opts.events.record({
-            kind: 'assistant_reasoning_delta',
-            threadId,
-            turnId,
-            itemId: reasoningItemId,
-            item: makeAssistantReasoningItem({
-              id: reasoningItemId,
-              turnId,
+            break
+          case 'assistant_reasoning_delta':
+            reasoningItemId ||= this.opts.ids.next('item_reasoning')
+            reasoningAccumulator.value += chunk.text
+            await this.opts.events.record({
+              kind: 'assistant_reasoning_delta',
               threadId,
-              text: chunk.text,
-              status: 'running'
+              turnId,
+              itemId: reasoningItemId,
+              item: makeAssistantReasoningItem({
+                id: reasoningItemId,
+                turnId,
+                threadId,
+                text: chunk.text,
+                status: 'running'
+              })
             })
-          })
-          break
-        case 'tool_call_delta':
-          break
-        case 'tool_call_complete': {
-          const provider = toolProviderMetadata.get(chunk.toolName)
-          const toolKind = toolKinds.get(chunk.toolName)
-          const repaired = repairDispatchToolArguments(chunk.arguments, {
-            toolName: chunk.toolName,
-            ...(toolKind ? { toolKind } : {}),
-            ...(this.opts.toolArgumentRepair?.maxStringBytes !== undefined
-              ? { maxStringBytes: this.opts.toolArgumentRepair.maxStringBytes }
-              : {})
-          })
-          completedToolCalls.push({
-            callId: chunk.callId,
-            toolName: chunk.toolName,
-            ...(provider?.providerId ? { providerId: provider.providerId } : {}),
-            toolKind,
-            arguments: repaired.arguments
-          })
-          const itemId = `item_tool_${turnId}_${chunk.callId}`
-          await this.opts.turns.applyItem(
-            threadId,
-            makeToolCallItem({
-              id: itemId,
-              turnId,
-              threadId,
-              callId: chunk.callId,
+            break
+          case 'tool_call_delta':
+            break
+          case 'tool_call_complete': {
+            const provider = toolProviderMetadata.get(chunk.toolName)
+            const toolKind = toolKinds.get(chunk.toolName)
+            const activityKind = toolActivityKinds.get(chunk.toolName)
+            const repaired = repairDispatchToolArguments(chunk.arguments, {
               toolName: chunk.toolName,
-              toolKind,
-              arguments: repaired.arguments,
-              ...(repaired.notes.length
-                ? { summary: `Repaired tool arguments: ${repaired.notes.join('; ')}` }
+              ...(toolKind ? { toolKind } : {}),
+              ...(this.opts.toolArgumentRepair?.maxStringBytes !== undefined
+                ? { maxStringBytes: this.opts.toolArgumentRepair.maxStringBytes }
                 : {})
             })
-          )
-          await this.opts.events.record({
-            kind: 'tool_call_ready',
-            threadId,
-            turnId,
-            itemId,
-            callId: chunk.callId,
-            toolName: chunk.toolName,
-            readyCount: completedToolCalls.length
-          })
-          break
+            completedToolCalls.push({
+              callId: chunk.callId,
+              toolName: chunk.toolName,
+              ...(provider?.providerId ? { providerId: provider.providerId } : {}),
+              toolKind,
+              ...(activityKind ? { activityKind } : {}),
+              ...(provider?.toolCategory ? { toolCategory: provider.toolCategory } : {}),
+              ...(provider?.providerKind ? { providerKind: provider.providerKind } : {}),
+              ...(provider?.actionType ? { actionType: provider.actionType } : {}),
+              arguments: repaired.arguments
+            })
+            const itemId = `item_tool_${turnId}_${chunk.callId}`
+            await this.opts.turns.applyItem(
+              threadId,
+              makeToolCallItem({
+                id: itemId,
+                turnId,
+                threadId,
+                callId: chunk.callId,
+                toolName: chunk.toolName,
+                toolKind,
+                activityKind,
+                toolCategory: provider?.toolCategory,
+                providerKind: provider?.providerKind,
+                actionType: provider?.actionType,
+                arguments: repaired.arguments,
+                ...(repaired.notes.length
+                  ? { summary: `Repaired tool arguments: ${repaired.notes.join('; ')}` }
+                  : {})
+              })
+            )
+            await this.opts.events.record({
+              kind: 'tool_call_ready',
+              threadId,
+              turnId,
+              itemId,
+              callId: chunk.callId,
+              toolName: chunk.toolName,
+              ...(activityKind ? { activityKind } : {}),
+              ...(provider?.toolCategory ? { toolCategory: provider.toolCategory } : {}),
+              ...(provider?.providerKind ? { providerKind: provider.providerKind } : {}),
+              ...(provider?.actionType ? { actionType: provider.actionType } : {}),
+              readyCount: completedToolCalls.length
+            })
+            break
+          }
+          case 'usage': {
+            this.recordPromptPressure(threadId, request.model, chunk.usage.promptTokens)
+            const usage = this.opts.usage.record(threadId, chunk.usage)
+            await this.opts.trace?.updateSpan(modelSpan, {
+              attrs: {
+                promptTokens: usage.promptTokens,
+                completionTokens: usage.completionTokens,
+                totalTokens: usage.totalTokens
+              }
+            })
+            await this.opts.events.record({
+              kind: 'usage',
+              threadId,
+              turnId,
+              model: request.model,
+              usage
+            })
+            break
+          }
+          case 'completed':
+            if (stopReason !== 'error') stopReason = chunk.stopReason
+            break
+          case 'model_retry':
+            await this.opts.events.record({
+              kind: 'model_retry',
+              threadId,
+              turnId,
+              attempt: chunk.attempt,
+              maxAttempts: chunk.maxAttempts,
+              reason: chunk.reason
+            })
+            break
+          case 'error':
+            this.rememberTurnFailure(turnId, {
+              error: chunk.message,
+              ...(chunk.code ? { code: chunk.code } : {}),
+              severity: 'error'
+            })
+            await this.opts.events.record({
+              kind: 'error',
+              threadId,
+              turnId,
+              message: chunk.message,
+              code: chunk.code,
+              severity: 'error'
+            })
+            stopReason = 'error'
+            break
         }
-        case 'usage': {
-          this.recordPromptPressure(threadId, request.model, chunk.usage.promptTokens)
-          const usage = this.opts.usage.record(threadId, chunk.usage)
-          await this.opts.events.record({
-            kind: 'usage',
-            threadId,
-            turnId,
-            model: request.model,
-            usage
-          })
-          break
-        }
-        case 'completed':
-          if (stopReason !== 'error') stopReason = chunk.stopReason
-          break
-        case 'model_retry':
-          await this.opts.events.record({
-            kind: 'model_retry',
-            threadId,
-            turnId,
-            attempt: chunk.attempt,
-            maxAttempts: chunk.maxAttempts,
-            reason: chunk.reason
-          })
-          break
-        case 'error':
-          this.rememberTurnFailure(turnId, {
-            error: chunk.message,
-            ...(chunk.code ? { code: chunk.code } : {}),
-            severity: 'error'
-          })
-          await this.opts.events.record({
-            kind: 'error',
-            threadId,
-            turnId,
-            message: chunk.message,
-            code: chunk.code,
-            severity: 'error'
-          })
-          stopReason = 'error'
-          break
       }
+      await this.opts.trace?.endSpan(modelSpan, {
+        status: stopReason === 'error' ? 'error' : 'ok',
+        attrs: { stopReason, toolCallCount: completedToolCalls.length }
+      })
+    } catch (error) {
+      await this.opts.trace?.endSpan(modelSpan, {
+        status: signal.aborted ? 'aborted' : 'error',
+        attrs: { error: error instanceof Error ? error.message : String(error) }
+      })
+      throw error
     }
     if (signal.aborted) {
       await persistAccumulatedResponse()
@@ -1544,6 +1617,7 @@ export class AgentLoop {
           const callId = this.opts.ids.next('call_plan')
           const provider = toolProviderMetadata.get(CREATE_PLAN_TOOL_NAME)
           const toolKind = toolKinds.get(CREATE_PLAN_TOOL_NAME)
+          const activityKind = toolActivityKinds.get(CREATE_PLAN_TOOL_NAME)
           const sourceRequest = activePlanContext?.sourceRequest ||
             latestUserMessageText(historyItems, turnId) ||
             turn?.prompt ||
@@ -1567,6 +1641,10 @@ export class AgentLoop {
             toolName: CREATE_PLAN_TOOL_NAME,
             ...(provider?.providerId ? { providerId: provider.providerId } : {}),
             toolKind,
+            ...(activityKind ? { activityKind } : {}),
+            ...(provider?.toolCategory ? { toolCategory: provider.toolCategory } : {}),
+            ...(provider?.providerKind ? { providerKind: provider.providerKind } : {}),
+            ...(provider?.actionType ? { actionType: provider.actionType } : {}),
             arguments: argumentsForFallback
           }
           const itemId = `item_tool_${turnId}_${callId}`
@@ -1579,6 +1657,10 @@ export class AgentLoop {
               callId,
               toolName: CREATE_PLAN_TOOL_NAME,
               toolKind,
+              activityKind,
+              toolCategory: provider?.toolCategory,
+              providerKind: provider?.providerKind,
+              actionType: provider?.actionType,
               arguments: argumentsForFallback,
               summary: 'Materialized assistant plan text into the required GUI plan.'
             })
@@ -1590,6 +1672,10 @@ export class AgentLoop {
             itemId,
             callId,
             toolName: CREATE_PLAN_TOOL_NAME,
+            ...(activityKind ? { activityKind } : {}),
+            ...(provider?.toolCategory ? { toolCategory: provider.toolCategory } : {}),
+            ...(provider?.providerKind ? { providerKind: provider.providerKind } : {}),
+            ...(provider?.actionType ? { actionType: provider.actionType } : {}),
             readyCount: 1
           })
           const dispatched = await this.dispatchToolCalls({
@@ -1916,18 +2002,40 @@ export class AgentLoop {
       sandboxMode: input.sandboxMode,
       abortSignal: input.signal,
       awaitApproval: async (approval) => {
-        await this.opts.events.record({
-          kind: 'approval_requested',
+        const span = await this.opts.trace?.startSpan({
           threadId: approval.threadId,
           turnId: approval.turnId,
-          approvalId: approval.id,
-          toolName: approval.toolName,
-          status: 'pending',
-          approvalPolicy: input.approvalPolicy,
-          sandboxMode: input.sandboxMode,
-          summary: approval.summary
+          name: 'approval.request',
+          kind: 'approval',
+          attrs: {
+            approvalId: approval.id,
+            toolName: approval.toolName,
+            approvalPolicy: input.approvalPolicy,
+            sandboxMode: input.sandboxMode
+          }
         })
-        return this.opts.approvalGate.request(approval)
+        try {
+          await this.opts.events.record({
+            kind: 'approval_requested',
+            threadId: approval.threadId,
+            turnId: approval.turnId,
+            approvalId: approval.id,
+            toolName: approval.toolName,
+            status: 'pending',
+            approvalPolicy: input.approvalPolicy,
+            sandboxMode: input.sandboxMode,
+            summary: approval.summary
+          })
+          const decision = await this.opts.approvalGate.request(approval)
+          await this.opts.trace?.endSpan(span, { status: 'ok', attrs: { decision } })
+          return decision
+        } catch (error) {
+          await this.opts.trace?.endSpan(span, {
+            status: input.signal.aborted ? 'aborted' : 'error',
+            attrs: { error: error instanceof Error ? error.message : String(error) }
+          })
+          throw error
+        }
       },
       ...(input.userInputDisabled
         ? {}
@@ -1944,6 +2052,21 @@ export class AgentLoop {
     call: ToolCallLike
     context: ToolHostContext
   }): Promise<ToolHostResult> {
+    const span = await this.opts.trace?.startSpan({
+      threadId: input.threadId,
+      turnId: input.turnId,
+      name: `tool.${input.call.toolName}`,
+      kind: 'tool',
+      attrs: {
+        callId: input.call.callId,
+        toolName: input.call.toolName,
+        ...(input.call.toolKind ? { toolKind: input.call.toolKind } : {}),
+        ...(input.call.activityKind ? { activityKind: input.call.activityKind } : {}),
+        ...(input.call.toolCategory ? { toolCategory: input.call.toolCategory } : {}),
+        ...(input.call.providerKind ? { providerKind: input.call.providerKind } : {}),
+        ...(input.call.actionType ? { actionType: input.call.actionType } : {})
+      }
+    })
     return this.opts.inflight.run(
       {
         id: `inflight_${input.call.callId}`,
@@ -1958,6 +2081,10 @@ export class AgentLoop {
             const existing = await this.opts.turns.updateItem(input.threadId, item.id, {
               output: item.kind === 'tool_result' ? item.output : undefined,
               isError: item.kind === 'tool_result' ? item.isError : undefined,
+              activityKind: item.kind === 'tool_result' ? item.activityKind : undefined,
+              toolCategory: item.kind === 'tool_result' ? item.toolCategory : undefined,
+              providerKind: item.kind === 'tool_result' ? item.providerKind : undefined,
+              actionType: item.kind === 'tool_result' ? item.actionType : undefined,
               status: 'running'
             } as Partial<TurnItem>)
             if (existing) return
@@ -1984,6 +2111,10 @@ export class AgentLoop {
               callId: input.call.callId,
               toolName: input.call.toolName,
               toolKind: input.call.toolKind ?? 'tool_call',
+              ...(input.call.activityKind ? { activityKind: input.call.activityKind } : {}),
+              ...(input.call.toolCategory ? { toolCategory: input.call.toolCategory } : {}),
+              ...(input.call.providerKind ? { providerKind: input.call.providerKind } : {}),
+              ...(input.call.actionType ? { actionType: input.call.actionType } : {}),
               output: {
                 code: 'tool_dispatch_rejected',
                 error: message,
@@ -1995,7 +2126,23 @@ export class AgentLoop {
           }
         }
       }
-    )
+    ).then(async (result) => {
+      await this.opts.trace?.endSpan(span, {
+        status: result.item.kind === 'tool_result' && result.item.isError ? 'error' : 'ok',
+        attrs: {
+          approved: result.approved,
+          itemId: result.item.id,
+          isError: result.item.kind === 'tool_result' ? result.item.isError : false
+        }
+      })
+      return result
+    }, async (error) => {
+      await this.opts.trace?.endSpan(span, {
+        status: input.context.abortSignal.aborted ? 'aborted' : 'error',
+        attrs: { error: error instanceof Error ? error.message : String(error) }
+      })
+      throw error
+    })
   }
 
   /**
@@ -2030,6 +2177,10 @@ export class AgentLoop {
           callId: input.call.callId,
           toolName: input.call.toolName,
           toolKind: input.call.toolKind ?? 'tool_call',
+          ...(input.call.activityKind ? { activityKind: input.call.activityKind } : {}),
+          ...(input.call.toolCategory ? { toolCategory: input.call.toolCategory } : {}),
+          ...(input.call.providerKind ? { providerKind: input.call.providerKind } : {}),
+          ...(input.call.actionType ? { actionType: input.call.actionType } : {}),
           output: {
             code: 'tool_execution_failed',
             error: message,
@@ -2116,6 +2267,10 @@ export class AgentLoop {
       callId: input.call.callId,
       toolName: input.call.toolName,
       toolKind: input.call.toolKind ?? 'tool_call',
+      ...(input.call.activityKind ? { activityKind: input.call.activityKind } : {}),
+      ...(input.call.toolCategory ? { toolCategory: input.call.toolCategory } : {}),
+      ...(input.call.providerKind ? { providerKind: input.call.providerKind } : {}),
+      ...(input.call.actionType ? { actionType: input.call.actionType } : {}),
       output: { error: input.reason ?? 'duplicate tool call suppressed by repeat-loop guard' },
       isError: true
     })

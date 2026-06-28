@@ -48,10 +48,10 @@ jobs:
         shell: pwsh
         run: npm --prefix qwicks run test -- tests/mesh
 
-  # Dream memory system — full suite (hard gate). Covers extraction, retrieval,
+  # Dream memory system - full suite (hard gate). Covers extraction, retrieval,
   # persistence, sensitivity tiering, capacity, share/export sanitization,
   # connectors, capacity-guard, and the evaluation harness. This is the gate for
-  # all Dream memory productization work (batches A–H).
+  # all Dream memory productization work (batches A-H).
   dream-test:
     runs-on: windows-latest
     steps:
@@ -87,7 +87,7 @@ jobs:
   # Dream evaluation Tier-A gate. Runs the eval harness against the full 540-case
   # dataset when DREAM_EVAL_DATASET is provided (e.g. via a CI secret/artifact);
   # otherwise exits 77 (SKIP) so this job is informational until the dataset is wired.
-  # Asserts f1≥0.85, recall≥0.85, staleRate≤0.01 (per verification_tiers.md).
+  # Asserts f1 >= 0.85, recall >= 0.85, staleRate <= 0.01 (per verification_tiers.md).
   dream-eval-gate:
     runs-on: windows-latest
     continue-on-error: true
@@ -120,7 +120,7 @@ jobs:
   # Quality gate for the Electron GUI shell (src/). Typecheck is a hard gate;
   # test:ci runs the stable test suite. A handful of pre-existing tests are
   # excluded (see package.json test:ci) because they depend on a real git
-  # binary, bundled plugin examples, or have stale mocks — tracked as test
+  # binary, bundled plugin examples, or have stale mocks - tracked as test
   # debt. Restore them to the default `npm run test` once fixed.
   gui-test:
     runs-on: windows-latest
@@ -146,6 +146,10 @@ jobs:
       - name: Typecheck (hard gate)
         shell: pwsh
         run: npm run typecheck
+
+      - name: Test release workflow scripts
+        shell: pwsh
+        run: npx vitest run src/main/release-workflow-scripts.test.ts
 
       - name: Test stable suite (hard gate)
         shell: pwsh

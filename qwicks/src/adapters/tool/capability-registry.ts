@@ -1,8 +1,9 @@
 import type {
   ToolHostContext,
-  ToolProviderKind,
   ToolProviderPolicy
 } from '../../ports/tool-host.js'
+import { inferToolActionType, inferToolActivityKind, inferToolCategory } from '../../ports/tool-host.js'
+import type { ToolActionType, ToolActivityKind, ToolCategory, ToolProviderKind } from '../../contracts/items.js'
 import type { LocalTool } from './local-tool-host.js'
 import { isToolAdvertisedInSandbox } from './sandbox-policy.js'
 
@@ -20,6 +21,9 @@ export type CapabilityToolSpec = {
   description: string
   inputSchema: Record<string, unknown>
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
+  toolCategory?: ToolCategory
+  actionType?: ToolActionType
   providerId: string
   providerKind: ToolProviderKind
 }
@@ -83,6 +87,23 @@ export class CapabilityRegistry {
         description: record.tool.description,
         inputSchema: record.tool.inputSchema,
         toolKind: record.tool.toolKind,
+        activityKind: inferToolActivityKind({
+          activityKind: record.tool.activityKind,
+          providerKind: record.provider.kind,
+          toolKind: record.tool.toolKind,
+          toolName: record.tool.name
+        }),
+        toolCategory: inferToolCategory({
+          activityKind: record.tool.activityKind,
+          providerKind: record.provider.kind,
+          toolKind: record.tool.toolKind,
+          toolName: record.tool.name
+        }),
+        actionType: inferToolActionType({
+          providerKind: record.provider.kind,
+          toolKind: record.tool.toolKind,
+          toolName: record.tool.name
+        }),
         providerId: record.provider.id,
         providerKind: record.provider.kind
       })

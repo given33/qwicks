@@ -29,6 +29,7 @@ import { makeUserItem, makeErrorItem } from '../domain/item.js'
 import { appendTurnItem, createTurnRecord, finishTurn, replaceTurnItem, startTurn as startTurnRecord } from '../domain/turn.js'
 import { touchThread } from '../domain/thread.js'
 import type { RuntimeEventRecorder } from './runtime-event-recorder.js'
+import type { TraceRecorder } from './trace-recorder.js'
 import type { UsageService } from './usage-service.js'
 import { createImmutablePrefix } from '../cache/immutable-prefix.js'
 
@@ -36,6 +37,7 @@ export type TurnServiceDeps = {
   threadStore: ThreadStore
   sessionStore: SessionStore
   events: RuntimeEventRecorder
+  trace?: TraceRecorder
   inflight: InflightTracker
   steering: SteeringQueue
   compactor: ContextCompactor
@@ -93,6 +95,18 @@ export class TurnService {
       workspaceCheckpointId: input.request.workspaceCheckpointId
     })
     const controller = new AbortController()
+    await this.deps.trace?.startSpan({
+      threadId: input.threadId,
+      turnId,
+      name: 'turn',
+      kind: 'turn',
+      attrs: {
+        threadId: input.threadId,
+        turnId,
+        ...(input.request.model ? { model: input.request.model } : {}),
+        mode: input.request.mode ?? 'agent'
+      }
+    })
     await this.upsertThread(input.threadId, (current) => ({
       ...touchThread(current, this.deps.nowIso()),
       status: 'running',
@@ -104,7 +118,19 @@ export class TurnService {
         : {}),
       turns: [...current.turns, startTurnRecord(appendTurnItem(turn, userItem))]
     }))
-    await this.deps.sessionStore.appendItem(input.threadId, userItem)
+    if (this.deps.trace) {
+      await this.deps.trace.withSpan({
+        threadId: input.threadId,
+        turnId,
+        name: 'storage.append_item',
+        kind: 'storage',
+        attrs: { itemId: userItem.id, itemKind: userItem.kind }
+      }, async () => {
+        await this.deps.sessionStore.appendItem(input.threadId, userItem)
+      })
+    } else {
+      await this.deps.sessionStore.appendItem(input.threadId, userItem)
+    }
     await this.deps.events.record({
       kind: 'turn_started',
       threadId: input.threadId,
@@ -369,16 +395,37 @@ export class TurnService {
           ...(input.severity ? { severity: input.severity } : {})
         })
       : null
-    await this.deps.events.record({
-      kind: input.status === 'completed' ? 'turn_completed' : input.status === 'aborted' ? 'turn_aborted' : 'turn_failed',
-      threadId: input.threadId,
-      turnId: input.turnId,
-      ...(errorItem ? { itemId: errorItem.id } : {}),
-      ...(input.error ? { message: input.error } : {}),
-      ...(input.code ? { code: input.code } : {}),
-      ...(input.details !== undefined ? { details: input.details } : {}),
-      ...(input.severity ? { severity: input.severity } : {})
-    })
+    if (this.deps.trace) {
+      await this.deps.trace.withSpan({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        name: 'storage.finish_turn',
+        kind: 'storage',
+        attrs: { status: input.status }
+      }, async () => {
+        await this.deps.events.record({
+          kind: input.status === 'completed' ? 'turn_completed' : input.status === 'aborted' ? 'turn_aborted' : 'turn_failed',
+          threadId: input.threadId,
+          turnId: input.turnId,
+          ...(errorItem ? { itemId: errorItem.id } : {}),
+          ...(input.error ? { message: input.error } : {}),
+          ...(input.code ? { code: input.code } : {}),
+          ...(input.details !== undefined ? { details: input.details } : {}),
+          ...(input.severity ? { severity: input.severity } : {})
+        })
+      })
+    } else {
+      await this.deps.events.record({
+        kind: input.status === 'completed' ? 'turn_completed' : input.status === 'aborted' ? 'turn_aborted' : 'turn_failed',
+        threadId: input.threadId,
+        turnId: input.turnId,
+        ...(errorItem ? { itemId: errorItem.id } : {}),
+        ...(input.error ? { message: input.error } : {}),
+        ...(input.code ? { code: input.code } : {}),
+        ...(input.details !== undefined ? { details: input.details } : {}),
+        ...(input.severity ? { severity: input.severity } : {})
+      })
+    }
     if (errorItem) {
       await this.appendItem(input.threadId, errorItem)
     }
@@ -465,7 +512,19 @@ export class TurnService {
    * calls this after each chunk so SSE consumers see live updates.
    */
   async applyItem(threadId: string, item: TurnItem): Promise<void> {
-    await this.appendItem(threadId, item)
+    if (this.deps.trace) {
+      await this.deps.trace.withSpan({
+        threadId,
+        turnId: item.turnId,
+        name: 'storage.append_item',
+        kind: 'storage',
+        attrs: { itemId: item.id, itemKind: item.kind }
+      }, async () => {
+        await this.appendItem(threadId, item)
+      })
+    } else {
+      await this.appendItem(threadId, item)
+    }
     await this.deps.events.record({
       kind: 'item_created',
       threadId,
@@ -480,7 +539,14 @@ export class TurnService {
     itemId: string,
     patch: Partial<TurnItem>
   ): Promise<TurnItem | null> {
-    const updatedInSession = await this.deps.sessionStore.updateItem(threadId, itemId, patch)
+    const updatedInSession = this.deps.trace
+      ? await this.deps.trace.withSpan({
+          threadId,
+          name: 'storage.update_item',
+          kind: 'storage',
+          attrs: { itemId, patchKeys: Object.keys(patch) }
+        }, async () => this.deps.sessionStore.updateItem(threadId, itemId, patch))
+      : await this.deps.sessionStore.updateItem(threadId, itemId, patch)
     const updatedItems: TurnItem[] = []
     await this.upsertThread(threadId, (current) => {
       const turns = current.turns.map((turn) => {

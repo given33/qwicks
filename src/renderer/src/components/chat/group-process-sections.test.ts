@@ -51,6 +51,27 @@ describe('groupProcessSections — typed grouping', () => {
     expect(sections[0].category).toBe('web')
   })
 
+  it('groups command, file, web, MCP, dynamic, and multi-agent activities separately', () => {
+    const blocks: ChatBlock[] = [
+      tool('cmd', 'bash', { activityKind: 'command_execution' }),
+      tool('file', 'edit', { activityKind: 'file_change', toolKind: 'file_change' }),
+      tool('web', 'web_search', { activityKind: 'web_search' }),
+      tool('mcp', 'docs_read', { activityKind: 'mcp_tool_call' }),
+      tool('dyn', 'generate_image', { activityKind: 'dynamic_tool_call' }),
+      tool('agent', 'delegate_task', { activityKind: 'multi_agent_action' })
+    ]
+    const sections = groupProcessSections(blocks)
+
+    expect(sections.map((section) => section.category)).toEqual([
+      'terminal',
+      'edit',
+      'web',
+      'mcp',
+      'dynamic',
+      'multi-agent'
+    ])
+  })
+
   it('groups terminal commands together', () => {
     const blocks: ChatBlock[] = [tool('b1', 'bash'), tool('b2', 'shell'), tool('b3', 'bash')]
     const sections = groupProcessSections(blocks)

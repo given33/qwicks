@@ -1,4 +1,10 @@
-import type { TurnItem } from '../contracts/items.js'
+import type {
+  ToolActionType,
+  ToolActivityKind,
+  ToolCategory,
+  ToolProviderKind,
+  TurnItem
+} from '../contracts/items.js'
 import type { ReviewOutput, ReviewTarget } from '../contracts/review.js'
 
 export type ItemEntity = TurnItem
@@ -85,6 +91,10 @@ export function makeToolCallItem(input: {
   callId: string
   toolName: string
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
+  toolCategory?: ToolCategory
+  providerKind?: ToolProviderKind
+  actionType?: ToolActionType
   arguments: Record<string, unknown>
   summary?: string
   status?: 'pending' | 'running' | 'completed' | 'failed'
@@ -100,6 +110,10 @@ export function makeToolCallItem(input: {
     toolName: input.toolName,
     callId: input.callId,
     toolKind: input.toolKind ?? 'tool_call',
+    ...(input.activityKind ? { activityKind: input.activityKind } : {}),
+    ...(input.toolCategory ? { toolCategory: input.toolCategory } : {}),
+    ...(input.providerKind ? { providerKind: input.providerKind } : {}),
+    ...(input.actionType ? { actionType: input.actionType } : {}),
     arguments: input.arguments,
     summary: input.summary
   }
@@ -112,6 +126,10 @@ export function makeToolResultItem(input: {
   callId: string
   toolName: string
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
+  toolCategory?: ToolCategory
+  providerKind?: ToolProviderKind
+  actionType?: ToolActionType
   output: unknown
   isError?: boolean
   status?: 'pending' | 'running' | 'completed' | 'failed' | 'aborted'
@@ -134,6 +152,10 @@ export function makeToolResultItem(input: {
     toolName: input.toolName,
     callId: input.callId,
     toolKind: input.toolKind ?? 'tool_call',
+    ...(input.activityKind ? { activityKind: input.activityKind } : {}),
+    ...(input.toolCategory ? { toolCategory: input.toolCategory } : {}),
+    ...(input.providerKind ? { providerKind: input.providerKind } : {}),
+    ...(input.actionType ? { actionType: input.actionType } : {}),
     output: input.output,
     isError: input.isError ?? false
   }

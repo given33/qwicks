@@ -9,9 +9,29 @@
  * These are pure functions so they can be unit-tested in isolation.
  */
 
-import type { ToolBlock } from '../../agent/types'
+import type { ToolActivityKind, ToolBlock } from '../../agent/types'
 
-export type ToolCategory = 'terminal' | 'search' | 'read' | 'edit' | 'write' | 'web' | 'other'
+export type ToolCategory =
+  | 'terminal'
+  | 'search'
+  | 'read'
+  | 'edit'
+  | 'write'
+  | 'web'
+  | 'mcp'
+  | 'dynamic'
+  | 'multi-agent'
+  | 'other'
+
+const TOOL_ACTIVITY_KINDS: ReadonlySet<ToolActivityKind> = new Set([
+  'command_execution',
+  'file_change',
+  'mcp_tool_call',
+  'dynamic_tool_call',
+  'multi_agent_action',
+  'web_search',
+  'generic_tool'
+])
 
 /** toolName (lowercased, trimmed) → category. `web` is decided by sources first. */
 const TOOL_CATEGORY_BY_NAME: ReadonlyMap<string, ToolCategory> = new Map([
@@ -53,6 +73,21 @@ const TOOL_CATEGORY_BY_NAME: ReadonlyMap<string, ToolCategory> = new Map([
 /** toolNames that count as `web` even before sources arrive. */
 const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch', 'fetch', 'browse', 'curl'])
 
+export function classifyToolActivityKind(block: ToolBlock): ToolActivityKind {
+  const explicit = normalizeActivityKind(block.activityKind) ?? normalizeActivityKind(block.meta?.activityKind)
+  if (explicit) return explicit
+  if (block.toolKind === 'command_execution') return 'command_execution'
+  if (block.toolKind === 'file_change') return 'file_change'
+  const meta = block.meta ?? {}
+  if (hasMetaSources(meta)) return 'web_search'
+  const toolName = readMetaString(meta, 'toolName') ?? extractToolName(block.summary)
+  const normalized = toolName.trim().toLowerCase()
+  if (WEB_TOOL_NAMES.has(normalized) || normalized.startsWith('web_')) return 'web_search'
+  if (normalized.startsWith('mcp_') || normalized.includes('_mcp_')) return 'mcp_tool_call'
+  if (normalized === 'delegate_task' || normalized.startsWith('delegate_')) return 'multi_agent_action'
+  return 'generic_tool'
+}
+
 /**
  * Classify a tool block into one of 7 semantic categories. `web` is decided by
  * the presence of `meta.sources` first (so any tool returning web citations
@@ -60,6 +95,28 @@ const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch', 'fetch', 'browse', 'c
  * toolName → category map, then `other`.
  */
 export function classifyToolCategory(block: ToolBlock): ToolCategory {
+  switch (classifyToolActivityKind(block)) {
+    case 'command_execution':
+      return 'terminal'
+    case 'file_change':
+      return fileChangeCategory(block)
+    case 'mcp_tool_call':
+      return 'mcp'
+    case 'dynamic_tool_call':
+      return 'dynamic'
+    case 'multi_agent_action':
+      return 'multi-agent'
+    case 'web_search':
+      return 'web'
+    case 'generic_tool':
+      if (normalizeActivityKind(block.activityKind) || normalizeActivityKind(block.meta?.activityKind)) {
+        return 'other'
+      }
+      break
+    default:
+      break
+  }
+
   const meta = block.meta ?? {}
   // web: any tool returning web sources is a web action.
   if (hasMetaSources(meta)) return 'web'
@@ -72,6 +129,13 @@ export function classifyToolCategory(block: ToolBlock): ToolCategory {
   return TOOL_CATEGORY_BY_NAME.get(normalized) ?? 'other'
 }
 
+function fileChangeCategory(block: ToolBlock): Extract<ToolCategory, 'edit' | 'write'> {
+  const meta = block.meta ?? {}
+  const toolName = readMetaString(meta, 'toolName') ?? extractToolName(block.summary)
+  const normalized = toolName.trim().toLowerCase()
+  return TOOL_CATEGORY_BY_NAME.get(normalized) === 'write' ? 'write' : 'edit'
+}
+
 /** lucide-react icon component name per category (imported by the renderer). */
 export const CATEGORY_ICON: Record<ToolCategory, string> = {
   terminal: 'Terminal',
@@ -80,6 +144,9 @@ export const CATEGORY_ICON: Record<ToolCategory, string> = {
   edit: 'FileEdit',
   write: 'FilePlus',
   web: 'Globe',
+  mcp: 'Cable',
+  dynamic: 'Sparkles',
+  'multi-agent': 'Network',
   other: 'Wrench'
 }
 
@@ -98,6 +165,12 @@ export function categoryGroupKey(category: ToolCategory): string {
       return 'groupWrite'
     case 'web':
       return 'groupWeb'
+    case 'mcp':
+      return 'groupMcp'
+    case 'dynamic':
+      return 'groupDynamic'
+    case 'multi-agent':
+      return 'groupMultiAgent'
     default:
       return 'groupOther'
   }
@@ -160,6 +233,12 @@ function hasMetaSources(meta: Record<string, unknown>): boolean {
 function readMetaString(meta: Record<string, unknown>, key: string): string | undefined {
   const value = meta[key]
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeActivityKind(value: unknown): ToolActivityKind | undefined {
+  return typeof value === 'string' && TOOL_ACTIVITY_KINDS.has(value as ToolActivityKind)
+    ? value as ToolActivityKind
+    : undefined
 }
 
 function extractToolName(summary: string): string {

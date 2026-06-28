@@ -335,6 +335,9 @@ export function Workbench(): ReactElement {
     blocks,
     liveReasoning,
     liveAssistant,
+    conversationDetailLevel,
+    traceSpansByTurnId,
+    runtimeEventsByTurnId,
     error,
     runtimeErrorDetail,
     modelReconnecting,
@@ -392,6 +395,9 @@ export function Workbench(): ReactElement {
       blocks: s.blocks,
       liveReasoning: s.liveReasoning,
       liveAssistant: s.liveAssistant,
+      conversationDetailLevel: s.conversationDetailLevel,
+      traceSpansByTurnId: s.traceSpansByTurnId,
+      runtimeEventsByTurnId: s.runtimeEventsByTurnId,
       error: s.error,
       runtimeErrorDetail: s.runtimeErrorDetail,
       modelReconnecting: s.modelReconnecting,
@@ -2401,6 +2407,9 @@ export function Workbench(): ReactElement {
                 runtimeConnection={runtimeConnection}
                 runtimeError={error}
                 modelReconnecting={modelReconnecting}
+                conversationDetailLevel={conversationDetailLevel}
+                traceSpansByTurnId={traceSpansByTurnId}
+                runtimeEventsByTurnId={runtimeEventsByTurnId}
                 onRetryConnection={() => void probeRuntime('user', { restart: true })}
                 onOpenSettings={() => openSettings('agents')}
                 onSelectSuggestion={(text) => setInput(text)}

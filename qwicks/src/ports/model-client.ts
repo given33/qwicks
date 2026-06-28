@@ -1,4 +1,10 @@
-import type { TurnItem } from '../contracts/items.js'
+import type {
+  ToolActionType,
+  ToolActivityKind,
+  ToolCategory,
+  ToolProviderKind,
+  TurnItem
+} from '../contracts/items.js'
 import type { UsageSnapshot } from '../contracts/usage.js'
 
 /**
@@ -100,6 +106,10 @@ export type ModelToolSpec = {
   description: string
   inputSchema: Record<string, unknown>
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: ToolActivityKind
+  toolCategory?: ToolCategory
+  providerKind?: ToolProviderKind
+  actionType?: ToolActionType
 }
 
 /**

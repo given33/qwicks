@@ -211,6 +211,60 @@ export type CoreClearThreadTodosResponseJson = {
   cleared: boolean
 }
 
+export type CoreToolActivityKindJson =
+  | 'command_execution'
+  | 'file_change'
+  | 'mcp_tool_call'
+  | 'dynamic_tool_call'
+  | 'multi_agent_action'
+  | 'web_search'
+  | 'generic_tool'
+
+export type CoreToolCategoryJson =
+  | 'command'
+  | 'file'
+  | 'mcp'
+  | 'dynamic'
+  | 'multi_agent'
+  | 'web'
+  | 'generic'
+
+export type CoreToolProviderKindJson =
+  | 'built-in'
+  | 'mcp'
+  | 'web'
+  | 'skill'
+  | 'memory'
+  | 'gui'
+  | 'delegation'
+  | 'image'
+  | 'audio'
+  | 'video'
+
+export type CoreToolActionTypeJson =
+  | 'read'
+  | 'search'
+  | 'list_files'
+  | 'write'
+  | 'edit'
+  | 'execute'
+  | 'approval'
+  | 'delegate'
+  | 'fetch'
+  | 'generate'
+  | 'call'
+
+export type CoreTraceSpanKindJson =
+  | 'turn'
+  | 'model'
+  | 'tool'
+  | 'approval'
+  | 'delegation'
+  | 'storage'
+  | 'runtime'
+
+export type CoreTraceSpanStatusJson = 'running' | 'ok' | 'error' | 'aborted'
+
 export type CoreMemoryDiagnosticsJson = {
   enabled: boolean
   rootDir: string
@@ -427,6 +481,10 @@ export type CoreTurnItemJson = {
   toolName?: string
   callId?: string
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  activityKind?: CoreToolActivityKindJson
+  toolCategory?: CoreToolCategoryJson
+  providerKind?: CoreToolProviderKindJson
+  actionType?: CoreToolActionTypeJson
   arguments?: Record<string, unknown>
   output?: unknown
   isError?: boolean
@@ -584,6 +642,10 @@ export type CoreRuntimeEventJson = {
   sandboxMode?: string
   toolName?: string
   callId?: string
+  activityKind?: CoreToolActivityKindJson
+  toolCategory?: CoreToolCategoryJson
+  providerKind?: CoreToolProviderKindJson
+  actionType?: CoreToolActionTypeJson
   readyCount?: number
   toolResultCount?: number
 	  fingerprint?: string
@@ -628,6 +690,15 @@ export type CoreRuntimeEventJson = {
   code?: string
   severity?: 'info' | 'warning' | 'error'
   child?: CoreChildRuntimeMetadataJson
+  traceId?: string
+  spanId?: string
+  parentSpanId?: string
+  name?: string
+  spanKind?: CoreTraceSpanKindJson
+  spanStatus?: CoreTraceSpanStatusJson
+  startedAt?: string
+  endedAt?: string
+  attrs?: Record<string, unknown>
   // v3(CHIEF P0-1/P0-3):memory_status + memory_sources_ready 事件字段
   remembering?: boolean
   personalizing?: boolean

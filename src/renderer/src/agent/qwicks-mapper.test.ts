@@ -756,6 +756,60 @@ describe('tool block merging', () => {
 })
 
 describe('streaming runtime status events', () => {
+  it('surfaces trace span events and raw runtime events through the event sink', async () => {
+    const traceEvents: unknown[] = []
+    const rawEvents: unknown[] = []
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onTraceSpan: (event) => {
+        traceEvents.push(event)
+      },
+      onRuntimeEvent: (event) => {
+        rawEvents.push(event)
+      }
+    }
+
+    await dispatchQWicksRuntimeEvent(
+      {
+        kind: 'trace_span_started',
+        seq: 19,
+        timestamp: '2026-06-28T00:00:00.000Z',
+        threadId: 'thr_1',
+        turnId: 'turn_1',
+        traceId: 'trace_1',
+        spanId: 'span_turn',
+        name: 'turn',
+        spanKind: 'turn',
+        spanStatus: 'running',
+        startedAt: '2026-06-28T00:00:00.000Z',
+        attrs: { model: 'gpt-5' }
+      },
+      sink,
+      async () => undefined
+    )
+
+    expect(traceEvents).toEqual([
+      {
+        eventKind: 'trace_span_started',
+        threadId: 'thr_1',
+        turnId: 'turn_1',
+        traceId: 'trace_1',
+        spanId: 'span_turn',
+        name: 'turn',
+        spanKind: 'turn',
+        spanStatus: 'running',
+        startedAt: '2026-06-28T00:00:00.000Z',
+        attrs: { model: 'gpt-5' }
+      }
+    ])
+    expect(rawEvents[0]).toMatchObject({
+      kind: 'trace_span_started',
+      seq: 19,
+      turnId: 'turn_1',
+      spanId: 'span_turn'
+    })
+  })
+
   it('surfaces tool-call ready events as running tool cards', async () => {
     let captured: unknown = null
     const sink: ThreadEventSink = {
@@ -1069,6 +1123,106 @@ describe('usage event mapping', () => {
 })
 
 describe('tool presentation inference', () => {
+  it('preserves stable toolCategory, providerKind, and actionType protocol fields', () => {
+    const block = chatBlockFromItem({
+      id: 'item_protocol_fields',
+      turnId: 'turn_1',
+      threadId: 'thr_1',
+      role: 'tool',
+      status: 'completed',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      kind: 'tool_result',
+      toolName: 'web_search',
+      toolKind: 'tool_call',
+      activityKind: 'web_search',
+      toolCategory: 'web',
+      providerKind: 'web',
+      actionType: 'search',
+      callId: 'call_web_protocol',
+      output: { ok: true }
+    } as CoreTurnItemJson)
+
+    expect(block).toMatchObject({
+      kind: 'tool',
+      activityKind: 'web_search',
+      meta: {
+        toolCategory: 'web',
+        providerKind: 'web',
+        actionType: 'search'
+      }
+    })
+  })
+
+  it('prefers explicit activityKind from QWicks tool items', () => {
+    const block = chatBlockFromItem({
+      id: 'item_mcp_activity',
+      turnId: 'turn_1',
+      threadId: 'thr_1',
+      role: 'tool',
+      status: 'completed',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      kind: 'tool_result',
+      toolName: 'mcp_docs_read',
+      toolKind: 'tool_call',
+      activityKind: 'mcp_tool_call',
+      callId: 'call_mcp_activity',
+      output: { ok: true }
+    } as CoreTurnItemJson)
+
+    expect(block).toMatchObject({
+      kind: 'tool',
+      toolKind: 'tool_call',
+      activityKind: 'mcp_tool_call',
+      meta: {
+        activityKind: 'mcp_tool_call',
+        toolName: 'mcp_docs_read'
+      }
+    })
+  })
+
+  it('surfaces explicit activityKind through live tool events', async () => {
+    let captured: unknown = null
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onTool: (event) => {
+        captured = event
+      }
+    }
+
+    await dispatchQWicksRuntimeEvent(
+      {
+        kind: 'item_completed',
+        seq: 24,
+        item: {
+          id: 'item_delegate_activity',
+          turnId: 'turn_1',
+          threadId: 'thr_1',
+          role: 'tool',
+          status: 'completed',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          kind: 'tool_result',
+          toolName: 'delegate_task',
+          toolKind: 'tool_call',
+          activityKind: 'multi_agent_action',
+          callId: 'call_delegate_activity',
+          output: { childId: 'child_1' }
+        } as CoreTurnItemJson
+      },
+      sink,
+      async () => undefined
+    )
+
+    expect(captured).toMatchObject({
+      itemId: 'tool_call_delegate_activity',
+      toolKind: 'tool_call',
+      activityKind: 'multi_agent_action',
+      meta: {
+        activityKind: 'multi_agent_action',
+        toolName: 'delegate_task'
+      }
+    })
+  })
+
   it('prefers explicit toolKind from QWicks over local heuristics', () => {
     const block = chatBlockFromItem({
       id: 'item_explicit_kind',

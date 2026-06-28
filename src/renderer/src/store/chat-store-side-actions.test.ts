@@ -345,6 +345,46 @@ describe('chat-store-side-actions', () => {
     expect(state.busy).toBe(true)
   })
 
+  it('preserves activityKind across side conversation tool updates', async () => {
+    const { actions, state, provider } = buildHarness()
+    const id = (await actions.spawnSideConversation())!
+    const lastCall = provider.subscribeMock.mock.calls.at(-1) as
+      | [string, number, ThreadEventSink, AbortSignal]
+      | undefined
+    const sink = lastCall?.[2]
+    expect(sink).toBeDefined()
+
+    sink?.onTool({
+      itemId: 'tool_side_1',
+      summary: 'delegate_task',
+      status: 'running',
+      toolKind: 'tool_call',
+      activityKind: 'multi_agent_action',
+      meta: { activityKind: 'multi_agent_action', toolName: 'delegate_task' }
+    })
+
+    expect(state.sideConversations[id].blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_side_1',
+      activityKind: 'multi_agent_action'
+    })
+
+    sink?.onTool({
+      itemId: 'tool_side_1',
+      summary: 'delegate_task',
+      status: 'success',
+      toolKind: 'tool_call',
+      detail: 'done'
+    })
+
+    expect(state.sideConversations[id].blocks[0]).toMatchObject({
+      kind: 'tool',
+      id: 'tool_side_1',
+      activityKind: 'multi_agent_action',
+      detail: 'done'
+    })
+  })
+
   it('promoteSideConversation clears the relation by PATCH /v1/threads/{id} and refreshes the thread list', async () => {
     const { actions, state } = buildHarness()
     const id = (await actions.spawnSideConversation())!

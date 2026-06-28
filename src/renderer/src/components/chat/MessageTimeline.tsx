@@ -2,7 +2,13 @@ import type { ReactElement, RefObject } from 'react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CornerUpLeft } from 'lucide-react'
-import type { ChatBlock, RuntimeConnectionStatus } from '../../agent/types'
+import type {
+  ChatBlock,
+  ConversationDetailLevel,
+  RawRuntimeEvent,
+  RuntimeConnectionStatus,
+  TraceSpan
+} from '../../agent/types'
 import { useChatStore } from '../../store/chat-store'
 import { threadHasPendingRuntimeWork } from '../../store/chat-store-runtime-helpers'
 import { useTimelineStores } from './use-timeline-stores'
@@ -55,6 +61,9 @@ type Props = {
   /** Opens/focuses the Plan panel (Open button on the inline card). */
   onOpenPlan?: () => void
   compactCards?: boolean
+  conversationDetailLevel?: ConversationDetailLevel
+  traceSpansByTurnId?: Record<string, Record<string, TraceSpan>>
+  runtimeEventsByTurnId?: Record<string, RawRuntimeEvent[]>
   /** 模型连接重连中:有值时覆盖 live block 显示重连进度。 */
   modelReconnecting?: { attempt: number; maxAttempts: number; reason: string } | null
 }
@@ -169,6 +178,9 @@ export function MessageTimeline({
   onBuildPlan,
   onOpenPlan,
   compactCards = false,
+  conversationDetailLevel = 'technical',
+  traceSpansByTurnId = {},
+  runtimeEventsByTurnId = {},
   modelReconnecting = null
 }: Props): ReactElement {
   const { t } = useTranslation('common')
@@ -382,6 +394,9 @@ export function MessageTimeline({
                 viewportRef={containerRef}
                 nowMs={tickNow}
                 compactCards={compactCards}
+                conversationDetailLevel={conversationDetailLevel}
+                traceSpansByTurnId={traceSpansByTurnId}
+                runtimeEventsByTurnId={runtimeEventsByTurnId}
               />
             </div>
           )
@@ -433,6 +448,9 @@ export function MessageTimeline({
                 compactCards={compactCards}
                 turnTimer={liveTurnTimer}
                 nowMs={tickNow}
+                conversationDetailLevel={conversationDetailLevel}
+                traceSpansByTurnId={traceSpansByTurnId}
+                runtimeEventsByTurnId={runtimeEventsByTurnId}
               />
             )
           })()
@@ -455,7 +473,10 @@ function MessageTurn({
   onOpenPlan,
   viewportRef,
   nowMs,
-  compactCards = false
+  compactCards = false,
+  conversationDetailLevel,
+  traceSpansByTurnId,
+  runtimeEventsByTurnId
 }: {
   turn: Turn
   isProcessing: boolean
@@ -470,6 +491,9 @@ function MessageTurn({
   /** Ticking clock for live duration badges; only meaningful while processing. */
   nowMs?: number
   compactCards?: boolean
+  conversationDetailLevel: ConversationDetailLevel
+  traceSpansByTurnId: Record<string, Record<string, TraceSpan>>
+  runtimeEventsByTurnId: Record<string, RawRuntimeEvent[]>
 }): ReactElement {
   const workspaceRoot = useChatStore((s) => s.workspaceRoot)
   const activeThreadGoal = useChatStore((s) => s.activeThreadGoal)
@@ -552,7 +576,11 @@ function MessageTurn({
   // Keep completed reasoning/tool work tucked away, but make the active turn's
   // work visible unless the user explicitly collapses it.
 
-  const hasProcess = (isProcessing && !onlyCompactionProcess) || workProcessBlocks.length > 0
+  const showProcessWork = conversationDetailLevel !== 'simple'
+  const panelTurnId = turnIdForPanels(turn)
+  const traceSpans = panelTurnId ? traceSpansByTurnId[panelTurnId] : undefined
+  const rawEvents = panelTurnId ? runtimeEventsByTurnId[panelTurnId] : undefined
+  const hasProcess = showProcessWork && ((isProcessing && !onlyCompactionProcess) || workProcessBlocks.length > 0)
   const showLiveProgress = isProcessing && !onlyCompactionProcess
   const forkFromTurn = async (): Promise<void> => {
     if (!forkTurnId || forking) return
@@ -615,13 +643,19 @@ function MessageTurn({
         <MessageBubble block={{ kind: 'assistant', id: 'live-assistant', text: liveContent }} />
       ) : null}
 
+      {showProcessWork ? <MultiAgentPanel blocks={workProcessBlocks} /> : null}
+
+      {conversationDetailLevel === 'debug' ? (
+        <DebugTracePanel spans={traceSpans} rawEvents={rawEvents} />
+      ) : null}
+
       <GeneratedFilesPanel blocks={generatedFileBlocks} />
 
       {reviewBlocks.map((review) => (
         <ReviewSummaryCard key={review.id} review={review} />
       ))}
 
-      {showLiveProgress ? <LiveTurnProgressRow hasActiveGoal={Boolean(activeThreadGoal)} /> : null}
+      {showProcessWork && showLiveProgress ? <LiveTurnProgressRow hasActiveGoal={Boolean(activeThreadGoal)} /> : null}
 
       {!isProcessing && devPreviewCard ? devPreviewCard : null}
 
@@ -646,6 +680,114 @@ function MessageTurn({
       {compactionBlocks.map((block) => (
         <CompactionDivider key={block.id} block={block} />
       ))}
+    </div>
+  )
+}
+
+function turnIdForPanels(turn: Turn): string {
+  if (turn.user?.turnId?.trim()) return turn.user.turnId.trim()
+  for (const block of turn.blocks) {
+    if ('turnId' in block && typeof block.turnId === 'string' && block.turnId.trim()) {
+      return block.turnId.trim()
+    }
+    if (block.kind === 'tool' && typeof block.meta?.turnId === 'string' && block.meta.turnId.trim()) {
+      return block.meta.turnId.trim()
+    }
+  }
+  return ''
+}
+
+function childMetaFromTool(block: ChatBlock): Record<string, unknown> | null {
+  if (block.kind !== 'tool') return null
+  if (block.activityKind !== 'multi_agent_action' && block.meta?.activityKind !== 'multi_agent_action') return null
+  const child = block.meta?.child
+  if (child && typeof child === 'object') return child as Record<string, unknown>
+  return null
+}
+
+function MultiAgentPanel({ blocks }: { blocks: ChatBlock[] }): ReactElement | null {
+  const children = blocks
+    .map((block) => {
+      const child = childMetaFromTool(block)
+      if (!child) return null
+      const childId = typeof child.childId === 'string' ? child.childId : ''
+      if (!childId) return null
+      const childStatus = typeof child.childStatus === 'string' ? child.childStatus : block.kind === 'tool' ? block.status : ''
+      return {
+        childId,
+        label: typeof child.childLabel === 'string' && child.childLabel.trim() ? child.childLabel.trim() : childId,
+        status: childStatus
+      }
+    })
+    .filter((child): child is { childId: string; label: string; status: string } => child !== null)
+  if (children.length === 0) return null
+  const working = children.filter((child) => child.status === 'queued' || child.status === 'running').length
+  const done = children.filter((child) => child.status === 'completed' || child.status === 'success').length
+  return (
+    <div className="rounded-md border border-ds-border-muted/70 bg-ds-surface-subtle/55 px-3 py-2 text-[12.5px] text-ds-muted">
+      <div className="flex flex-wrap items-center gap-2 font-semibold text-ds-ink">
+        <span>Agent panel</span>
+        <span className="rounded-full bg-ds-hover px-2 py-0.5 text-[11px] text-ds-muted">{working} working</span>
+        <span className="rounded-full bg-ds-hover px-2 py-0.5 text-[11px] text-ds-muted">{done} done</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {children.map((child) => (
+          <span key={child.childId} className="rounded-md border border-ds-border-muted/60 px-2 py-1 font-mono text-[11.5px] text-ds-muted">
+            {child.label} · {child.childId}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function formatSpanDuration(span: TraceSpan): string {
+  const ms = span.durationMs ?? 0
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.round(ms)}ms`
+}
+
+function DebugTracePanel({
+  spans,
+  rawEvents
+}: {
+  spans?: Record<string, TraceSpan>
+  rawEvents?: RawRuntimeEvent[]
+}): ReactElement | null {
+  const spanList = Object.values(spans ?? {})
+  const events = rawEvents ?? []
+  if (spanList.length === 0 && events.length === 0) return null
+  const sortedSpans = spanList.sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+  return (
+    <div className="rounded-md border border-ds-border-muted/70 bg-ds-surface-subtle/60 px-3 py-2 text-[12px] text-ds-muted">
+      {sortedSpans.length > 0 ? (
+        <div>
+          <div className="font-semibold text-ds-ink">Trace tree</div>
+          <div className="mt-1 space-y-1">
+            {sortedSpans.map((span) => (
+              <div key={span.spanId} className="flex min-w-0 items-center gap-2 font-mono">
+                <span className="min-w-0 truncate text-ds-ink">{span.name}</span>
+                <span className="shrink-0 text-ds-faint">{span.spanKind}</span>
+                <span className="shrink-0 text-ds-faint">{span.spanStatus}</span>
+                {span.endedAt ? <span className="shrink-0 text-ds-muted">{formatSpanDuration(span)}</span> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {events.length > 0 ? (
+        <div className={sortedSpans.length > 0 ? 'mt-3' : ''}>
+          <div className="font-semibold text-ds-ink">Raw events</div>
+          <div className="mt-1 max-h-40 overflow-hidden font-mono text-[11px] leading-5 text-ds-faint">
+            {events.slice(-12).map((event, index) => (
+              <div key={`${event.seq ?? index}-${event.kind ?? 'event'}`} className="truncate">
+                {String(event.kind ?? 'event')}
+                {typeof event.seq === 'number' ? ` #${event.seq}` : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -698,6 +840,9 @@ const MemoMessageTurn = memo(MessageTurn, (prev, next) => (
   prev.onBuildPlan === next.onBuildPlan &&
   prev.onOpenPlan === next.onOpenPlan &&
   prev.compactCards === next.compactCards &&
+  prev.conversationDetailLevel === next.conversationDetailLevel &&
+  prev.traceSpansByTurnId === next.traceSpansByTurnId &&
+  prev.runtimeEventsByTurnId === next.runtimeEventsByTurnId &&
   prev.viewportRef === next.viewportRef &&
   prev.nowMs === next.nowMs
 ))

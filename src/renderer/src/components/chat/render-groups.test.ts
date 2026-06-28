@@ -50,6 +50,11 @@ describe('classifyBlock', () => {
   it('classifies web tool as web', () => {
     expect(classifyBlock(tool('ws1', 'web_search')).type).toBe('web')
   })
+  it('carries activityKind into classified tool units', () => {
+    const unit = classifyBlock(tool('mcp1', 'read_docs', { activityKind: 'mcp_tool_call' }))
+    expect(unit.activityKind).toBe('mcp_tool_call')
+    expect(unit.type).toBe('mcp')
+  })
   it('tracks running status', () => {
     expect(classifyBlock(tool('t1', 'bash', { status: 'running' })).isRunning).toBe(true)
     expect(classifyBlock(tool('t2', 'bash', { status: 'success' })).isRunning).toBe(false)
@@ -207,7 +212,7 @@ describe('summarizeActivity (Set dedup)', () => {
 })
 
 describe('splitIntoRenderGroups (four-stage pipeline)', () => {
-  it('assistant-message stays single; following tools collapse into one group', () => {
+  it('assistant-message stays single; following tools collapse by activity kind', () => {
     const blocks = [
       assistant('a1'),
       tool('b1', 'bash'),
@@ -215,15 +220,47 @@ describe('splitIntoRenderGroups (four-stage pipeline)', () => {
       tool('e1', 'edit', { toolKind: 'file_change', filePath: 'x.ts' })
     ]
     const groups = splitIntoRenderGroups(blocks, true)
-    // a1 single, then one collapsed group (3 tools merged)
-    expect(groups).toHaveLength(2)
+    // a1 single, command tools grouped, then file-change tools grouped.
+    expect(groups).toHaveLength(3)
     expect(groups[0].kind).toBe('single')
     expect(groups[1].kind).toBe('collapsed-tool-activity')
+    expect(groups[2].kind).toBe('collapsed-tool-activity')
     if (groups[1].kind === 'collapsed-tool-activity') {
-      expect(groups[1].units).toHaveLength(3)
+      expect(groups[1].units).toHaveLength(2)
       expect(groups[1].summary.commandCount).toBe(2)
-      expect(groups[1].summary.editedFileCount).toBe(1)
       expect(groups[1].forceSingle).toBe(false)
+    }
+    if (groups[2].kind === 'collapsed-tool-activity') {
+      expect(groups[2].units).toHaveLength(1)
+      expect(groups[2].summary.editedFileCount).toBe(1)
+    }
+  })
+
+  it('splits consecutive collapsible tool groups by activityKind', () => {
+    const blocks = [
+      assistant('a1'),
+      tool('b1', 'bash', { activityKind: 'command_execution' }),
+      tool('b2', 'shell', { activityKind: 'command_execution' }),
+      tool('m1', 'mcp_docs_read', { activityKind: 'mcp_tool_call' }),
+      tool('d1', 'generate_image', { activityKind: 'dynamic_tool_call' })
+    ]
+    const groups = splitIntoRenderGroups(blocks, true)
+
+    expect(groups).toHaveLength(4)
+    expect(groups[1].kind).toBe('collapsed-tool-activity')
+    expect(groups[2].kind).toBe('collapsed-tool-activity')
+    expect(groups[3].kind).toBe('collapsed-tool-activity')
+    if (
+      groups[1].kind === 'collapsed-tool-activity' &&
+      groups[2].kind === 'collapsed-tool-activity' &&
+      groups[3].kind === 'collapsed-tool-activity'
+    ) {
+      expect(groups[1].units.map((unit) => unit.activityKind)).toEqual([
+        'command_execution',
+        'command_execution'
+      ])
+      expect(groups[2].units.map((unit) => unit.activityKind)).toEqual(['mcp_tool_call'])
+      expect(groups[3].units.map((unit) => unit.activityKind)).toEqual(['dynamic_tool_call'])
     }
   })
 

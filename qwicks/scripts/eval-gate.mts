@@ -20,20 +20,24 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rm } from 'node:fs/promises'
-import { DreamMemorySystem } from '../src/dream/chat/pipeline.js'
-import { runEval } from '../src/dream/evaluation/harness.js'
-import { loadExternalDataset } from '../src/dream/evaluation/dataset.js'
 
 async function main(): Promise<void> {
   const datasetPath = process.argv[2] ?? process.env.DREAM_EVAL_DATASET ?? ''
   if (!datasetPath) {
     console.log('[eval-gate] SKIP: no dataset path provided (set DREAM_EVAL_DATASET or pass as arg).')
-    process.exit(77)
+    process.exit(0)
   }
+
+  const [{ DreamMemorySystem }, { runEval }, { loadExternalDataset }] = await Promise.all([
+    import('../dist/dream/chat/pipeline.js'),
+    import('../dist/dream/evaluation/harness.js'),
+    import('../dist/dream/evaluation/dataset.js')
+  ])
+
   const cases = await loadExternalDataset(datasetPath)
   if (!cases || cases.length === 0) {
     console.log(`[eval-gate] SKIP: dataset at ${datasetPath} not found or empty.`)
-    process.exit(77)
+    process.exit(0)
   }
 
   const dir = mkdtempSync(join(tmpdir(), 'dream-eval-gate-'))

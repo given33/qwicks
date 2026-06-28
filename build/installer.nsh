@@ -57,7 +57,7 @@
     ; nsExec::ExecToStack pushes the exit code on TOP, then the stdout output
     ; beneath it. Exit code: 0 = killed something, 128 = no matching process,
     ; anything else = transient failure (e.g. access denied while shutting down).
-    nsExec::ExecToStack 'taskkill /F /IM QWicks.exe /T 2>&1'
+    nsExec::ExecToStack 'taskkill /F /IM QWicks.exe /T'
     Pop $0                 ; exit code (top of stack)
     Pop $R2                ; stdout output (discarded)
     ; 0 (killed) or 128 (nothing to kill) -> no QWicks.exe is left running.
@@ -83,7 +83,7 @@
 ; the install).
 !macro customCheckAppRunning
   ; Defensive: kill any QWicks that reappeared between customInit and here.
-  nsExec::Exec 'taskkill /F /IM QWicks.exe /T 2>&1'
+  nsExec::ExecToStack 'taskkill /F /IM QWicks.exe /T'
   Pop $0
   Pop $1
   Sleep 500

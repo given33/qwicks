@@ -65,6 +65,24 @@ beforeEach(() => {
       mockedFiles.set(String(path), String(value))
     })
   }))
+  vi.doMock('node:fs', () => ({
+    existsSync: (path: string) => mockedFiles.has(String(path)),
+    readFileSync: (path: string) => {
+      const value = mockedFiles.get(String(path))
+      if (value === undefined) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+      return value
+    },
+    readdirSync: () => [],
+    rmSync: vi.fn(),
+    statSync: (path: string) => {
+      const value = String(path)
+      return {
+        isFile: () => mockedFiles.has(value),
+        isDirectory: () => value.includes('/hot-code/versions/')
+      }
+    },
+    symlinkSync: vi.fn()
+  }))
   vi.doMock('electron', () => ({
     app: {
       isPackaged: true,
@@ -94,8 +112,24 @@ afterEach(() => {
   vi.doUnmock('electron')
   vi.doUnmock('electron-updater')
   vi.doUnmock('node:fs/promises')
+  vi.doUnmock('node:fs')
   vi.resetModules()
 })
+
+function setActiveCodeVersion(version: string): void {
+  const root = `/tmp/deepseek-gui-updater-test-user-data/hot-code/versions/${version}-abcdef`
+  mockedFiles.set(
+    String(join('/tmp/deepseek-gui-updater-test-user-data', 'hot-code', 'active.json')),
+    JSON.stringify({
+      version,
+      root,
+      installedAt: '2026-06-28T00:00:00.000Z',
+      sha256: 'abcdef'
+    })
+  )
+  mockedFiles.set(String(join(root, 'renderer', 'index.html')), '<!doctype html>')
+  mockedFiles.set(String(join(root, 'preload', 'index.cjs')), "require('electron')")
+}
 
 describe('checkGuiUpdate feed URL', () => {
   it('uses the Aliyun server update feed for stable updates', async () => {
@@ -186,6 +220,25 @@ describe('checkGuiUpdate feed URL', () => {
       releaseNotes: 'Update content is shown directly in QWicks.'
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not offer an older installer when a newer hot-code version is active', async () => {
+    setActiveCodeVersion('0.2.316')
+    updater.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: '0.2.307', releaseDate: '2026-06-26T04:09:11.844Z' },
+      isUpdateAvailable: true
+    })
+
+    const module = await import('./gui-updater')
+    module.initializeGuiUpdater(() => null, () => 'stable')
+
+    await expect(module.checkGuiUpdate('stable')).resolves.toMatchObject({
+      ok: true,
+      kind: 'installer',
+      currentVersion: '0.2.316',
+      latestVersion: '0.2.307',
+      hasUpdate: false
+    })
   })
 
   it('downloads code update packages from public HTTP feeds by default', async () => {

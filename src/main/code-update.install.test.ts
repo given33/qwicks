@@ -14,10 +14,12 @@ import JSZip from 'jszip'
 
 let userData: string
 let unpackedRoot: string
+let shellVersion: string
 
 beforeEach(() => {
   userData = mkdtempSync(join(tmpdir(), 'qwicks-code-update-'))
   unpackedRoot = mkdtempSync(join(tmpdir(), 'qwicks-code-update-app-'))
+  shellVersion = '0.2.0'
   vi.resetModules()
   vi.doMock('electron', () => ({
     app: {
@@ -25,7 +27,8 @@ beforeEach(() => {
       // getAppPath is used to resolve the bundled app.asar.unpacked qwicks
       // node_modules; point it at a throwaway dir so the symlink step no-ops.
       getAppPath: () => unpackedRoot,
-      getPath: () => userData
+      getPath: () => userData,
+      getVersion: () => shellVersion
     }
   }))
 })
@@ -161,6 +164,29 @@ describe('installCodeUpdatePackage (hot-update install path)', () => {
       manifest: manifest('0.2.102')
     })
     expect(existsSync(join(active.root, 'qwicks', 'node_modules'))).toBe(true)
+  })
+
+  it('ignores an older hot-code package after a full installer shell upgrade', async () => {
+    shellVersion = '0.2.320'
+    const activeRoot = join(userData, 'hot-code', 'versions', '0.2.319-deadbeef')
+    mkdirSync(join(activeRoot, 'renderer'), { recursive: true })
+    mkdirSync(join(activeRoot, 'preload'), { recursive: true })
+    writeFileSync(join(activeRoot, 'renderer', 'index.html'), '<!doctype html>')
+    writeFileSync(join(activeRoot, 'preload', 'index.cjs'), "require('electron')")
+    writeFileSync(
+      join(userData, 'hot-code', 'active.json'),
+      JSON.stringify({
+        version: '0.2.319',
+        root: activeRoot,
+        installedAt: '2026-06-28T14:09:31.198Z'
+      })
+    )
+
+    const mod = await import('./code-update')
+
+    expect(mod.currentCodeOrShellVersion()).toBe('0.2.320')
+    expect(mod.resolveHotCodeRendererIndexPath()).toBeNull()
+    expect(mod.resolveHotCodePreloadPath()).toBeNull()
   })
 })
 

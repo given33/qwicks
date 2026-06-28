@@ -19,6 +19,18 @@ export type TurnSections = {
   turnFileChanges: ToolBlock[]
 }
 
+export type PendingInteractionBlock = Extract<ChatBlock, { kind: 'approval' | 'user_input' }>
+
+export type TurnRenderModel = {
+  workItems: ChatBlock[]
+  finalAssistantItems: TurnAssistantBlock[]
+  pendingInteractionItems: PendingInteractionBlock[]
+  generatedFileBlocks: ToolBlock[]
+  turnFileChanges: ToolBlock[]
+  liveAssistantText: string
+  forceOpenItemIds: Set<string>
+}
+
 type ResolvedFileChangeBlock = ToolBlock & {
   detail: string
   filePath: string
@@ -68,6 +80,13 @@ function hasGeneratedFiles(block: ToolBlock): boolean {
   return (
     block.status === 'success' &&
     (metaArrayLength(block.meta, 'attachments') > 0 || metaArrayLength(block.meta, 'generatedFiles') > 0)
+  )
+}
+
+function isPendingInteractionBlock(block: ChatBlock): block is PendingInteractionBlock {
+  return (
+    (block.kind === 'approval' && block.status === 'pending') ||
+    (block.kind === 'user_input' && block.status === 'pending')
   )
 }
 
@@ -175,4 +194,21 @@ export function deriveTurnSections({
   )
 
   return { processBlocks, assistantContentBlocks, generatedFileBlocks, turnFileChanges }
+}
+
+export function deriveTurnRenderModel(input: DeriveTurnSectionsInput): TurnRenderModel {
+  const sections = deriveTurnSections(input)
+  const pendingInteractionItems = sections.processBlocks.filter(isPendingInteractionBlock)
+  const forceOpenItemIds = new Set(pendingInteractionItems.map((block) => block.id))
+  const workItems = sections.processBlocks.filter((block) => !isPendingInteractionBlock(block))
+
+  return {
+    workItems,
+    finalAssistantItems: sections.assistantContentBlocks,
+    pendingInteractionItems,
+    generatedFileBlocks: sections.generatedFileBlocks,
+    turnFileChanges: sections.turnFileChanges,
+    liveAssistantText: input.liveContent,
+    forceOpenItemIds
+  }
 }

@@ -183,10 +183,41 @@ function parseActiveCodePackage(raw: unknown): ActiveCodePackage | null {
   return validateInstalledCodeRoot(active.root) ? active : null
 }
 
+function semverParts(value: string): [number, number, number] | null {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) return null
+  return [
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10),
+    Number.parseInt(match[3], 10)
+  ]
+}
+
+function compareSemver(a: string, b: string): number | null {
+  const left = semverParts(a)
+  const right = semverParts(b)
+  if (!left || !right) return null
+  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
+}
+
+function currentShellVersion(): string {
+  try {
+    return typeof app.getVersion === 'function' ? app.getVersion().trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 function readActiveCodePackageFromDisk(): ActiveCodePackage | null {
   if (!app.isPackaged) return null
   try {
-    return parseActiveCodePackage(JSON.parse(readFileSync(activeCodePath(), 'utf8')) as unknown)
+    const active = parseActiveCodePackage(JSON.parse(readFileSync(activeCodePath(), 'utf8')) as unknown)
+    if (!active) return null
+    const shellVersion = currentShellVersion()
+    if (!shellVersion) return active
+    const compared = compareSemver(active.version, shellVersion)
+    if (compared !== null && compared < 0) return null
+    return active
   } catch {
     return null
   }
