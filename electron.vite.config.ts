@@ -16,6 +16,19 @@ function copyMqpetSpritesPlugin() {
   }
 }
 
+function copyRufflePlugin() {
+  return {
+    name: 'copy-ruffle',
+    closeBundle(): void {
+      cpSync(
+        resolve('node_modules/@ruffle-rs/ruffle'),
+        resolve('out/renderer/ruffle'),
+        { recursive: true }
+      )
+    }
+  }
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -67,6 +80,6 @@ export default defineConfig({
       // dev 模式允许访问项目根，使 mqpet.html 能引用 src/renderer-mqpet/ 下的 main.tsx
       fs: { allow: [resolve('.')] }
     },
-    plugins: [react(), copyMqpetSpritesPlugin()]
+    plugins: [react(), copyMqpetSpritesPlugin(), copyRufflePlugin()]
   }
 })

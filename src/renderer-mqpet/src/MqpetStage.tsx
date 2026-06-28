@@ -42,6 +42,7 @@ type Bridge = {
   learn: () => Promise<unknown>;
   toggleConsole: () => Promise<unknown>;
   openConsolePanel: (request: MqpetConsolePanelRequest) => Promise<unknown>;
+  getSourceAsset: (sourcePath: string) => Promise<ArrayBuffer | null>;
   getState: () => Promise<unknown>;
   onStateChanged: (cb: (state: unknown) => void) => () => void;
 };
@@ -377,6 +378,7 @@ export function MqpetStage(): React.ReactElement {
           sourceAsset={sourceAsset}
           width={PENGUIN_W}
           height={PENGUIN_H}
+          getSourceAsset={bridge.current?.getSourceAsset}
           onComplete={onAnimComplete}
         />
       </div>

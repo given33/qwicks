@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('mqpet', {
   work: (): Promise<unknown> => ipcRenderer.invoke('mqpet:work'),
   learn: (): Promise<unknown> => ipcRenderer.invoke('mqpet:learn'),
   interact: (): Promise<unknown> => ipcRenderer.invoke('mqpet:interact'),
+  getSourceAsset: (sourcePath: string): Promise<ArrayBuffer | null> => ipcRenderer.invoke('mqpet:get-source-asset', sourcePath),
   toggleConsole: (): Promise<unknown> => ipcRenderer.invoke('mqpet:toggle-console'),
   openConsolePanel: (request: MqpetConsolePanelRequest): Promise<unknown> => ipcRenderer.invoke('mqpet:open-console-panel', request),
   onConsolePanelRequest: (cb: (request: MqpetConsolePanelRequest) => void): (() => void) => {

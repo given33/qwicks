@@ -5,6 +5,7 @@ import {
   getMqpetStateStore, mutateUseItem, mutateBuy, mutateWork, mutateLearn, mutateInteract,
 } from './mqpet-state-store';
 import { normalizeConsolePanelRequest } from '../shared/mqpet-console-panel';
+import { readMqpetSourceAsset } from './mqpet-source-file';
 
 let registered = false;
 
@@ -27,6 +28,7 @@ export function registerMqpetStateIpc(): void {
   ipcMain.handle('mqpet:work', () => mutateWork(store));
   ipcMain.handle('mqpet:learn', () => mutateLearn(store));
   ipcMain.handle('mqpet:interact', () => mutateInteract(store));
+  ipcMain.handle('mqpet:get-source-asset', async (_e, sourcePath: string) => readMqpetSourceAsset(sourcePath));
   ipcMain.handle('mqpet:toggle-console', async () => {
     const { toggleConsoleWindow } = await import('./mqpet-console-window');
     toggleConsoleWindow();

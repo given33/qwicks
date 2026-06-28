@@ -3,6 +3,7 @@ import { getAnim, type MqAnim } from '@shared/mqpet-anims';
 import type { MqPetSourceAssetRef } from '@shared/mqpet-source-assets';
 import { createMqpetSpriteBaseUrl, createStaticSpriteResolver, preloadSpriteNames } from './spriteResolver';
 import { fitMqpetSpriteAtDesktopScale } from './spriteLayout';
+import { OriginalSwfPlayer } from './OriginalSwfPlayer';
 import { useFrameLoop } from './useFrameLoop';
 
 const spriteBaseUrl = createMqpetSpriteBaseUrl({
@@ -26,6 +27,7 @@ function preloadSpriteSize(url: string): Promise<void> {
 }
 
 const spriteResolver = createStaticSpriteResolver(spriteBaseUrl, { load: preloadSpriteSize });
+const useOriginalSwf = import.meta.env.VITE_MQPET_ORIGINAL_SWF === '1';
 
 function resolveAnim(animName: string): MqAnim | undefined {
   return getAnim(animName) ?? getAnim('Pet_Idle') ?? getAnim('Stand');
@@ -37,12 +39,14 @@ export function PenguinSprite({
   width = 128,
   height = 144,
   onComplete,
+  getSourceAsset,
 }: {
   animName: string;
   sourceAsset?: MqPetSourceAssetRef | null;
   width?: number;
   height?: number;
   onComplete?: () => void;
+  getSourceAsset?: (sourcePath: string) => Promise<ArrayBuffer | null>;
 }): React.ReactElement {
   const anim = resolveAnim(animName);
   const [frameIdx, setFrameIdx] = useState(0);
@@ -125,6 +129,7 @@ export function PenguinSprite({
       style={{
         width,
         height,
+        position: 'relative',
         display: 'grid',
         placeItems: 'center',
         overflow: 'visible',
@@ -155,6 +160,16 @@ export function PenguinSprite({
             pointerEvents: 'none',
           }}
         />
+      ) : null}
+      {useOriginalSwf && sourceAsset ? (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <OriginalSwfPlayer
+            sourceAsset={sourceAsset}
+            width={width}
+            height={height}
+            getSourceAsset={getSourceAsset}
+          />
+        </div>
       ) : null}
     </div>
   );
