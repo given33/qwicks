@@ -47,7 +47,9 @@ const IGNORED_PREFIXES = [
   '.github/',
   '.codex/',
   '.vscode/',
-  'docs/'
+  'docs/',
+  'scripts/',
+  'qwicks/scripts/'
 ]
 
 const IGNORED_FILE_EXTENSIONS = [

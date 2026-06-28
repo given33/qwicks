@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
@@ -93,6 +95,20 @@ describe('release change classification', () => {
     })
   })
 
+  it('does not publish app updates for CI and eval helper script changes', () => {
+    expect(
+      releaseChange.classifyChangedFiles({
+        files: ['scripts/classify-release-change.cjs', 'qwicks/scripts/eval-gate.mts']
+      })
+    ).toMatchObject({
+      releaseKind: 'none',
+      hotUpdateSafe: false,
+      codeUpdateNeeded: false,
+      fullInstallerNeeded: false,
+      ignoredFiles: ['scripts/classify-release-change.cjs', 'qwicks/scripts/eval-gate.mts']
+    })
+  })
+
   it('lets installer-required files win over hot-code files on mixed pushes', () => {
     expect(
       releaseChange.classifyChangedFiles({
@@ -106,6 +122,20 @@ describe('release change classification', () => {
       codeFiles: ['src/renderer/src/App.tsx'],
       installerFiles: ['package-lock.json']
     })
+  })
+})
+
+describe('dream eval gate script', () => {
+  it('skips cleanly when no eval dataset is configured', () => {
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', './scripts/eval-gate.mts'], {
+      cwd: join(__dirname, '../../qwicks'),
+      encoding: 'utf8',
+      env: { ...process.env, DREAM_EVAL_DATASET: '' }
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('[eval-gate] SKIP: no dataset path provided')
+    expect(result.stderr).not.toContain('ERR_MODULE_NOT_FOUND')
   })
 })
 
