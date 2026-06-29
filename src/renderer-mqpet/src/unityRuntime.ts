@@ -110,6 +110,20 @@ export function sendUnityMenuAction(
   }
 }
 
+export function sendUnityPetState(
+  unityInstance: UnityMenuCommandTarget | null | undefined,
+  save: unknown,
+): boolean {
+  if (typeof unityInstance?.SendMessage !== 'function') return false;
+
+  try {
+    unityInstance.SendMessage('QwicksMqpetWebGLBridge', 'HandleQwicksPetState', JSON.stringify(save));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function installUnityBridge(target: UnityBridgeTarget, bridge: QwicksMqpetBridge): QwicksMqpetUnityBridge {
   const unityBridge: QwicksMqpetUnityBridge = {
     reportBBox: (bbox) => {

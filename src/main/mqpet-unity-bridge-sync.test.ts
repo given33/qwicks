@@ -31,6 +31,12 @@ describe('syncUnityWebGLBridge', () => {
       expect(cs).toContain('SetDragging(bool dragging)');
       expect(cs).toContain('OpenMenu(string panel)');
       expect(cs).toContain('HandleQwicksMenuAction(string action)');
+      expect(cs).toContain('HandleQwicksPetState(string json)');
+      expect(cs).toContain('PetDataManager.Instance.currentLevel = Mathf.Max(1, snapshot.state.level);');
+      expect(cs).toContain('PetDataManager.Instance.gold = snapshot.state.gold;');
+      expect(cs).toContain('PetDataManager.Instance.currentActivity = ParseActivity(snapshot.state.activity);');
+      expect(cs).toContain('SetPrivateInt(PetDataManager.Instance, "currentActionTimer", snapshot.state.workTimer);');
+      expect(cs).toContain('SetPrivateInt(PetDataManager.Instance, "targetActionDuration", snapshot.state.workTarget);');
       expect(cs).toContain('PetInteractFinal petInteract = FindObjectOfType<PetInteractFinal>()');
       expect(cs).toContain('petInteract.OnClick_Feed();');
       expect(cs).toContain('InventoryManager.Instance.OpenBag(2);');

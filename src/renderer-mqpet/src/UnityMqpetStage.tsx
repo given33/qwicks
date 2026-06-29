@@ -11,6 +11,7 @@ import {
   describeUnityFallbackReason,
   installUnityBridge,
   sendUnityMenuAction,
+  sendUnityPetState,
   selectMqpetStageView,
   selectMqpetRuntime,
   type UnityLoaderConfig,
@@ -35,6 +36,8 @@ type Bridge = {
   getSourceAsset?: (sourcePath: string) => Promise<ArrayBuffer | null>;
   openConsolePanel?: (request: MqpetConsolePanelRequest) => Promise<unknown>;
   toggleConsole?: () => Promise<unknown>;
+  getState?: () => Promise<unknown>;
+  onStateChanged?: (cb: (state: unknown) => void) => () => void;
   log?: (msg: string) => void;
 };
 
@@ -74,6 +77,7 @@ export function UnityMqpetStage(): React.ReactElement {
   const petBBox = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   const hoverMenu = useRef<HoverMenuState>(createHoverMenuState());
+  const latestSave = useRef<unknown>(null);
 
   function fallbackBBox(): { x: number; y: number; w: number; h: number } {
     const w = 90;
@@ -179,6 +183,7 @@ export function UnityMqpetStage(): React.ReactElement {
         const createUnityInstance = (window as UnityWindow).createUnityInstance;
         if (!createUnityInstance) throw new Error('Unity loader did not expose createUnityInstance');
         unityInstance.current = await createUnityInstance(canvasRef.current as HTMLCanvasElement, createUnityLoaderConfig(build));
+        if (latestSave.current) sendUnityPetState(unityInstance.current, latestSave.current);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -195,6 +200,18 @@ export function UnityMqpetStage(): React.ReactElement {
       bridge.current?.reportBBox(null);
     };
   }, [build]);
+
+  useEffect(() => {
+    void bridge.current?.getState?.().then((save) => {
+      latestSave.current = save;
+      sendUnityPetState(unityInstance.current, save);
+    });
+
+    return bridge.current?.onStateChanged?.((save) => {
+      latestSave.current = save;
+      sendUnityPetState(unityInstance.current, save);
+    });
+  }, []);
 
   const stageView = selectMqpetStageView(build, loadError);
 

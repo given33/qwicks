@@ -89,6 +89,89 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
 #endif
     }
 
+    [System.Serializable]
+    private sealed class QwicksPetSaveSnapshot
+    {
+        public QwicksPetStateSnapshot state;
+    }
+
+    [System.Serializable]
+    private sealed class QwicksPetStateSnapshot
+    {
+        public int level;
+        public float growth;
+        public float gold;
+        public float hunger;
+        public float cleanliness;
+        public float health;
+        public float mood;
+        public float stamina;
+        public float intelligence;
+        public float stressResistance;
+        public float charm;
+        public string activity;
+        public int workTimer;
+        public int workTarget;
+        public int interactionCount;
+    }
+
+    public void HandleQwicksPetState(string json)
+    {
+        if (string.IsNullOrEmpty(json) || PetDataManager.Instance == null) return;
+
+        QwicksPetSaveSnapshot snapshot;
+        try
+        {
+            snapshot = JsonUtility.FromJson<QwicksPetSaveSnapshot>(json);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning("QWicks QQPet failed to parse pet state: " + ex.Message);
+            return;
+        }
+
+        if (snapshot == null || snapshot.state == null) return;
+
+        PetDataManager.Instance.currentLevel = Mathf.Max(1, snapshot.state.level);
+        PetDataManager.Instance.growthValue = Mathf.Max(0f, snapshot.state.growth);
+        PetDataManager.Instance.gold = snapshot.state.gold;
+        PetDataManager.Instance.hunger = snapshot.state.hunger;
+        PetDataManager.Instance.cleanliness = snapshot.state.cleanliness;
+        PetDataManager.Instance.health = snapshot.state.health;
+        PetDataManager.Instance.mood = snapshot.state.mood;
+        PetDataManager.Instance.stamina = snapshot.state.stamina;
+        PetDataManager.Instance.intelligence = snapshot.state.intelligence;
+        PetDataManager.Instance.stressResistance = snapshot.state.stressResistance;
+        PetDataManager.Instance.charm = snapshot.state.charm;
+        PetDataManager.Instance.currentInteractionCount = snapshot.state.interactionCount;
+        PetDataManager.Instance.currentActivity = ParseActivity(snapshot.state.activity);
+        SetPrivateInt(PetDataManager.Instance, "currentActionTimer", snapshot.state.workTimer);
+        SetPrivateInt(PetDataManager.Instance, "targetActionDuration", snapshot.state.workTarget);
+    }
+
+    private static void SetPrivateInt(PetDataManager target, string fieldName, int value)
+    {
+        System.Reflection.FieldInfo field = typeof(PetDataManager).GetField(
+            fieldName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (field != null) field.SetValue(target, Mathf.Max(0, value));
+    }
+
+    private static PetDataManager.PetActivity ParseActivity(string activity)
+    {
+        switch ((activity ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case "working":
+                return PetDataManager.PetActivity.Working;
+            case "learning":
+                return PetDataManager.PetActivity.Learning;
+            case "playing":
+                return PetDataManager.PetActivity.Playing;
+            default:
+                return PetDataManager.PetActivity.Idle;
+        }
+    }
+
     public void HandleQwicksMenuAction(string action)
     {
         string normalized = (action ?? string.Empty).Trim().ToLowerInvariant();

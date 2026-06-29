@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MqpetUnityBuildStatus } from '@shared/mqpet-unity-build';
+import { defaultSave } from '@shared/mqpet-state';
 import {
   createUnityLoaderConfig,
   describeUnityFallbackReason,
@@ -7,6 +8,7 @@ import {
   selectMqpetStageView,
   selectMqpetRuntime,
   sendUnityMenuAction,
+  sendUnityPetState,
   type UnityBridgeTarget,
 } from './unityRuntime';
 
@@ -111,6 +113,29 @@ describe('MQPet Unity bridge', () => {
   it('falls back when the Unity instance cannot receive menu commands', () => {
     expect(sendUnityMenuAction(null, 'feed')).toBe(false);
     expect(sendUnityMenuAction({}, 'feed')).toBe(false);
+  });
+
+  it('sends the QWicks pet save snapshot into the Unity WebGL bridge object', () => {
+    const SendMessage = vi.fn();
+    const save = defaultSave(1_700_000_000_000);
+
+    expect(sendUnityPetState({ SendMessage }, save)).toBe(true);
+
+    expect(SendMessage).toHaveBeenCalledWith(
+      'QwicksMqpetWebGLBridge',
+      'HandleQwicksPetState',
+      JSON.stringify(save),
+    );
+  });
+
+  it('falls back when the Unity instance cannot receive pet state snapshots', () => {
+    expect(sendUnityPetState(null, defaultSave())).toBe(false);
+    expect(sendUnityPetState({}, defaultSave())).toBe(false);
+    expect(sendUnityPetState({
+      SendMessage: () => {
+        throw new Error('Unity object missing');
+      },
+    }, defaultSave())).toBe(false);
   });
 
   it('forwards Unity hit boxes, dragging, and menu requests to the QWicks bridge', () => {
