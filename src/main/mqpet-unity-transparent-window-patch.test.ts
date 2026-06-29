@@ -172,6 +172,65 @@ describe('patchTransparentWindowForWebGL', () => {
     }
   });
 
+  it('adds required namespaces for the WebGL pointer and UI hit-test path', async () => {
+    const patchTransparentWindowForWebGL = await loadPatch();
+    const root = mkdtempSync(join(tmpdir(), 'qwicks-transparent-window-usings-'));
+    const file = join(root, 'TransparentWindow.cs');
+    writeFileSync(file, [
+      'using System;',
+      'using UnityEngine;',
+      'public class TransparentWindow : MonoBehaviour',
+      '{',
+      '\tprivate IntPtr hWnd;',
+      '\tprivate bool isDragging;',
+      '\tprivate bool isWindowMoved;',
+      '\tprivate bool isActionPlaying;',
+      '\tpublic LayerMask petLayer;',
+      '\tpublic bool is2DProject = true;',
+      '\tprivate GameObject qqObject;',
+      '\tpublic GameObject enterObject;',
+      '\tprivate void Start()',
+      '\t{',
+      '\t\thWnd = FindWindow(null, Application.productName);',
+      '\t\tStartCoroutine(ManageStartupSequence());',
+      '\t}',
+      '\tprivate void Update()',
+      '\t{',
+      '\t\tif (isStartupAnimating)',
+      '\t\t{',
+      '\t\t\treturn;',
+      '\t\t}',
+      '\t\tif (hWnd == IntPtr.Zero || Camera.main == null)',
+      '\t\t{',
+      '\t\t\treturn;',
+      '\t\t}',
+      '\t}',
+      '\tprivate void PlayRandomInteraction()',
+      '\t{',
+      '\t}',
+      '\tprivate void PlayQuestionAnimation()',
+      '\t{',
+      '\t}',
+      '\tprivate void SetClickThrough(bool enabled)',
+      '\t{',
+      '\t}',
+      '}',
+      '',
+    ].join('\n'));
+
+    try {
+      patchTransparentWindowForWebGL(file);
+      const patched = readFileSync(file, 'utf8');
+
+      expect(patched).toContain('using System.Collections.Generic;');
+      expect(patched).toContain('using UnityEngine.EventSystems;');
+      expect(patched.indexOf('using System.Collections.Generic;')).toBeLessThan(patched.indexOf('public class TransparentWindow'));
+      expect(patched.indexOf('using UnityEngine.EventSystems;')).toBeLessThan(patched.indexOf('public class TransparentWindow'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('patches real-world CRLF files with spaces around the startup guard', async () => {
     const patchTransparentWindowForWebGL = await loadPatch();
     const root = mkdtempSync(join(tmpdir(), 'qwicks-transparent-window-crlf-'));

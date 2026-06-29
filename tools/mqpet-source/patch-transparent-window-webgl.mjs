@@ -29,6 +29,18 @@ function replaceRegexOnce(text, regex, replacement, label) {
   return text.replace(regex, replacement);
 }
 
+function ensureUsing(text, namespace) {
+  const line = `using ${namespace};`;
+  if (text.split(/\r?\n/).some((current) => current.trim() === line)) return text;
+
+  const usingMatches = [...text.matchAll(/^using\s+[^;]+;\r?$/gm)];
+  if (usingMatches.length === 0) return `${line}\n${text}`;
+
+  const last = usingMatches[usingMatches.length - 1];
+  const insertAt = last.index + last[0].length;
+  return `${text.slice(0, insertAt)}\n${line}${text.slice(insertAt)}`;
+}
+
 function insertWebGLInputBeforeNativeWindowReturn(text) {
   if (/HandleWebGLPointerInput\(\);\r?\n[ \t]*return;\r?\n#endif\r?\n[ \t]*if \(hWnd == IntPtr\.Zero \|\| Camera\.main == null\)/.test(text)) {
     return text;
@@ -128,6 +140,8 @@ function removeMethodsByName(text, methodName) {
 export function patchTransparentWindowForWebGL(filePath) {
   let text = readFileSync(filePath, 'utf8');
   text = normalizeRepeatedBridgePatch(text);
+  text = ensureUsing(text, 'System.Collections.Generic');
+  text = ensureUsing(text, 'UnityEngine.EventSystems');
 
   text = insertBeforeRegexOnce(
     text,
