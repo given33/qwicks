@@ -54,6 +54,26 @@ export function selectMqpetRuntime(build: MqpetUnityBuildStatus | null | undefin
   return build?.available ? 'unity-webgl' : 'fallback-react';
 }
 
+export function describeUnityFallbackReason(reason: MqpetUnityBuildStatus | unknown): string {
+  if (reason && typeof reason === 'object' && 'available' in reason) {
+    const build = reason as MqpetUnityBuildStatus;
+    if (build.available) return '[mqpet-unity] using Unity WebGL runtime';
+    if (build.reason === 'missing-files') {
+      return [
+        `[mqpet-unity] falling back to React pet: missing Unity WebGL files in ${build.root}:`,
+        build.missingFiles.join(', '),
+      ].join(' ');
+    }
+    return [
+      `[mqpet-unity] falling back to React pet: multiple Unity loader files in ${build.root}:`,
+      build.loaderFiles.join(', '),
+    ].join(' ');
+  }
+
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return `[mqpet-unity] falling back to React pet: ${message}`;
+}
+
 export function createUnityLoaderConfig(build: Extract<MqpetUnityBuildStatus, { available: true }>): UnityLoaderConfig {
   return {
     dataUrl: build.dataUrl,

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MqpetUnityBuildStatus } from '@shared/mqpet-unity-build';
 import {
   createUnityLoaderConfig,
+  describeUnityFallbackReason,
   installUnityBridge,
   selectMqpetRuntime,
   sendUnityMenuAction,
@@ -40,6 +41,40 @@ describe('MQPet Unity runtime selection', () => {
       productName: 'QQPet',
       productVersion: '0.2.0',
     });
+  });
+
+  it('describes missing Unity WebGL files for renderer diagnostics', () => {
+    expect(describeUnityFallbackReason({
+      available: false,
+      root: 'D:/QWicksData/mqpet/unity-webgl',
+      reason: 'missing-files',
+      missingFiles: [
+        'Build/QQPet.framework.js',
+        'Build/QQPet.wasm',
+      ],
+    })).toBe(
+      '[mqpet-unity] falling back to React pet: missing Unity WebGL files in D:/QWicksData/mqpet/unity-webgl: Build/QQPet.framework.js, Build/QQPet.wasm',
+    );
+  });
+
+  it('describes ambiguous Unity loader files for renderer diagnostics', () => {
+    expect(describeUnityFallbackReason({
+      available: false,
+      root: 'D:/QWicksData/mqpet/unity-webgl',
+      reason: 'ambiguous-loader',
+      loaderFiles: [
+        'Build/PetDesktop.loader.js',
+        'Build/QQPetWebGL.loader.js',
+      ],
+    })).toBe(
+      '[mqpet-unity] falling back to React pet: multiple Unity loader files in D:/QWicksData/mqpet/unity-webgl: Build/PetDesktop.loader.js, Build/QQPetWebGL.loader.js',
+    );
+  });
+
+  it('describes runtime Unity loader failures for renderer diagnostics', () => {
+    expect(describeUnityFallbackReason(new Error('Unity loader did not expose createUnityInstance'))).toBe(
+      '[mqpet-unity] falling back to React pet: Unity loader did not expose createUnityInstance',
+    );
   });
 });
 

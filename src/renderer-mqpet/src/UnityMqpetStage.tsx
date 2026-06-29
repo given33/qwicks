@@ -8,6 +8,7 @@ import { createHoverMenuState, hoverMenuInteractiveBBox, HOVER_MENU_MAX_RADIUS, 
 import { startMqpetHeartbeat } from './mqpetHeartbeat';
 import {
   createUnityLoaderConfig,
+  describeUnityFallbackReason,
   installUnityBridge,
   sendUnityMenuAction,
   selectMqpetRuntime,
@@ -139,12 +140,13 @@ export function UnityMqpetStage(): React.ReactElement {
 
     void bridge.current.getUnityBuild()
       .then((next) => {
+        if (!next.available) bridge.current?.log?.(describeUnityFallbackReason(next));
         if (!cancelled) setBuild(next);
       })
       .catch((error) => {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : String(error);
-          bridge.current?.log?.(`[mqpet-unity] getUnityBuild failed: ${message}`);
+          bridge.current?.log?.(describeUnityFallbackReason(error));
           setLoadError(message);
         }
       });
@@ -180,7 +182,7 @@ export function UnityMqpetStage(): React.ReactElement {
       .catch((error) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
-        bridge.current?.log?.(`[mqpet-unity] loader failed: ${message}`);
+        bridge.current?.log?.(describeUnityFallbackReason(error));
         setLoadError(message);
       });
 
