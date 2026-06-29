@@ -3,6 +3,7 @@ import type { MqpetUnityBuildStatus } from '@shared/mqpet-unity-build';
 import { consolePanelForMenuAction, type MqPetSourceMenuAction } from '@shared/mqpet-source-assets';
 
 export type MqpetRuntimeKind = 'unity-webgl' | 'fallback-react';
+export type MqpetStageView = MqpetRuntimeKind | 'loading';
 
 export interface UnityLoaderConfig {
   dataUrl: string;
@@ -52,6 +53,15 @@ function panelRequestForUnityMenu(panel: UnityMenuPanel): MqpetConsolePanelReque
 
 export function selectMqpetRuntime(build: MqpetUnityBuildStatus | null | undefined): MqpetRuntimeKind {
   return build?.available ? 'unity-webgl' : 'fallback-react';
+}
+
+export function selectMqpetStageView(
+  build: MqpetUnityBuildStatus | null | undefined,
+  loadError: string | null | undefined,
+): MqpetStageView {
+  if (loadError) return 'fallback-react';
+  if (!build) return 'loading';
+  return selectMqpetRuntime(build);
 }
 
 export function describeUnityFallbackReason(reason: MqpetUnityBuildStatus | unknown): string {

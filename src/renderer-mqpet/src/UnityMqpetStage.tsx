@@ -11,6 +11,7 @@ import {
   describeUnityFallbackReason,
   installUnityBridge,
   sendUnityMenuAction,
+  selectMqpetStageView,
   selectMqpetRuntime,
   type UnityLoaderConfig,
 } from './unityRuntime';
@@ -195,7 +196,13 @@ export function UnityMqpetStage(): React.ReactElement {
     };
   }, [build]);
 
-  if (loadError || selectMqpetRuntime(build) === 'fallback-react') {
+  const stageView = selectMqpetStageView(build, loadError);
+
+  if (stageView === 'loading') {
+    return <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />;
+  }
+
+  if (stageView === 'fallback-react') {
     return <MqpetStage />;
   }
 

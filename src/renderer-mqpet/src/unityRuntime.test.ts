@@ -4,6 +4,7 @@ import {
   createUnityLoaderConfig,
   describeUnityFallbackReason,
   installUnityBridge,
+  selectMqpetStageView,
   selectMqpetRuntime,
   sendUnityMenuAction,
   type UnityBridgeTarget,
@@ -29,6 +30,22 @@ describe('MQPet Unity runtime selection', () => {
       reason: 'missing-files',
       missingFiles: ['Build/QQPet.wasm'],
     })).toBe('fallback-react');
+  });
+
+  it('keeps the Unity stage blank while build status is still loading', () => {
+    expect(selectMqpetStageView(null, null)).toBe('loading');
+    expect(selectMqpetStageView(undefined, null)).toBe('loading');
+  });
+
+  it('falls back only after a missing build or loader failure is known', () => {
+    expect(selectMqpetStageView({
+      available: false,
+      root: 'C:/missing',
+      reason: 'missing-files',
+      missingFiles: ['Build/QQPet.loader.js'],
+    }, null)).toBe('fallback-react');
+    expect(selectMqpetStageView(availableBuild, 'Unity loader did not expose createUnityInstance')).toBe('fallback-react');
+    expect(selectMqpetStageView(availableBuild, null)).toBe('unity-webgl');
   });
 
   it('creates the Unity loader config from the resolved build status', () => {
