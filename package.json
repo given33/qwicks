@@ -35,6 +35,7 @@
     "verify:apple": "node ./scripts/verify-apple-signing.cjs",
     "preview": "electron-vite preview",
     "mqpet:check-unity-webgl": "node ./tools/mqpet-source/check-unity-webgl-build.mjs",
+    "mqpet:export-unity-webgl": "node ./tools/mqpet-source/export-unity-webgl.mjs",
     "mqpet:sync-unity-bridge": "node ./tools/mqpet-source/sync-unity-webgl-bridge.mjs",
     "mqpet:sync-unity-build-script": "node ./tools/mqpet-source/sync-unity-webgl-build-script.mjs",
     "mqpet:patch-unity-transparent-window": "node ./tools/mqpet-source/patch-transparent-window-webgl.mjs",
