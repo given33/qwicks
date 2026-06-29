@@ -20,6 +20,14 @@ export const QWICKS_MQPET_JS_LIB = `mergeInto(LibraryManager.library, {
     window.qwicksMqpetUnityBridge.openMenu(panel || undefined);
   },
 
+  QwicksMqpet_ReportPetState: function (jsonPtr) {
+    if (typeof window === 'undefined' || !window.qwicksMqpetUnityBridge) return;
+    var json = jsonPtr ? UTF8ToString(jsonPtr) : '';
+    if (window.qwicksMqpetUnityBridge.reportPetState) {
+      window.qwicksMqpetUnityBridge.reportPetState(json || "{}");
+    }
+  },
+
   QwicksMqpet_Log: function (messagePtr) {
     if (typeof window === 'undefined' || !window.qwicksMqpetUnityBridge) return;
     var message = messagePtr ? UTF8ToString(messagePtr) : '';
@@ -44,6 +52,9 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
 
     [DllImport("__Internal")]
     private static extern void QwicksMqpet_OpenMenu(string panel);
+
+    [DllImport("__Internal")]
+    private static extern void QwicksMqpet_ReportPetState(string json);
 
     [DllImport("__Internal")]
     private static extern void QwicksMqpet_Log(string message);
@@ -115,6 +126,42 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
         public int interactionCount;
     }
 
+    public void ReportPetState()
+    {
+        if (PetDataManager.Instance == null) return;
+
+        QwicksPetSaveSnapshot save = new QwicksPetSaveSnapshot
+        {
+            state = CreateStateSnapshot(PetDataManager.Instance)
+        };
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        QwicksMqpet_ReportPetState(JsonUtility.ToJson(save));
+#endif
+    }
+
+    private static QwicksPetStateSnapshot CreateStateSnapshot(PetDataManager pet)
+    {
+        return new QwicksPetStateSnapshot
+        {
+            level = pet.currentLevel,
+            growth = pet.growthValue,
+            gold = pet.gold,
+            hunger = pet.hunger,
+            cleanliness = pet.cleanliness,
+            health = pet.health,
+            mood = pet.mood,
+            stamina = pet.stamina,
+            intelligence = pet.intelligence,
+            stressResistance = pet.stressResistance,
+            charm = pet.charm,
+            activity = pet.currentActivity.ToString(),
+            workTimer = GetPrivateInt(pet, "currentActionTimer"),
+            workTarget = GetPrivateInt(pet, "targetActionDuration"),
+            interactionCount = pet.currentInteractionCount
+        };
+    }
+
     public void HandleQwicksPetState(string json)
     {
         if (string.IsNullOrEmpty(json) || PetDataManager.Instance == null) return;
@@ -155,6 +202,16 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
             fieldName,
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         if (field != null) field.SetValue(target, Mathf.Max(0, value));
+    }
+
+    private static int GetPrivateInt(PetDataManager target, string fieldName)
+    {
+        System.Reflection.FieldInfo field = typeof(PetDataManager).GetField(
+            fieldName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (field == null) return 0;
+        object value = field.GetValue(target);
+        return value is int intValue ? Mathf.Max(0, intValue) : 0;
     }
 
     private static PetDataManager.PetActivity ParseActivity(string activity)
@@ -258,6 +315,8 @@ public sealed class QwicksMqpetWebGLBridge : MonoBehaviour
                 Debug.LogWarning($"QWicks QQPet received unsupported menu action: {action}");
                 break;
         }
+
+        ReportPetState();
     }
 
     public static QwicksMqpetWebGLBridge Ensure()

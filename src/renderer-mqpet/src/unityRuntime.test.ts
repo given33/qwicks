@@ -144,6 +144,7 @@ describe('MQPet Unity bridge', () => {
     const setDragging = vi.fn();
     const openConsolePanel = vi.fn();
     const toggleConsole = vi.fn();
+    const syncUnityState = vi.fn();
     const log = vi.fn();
 
     installUnityBridge(target, {
@@ -151,6 +152,7 @@ describe('MQPet Unity bridge', () => {
       setDragging,
       openConsolePanel,
       toggleConsole,
+      syncUnityState,
       log,
     });
 
@@ -158,14 +160,17 @@ describe('MQPet Unity bridge', () => {
       reportBBox: (bbox: { x: number; y: number; width: number; height: number }) => void;
       setDragging: (dragging: boolean) => void;
       openMenu: (panel?: 'bag' | 'shop' | 'status' | 'feed' | 'clean' | 'heal' | 'work' | 'learn' | 'map') => void;
+      reportPetState: (payload: string) => void;
       log: (message: string) => void;
     };
 
+    const unityStatePayload = '{"state":{"gold":250}}';
     bridge.reportBBox({ x: 10, y: 20, width: 30, height: 40 });
     bridge.setDragging(true);
     bridge.openMenu('bag');
     bridge.openMenu('feed');
     bridge.openMenu('heal');
+    bridge.reportPetState(unityStatePayload);
     bridge.log('ready');
     bridge.openMenu();
 
@@ -174,6 +179,7 @@ describe('MQPet Unity bridge', () => {
     expect(openConsolePanel).toHaveBeenCalledWith({ tab: 'inventory' });
     expect(openConsolePanel).toHaveBeenCalledWith({ tab: 'inventory', main: 'Feeding', sub: 'Food' });
     expect(openConsolePanel).toHaveBeenCalledWith({ tab: 'inventory', main: 'Feeding', sub: 'Medicine' });
+    expect(syncUnityState).toHaveBeenCalledWith(unityStatePayload);
     expect(log).toHaveBeenCalledWith('[unity] ready');
     expect(toggleConsole).toHaveBeenCalledTimes(1);
   });

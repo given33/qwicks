@@ -24,6 +24,7 @@ export interface QwicksMqpetBridge {
   setDragging: (dragging: boolean) => void;
   openConsolePanel?: (request: MqpetConsolePanelRequest) => Promise<unknown> | unknown;
   toggleConsole?: () => Promise<unknown> | unknown;
+  syncUnityState?: (payload: string) => Promise<unknown> | unknown;
   log?: (msg: string) => void;
 }
 
@@ -33,6 +34,7 @@ export interface QwicksMqpetUnityBridge {
   reportBBox: (bbox: { x: number; y: number; width: number; height: number } | null) => void;
   setDragging: (dragging: boolean) => void;
   openMenu: (panel?: UnityMenuPanel) => void;
+  reportPetState: (payload: string) => void;
   log: (message: string) => void;
 }
 
@@ -139,6 +141,9 @@ export function installUnityBridge(target: UnityBridgeTarget, bridge: QwicksMqpe
         return;
       }
       void bridge.toggleConsole?.();
+    },
+    reportPetState: (payload) => {
+      void bridge.syncUnityState?.(payload);
     },
     log: (message) => {
       bridge.log?.(`[unity] ${message}`);

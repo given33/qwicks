@@ -38,6 +38,7 @@ type Bridge = {
   toggleConsole?: () => Promise<unknown>;
   getState?: () => Promise<unknown>;
   onStateChanged?: (cb: (state: unknown) => void) => () => void;
+  syncUnityState?: (payload: string) => Promise<unknown>;
   log?: (msg: string) => void;
 };
 
@@ -174,6 +175,7 @@ export function UnityMqpetStage(): React.ReactElement {
       setDragging: bridge.current?.setDragging ?? (() => undefined),
       openConsolePanel: bridge.current?.openConsolePanel,
       toggleConsole: bridge.current?.toggleConsole,
+      syncUnityState: bridge.current?.syncUnityState,
     });
     reportInteractiveBBox();
 

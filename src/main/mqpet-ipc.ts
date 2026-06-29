@@ -2,7 +2,7 @@
 // mqpet:* IPC handlers。模式移植自 pet-ipc.ts。
 import { app, BrowserWindow, ipcMain } from 'electron';
 import {
-  getMqpetStateStore, mutateUseItem, mutateBuy, mutateWork, mutateLearn, mutateInteract,
+  getMqpetStateStore, mutateUseItem, mutateBuy, mutateWork, mutateLearn, mutateInteract, mutateSyncUnityState,
 } from './mqpet-state-store';
 import { normalizeConsolePanelRequest } from '../shared/mqpet-console-panel';
 import { readMqpetSourceAsset } from './mqpet-source-file';
@@ -29,6 +29,7 @@ export function registerMqpetStateIpc(): void {
   ipcMain.handle('mqpet:work', () => mutateWork(store));
   ipcMain.handle('mqpet:learn', () => mutateLearn(store));
   ipcMain.handle('mqpet:interact', () => mutateInteract(store));
+  ipcMain.handle('mqpet:sync-unity-state', (_e, payload: unknown) => mutateSyncUnityState(store, payload));
   ipcMain.handle('mqpet:get-source-asset', async (_e, sourcePath: string) => readMqpetSourceAsset(sourcePath));
   ipcMain.handle('mqpet:get-unity-build', () => resolveMqpetUnityBuild({
     env: process.env,

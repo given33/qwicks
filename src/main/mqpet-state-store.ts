@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { applyOffline, defaultSave, hydrateSave, type MqPetSave } from '../shared/mqpet-state';
-import { tick, applyItem, interact, startLearning, startWorking } from '../shared/mqpet-data';
+import { tick, applyItem, interact, startLearning, startWorking, type MqPetActivity, type MqPetState } from '../shared/mqpet-data';
 import { MQ_ITEM_BY_ID } from '../shared/mqpet-catalog';
 
 const STATE_DIR = join(homedir(), '.qwicks');
@@ -137,6 +137,60 @@ export function mutateLearn(store: MqpetStateStore): boolean {
 
 export function mutateInteract(store: MqpetStateStore): void {
   store.update((s) => ({ ...s, state: interact(s.state) }));
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function activityOr(value: unknown, fallback: MqPetActivity): MqPetActivity {
+  return value === 'Idle' || value === 'Working' || value === 'Learning' || value === 'Playing' ? value : fallback;
+}
+
+function mergeUnityState(current: MqPetState, raw: unknown): MqPetState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const state = raw as Partial<MqPetState>;
+  return {
+    ...current,
+    level: Math.max(1, Math.floor(numberOr(state.level, current.level))),
+    growth: Math.max(0, numberOr(state.growth, current.growth)),
+    gold: numberOr(state.gold, current.gold),
+    hunger: numberOr(state.hunger, current.hunger),
+    cleanliness: numberOr(state.cleanliness, current.cleanliness),
+    health: numberOr(state.health, current.health),
+    mood: numberOr(state.mood, current.mood),
+    stamina: numberOr(state.stamina, current.stamina),
+    intelligence: numberOr(state.intelligence, current.intelligence),
+    stressResistance: numberOr(state.stressResistance, current.stressResistance),
+    charm: numberOr(state.charm, current.charm),
+    activity: activityOr(state.activity, current.activity),
+    workTimer: Math.max(0, Math.floor(numberOr(state.workTimer, current.workTimer))),
+    workTarget: Math.max(0, Math.floor(numberOr(state.workTarget, current.workTarget))),
+    interactionCount: Math.max(0, Math.floor(numberOr(state.interactionCount, current.interactionCount))),
+  };
+}
+
+export function mutateSyncUnityState(store: MqpetStateStore, payload: unknown, now: number = Date.now()): boolean {
+  let parsed: unknown = payload;
+  if (typeof payload === 'string') {
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return false;
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') return false;
+  const patch = parsed as { state?: unknown };
+  const merged = mergeUnityState(store.getSnapshot().state, patch.state);
+  if (!merged) return false;
+
+  store.update((save) => ({
+    ...save,
+    state: merged,
+    lastSaved: now,
+  }));
+  return true;
 }
 
 let storeInstance: MqpetStateStore | null = null;

@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('mqpet', {
   work: (): Promise<unknown> => ipcRenderer.invoke('mqpet:work'),
   learn: (): Promise<unknown> => ipcRenderer.invoke('mqpet:learn'),
   interact: (): Promise<unknown> => ipcRenderer.invoke('mqpet:interact'),
+  syncUnityState: (payload: string): Promise<unknown> => ipcRenderer.invoke('mqpet:sync-unity-state', payload),
   getSourceAsset: (sourcePath: string): Promise<ArrayBuffer | null> => ipcRenderer.invoke('mqpet:get-source-asset', sourcePath),
   getUnityBuild: (): Promise<MqpetUnityBuildStatus> => ipcRenderer.invoke('mqpet:get-unity-build'),
   toggleConsole: (): Promise<unknown> => ipcRenderer.invoke('mqpet:toggle-console'),

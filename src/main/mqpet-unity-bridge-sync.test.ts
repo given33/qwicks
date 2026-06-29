@@ -24,6 +24,7 @@ describe('syncUnityWebGLBridge', () => {
       expect(jslib).toContain('window.qwicksMqpetUnityBridge.reportBBox');
       expect(jslib).toContain('window.qwicksMqpetUnityBridge.setDragging');
       expect(jslib).toContain('window.qwicksMqpetUnityBridge.openMenu');
+      expect(jslib).toContain('window.qwicksMqpetUnityBridge.reportPetState(json || "{}")');
 
       const cs = readFileSync(result.csPath, 'utf8');
       expect(cs).toContain('public sealed class QwicksMqpetWebGLBridge');
@@ -32,6 +33,9 @@ describe('syncUnityWebGLBridge', () => {
       expect(cs).toContain('OpenMenu(string panel)');
       expect(cs).toContain('HandleQwicksMenuAction(string action)');
       expect(cs).toContain('HandleQwicksPetState(string json)');
+      expect(cs).toContain('ReportPetState()');
+      expect(cs).toContain('QwicksMqpet_ReportPetState(JsonUtility.ToJson(save));');
+      expect(cs).toContain('ReportPetState();');
       expect(cs).toContain('PetDataManager.Instance.currentLevel = Mathf.Max(1, snapshot.state.level);');
       expect(cs).toContain('PetDataManager.Instance.gold = snapshot.state.gold;');
       expect(cs).toContain('PetDataManager.Instance.currentActivity = ParseActivity(snapshot.state.activity);');
