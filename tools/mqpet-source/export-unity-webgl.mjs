@@ -10,8 +10,12 @@ import { syncUnityWebGLBuildScript } from './sync-unity-webgl-build-script.mjs';
 const DEFAULT_PROJECT_ROOT = 'C:/Users/given/Desktop/QQpet_extracted/ExportedProject';
 const UNITY_VERSION_HINT = '2022.3.53f1c1';
 
-function defaultQwicksUnityWebGLOutputDir(env = process.env) {
+export function defaultQwicksUnityWebGLOutputDir(env = process.env) {
   return join(env.APPDATA || process.cwd(), 'QWicks', 'mqpet', 'unity-webgl');
+}
+
+export function defaultBundledUnityWebGLOutputDir() {
+  return resolve(fileURLToPath(new URL('../../resources/mqpet/unity-webgl', import.meta.url)));
 }
 
 function unique(values) {
@@ -130,9 +134,12 @@ export function exportUnityWebGL(options = {}) {
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   try {
+    const outputArg = process.argv[3] === '--bundled'
+      ? defaultBundledUnityWebGLOutputDir()
+      : process.argv[3];
     const result = exportUnityWebGL({
       projectRoot: process.argv[2],
-      outputDir: process.argv[3],
+      outputDir: outputArg,
     });
     console.log(`QWicks MQPet Unity WebGL export ready: ${result.outputDir}`);
   } catch (error) {

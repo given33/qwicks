@@ -1,6 +1,6 @@
 # Export QQPet Unity WebGL For QWicks
 
-QWicks now has an internal Unity QQPet engine host. The Unity project itself is not committed to the app repo because the source archive and WebGL output are too large. Build the WebGL player from the user's Unity project and point QWicks at the output directory.
+QWicks now has an internal Unity QQPet engine host. The Unity project itself is not committed to the app repo because the source archive is too large. Build the WebGL player from the Unity project once, then ship the exported WebGL runtime inside QWicks so end users do not need Unity installed.
 
 ## Source Project
 
@@ -23,7 +23,7 @@ QWicks also accepts alternate Unity stems such as `Build/QQPetWebGL.loader.js` a
 
 `StreamingAssets/` is optional but should be copied next to `Build/` if Unity creates it.
 
-## Recommended Target
+## Development Target
 
 `npm run mqpet:export-unity-webgl` now defaults to the QWicks user data location that the app automatically scans:
 
@@ -38,6 +38,24 @@ $env:QWICKS_MQPET_UNITY_WEBGL_DIR="D:\QWicksData\mqpet\unity-webgl"
 ```
 
 The Electron preload asks the main process for the resolved build path through `mqpet:get-unity-build`. If the build is incomplete, QWicks keeps the current React/SWF MQPet renderer as a fallback instead of showing a blank pet window.
+
+## Release-Bundled Target
+
+For builds that should work for every user without Unity, export into the app repo resources directory before packaging:
+
+```powershell
+npm run mqpet:export-unity-webgl:bundled
+```
+
+That command writes the WebGL runtime to:
+
+```text
+resources/mqpet/unity-webgl
+```
+
+`electron-builder` copies that directory to Electron `resources/mqpet/unity-webgl`. At runtime QWicks checks an explicit `QWICKS_MQPET_UNITY_WEBGL_DIR` override first, then the bundled Electron resources, then the development userData directory.
+
+The `afterPack` hook validates the bundled WebGL runtime before release artifacts are created. A release build without a complete Unity WebGL `Build/` directory fails instead of shipping a fallback-only pet.
 
 ## QWicks Bridge Patch
 
@@ -72,7 +90,7 @@ After the bridge and build script are synced, export WebGL from Unity Hub or run
   -logFile "%APPDATA%\QWicks\mqpet\unity-webgl\unity-build.log"
 ```
 
-This machine did not have the Unity Editor executable available during QWicks integration work, so the final export must be run on a machine with that exact Unity version installed.
+This machine did not have the Unity Editor executable available during QWicks integration work, so the final export must be run once on a development or CI machine with that exact Unity version and WebGL Build Support installed. End users do not need either Unity component.
 
 ## Verify
 

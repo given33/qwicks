@@ -65,6 +65,50 @@ describe('resolveMqpetUnityBuild', () => {
     expect(result.root).toBe(root);
   });
 
+  it('uses the bundled Unity WebGL build before userData so users do not need Unity installed', () => {
+    const userDataPath = makeBuildDir('userdata-with-build');
+    const userDataRoot = join(userDataPath, 'mqpet', 'unity-webgl');
+    mkdirSync(join(userDataRoot, 'Build'), { recursive: true });
+    writeRequiredBuildFiles(userDataRoot);
+
+    const resourcesPath = makeBuildDir('resources-with-build');
+    const bundledRoot = join(resourcesPath, 'mqpet', 'unity-webgl');
+    mkdirSync(join(bundledRoot, 'Build'), { recursive: true });
+    writeUnityBuildFiles(bundledRoot, 'QQPetWebGL');
+
+    const result = resolveMqpetUnityBuild({
+      env: {},
+      resourcesPath,
+      userDataPath,
+    });
+
+    expect(result.available).toBe(true);
+    if (!result.available) throw new Error(result.reason);
+    expect(result.root).toBe(bundledRoot);
+    expect(result.loaderUrl).toContain('QQPetWebGL.loader.js');
+  });
+
+  it('keeps the explicit environment directory as the developer override', () => {
+    const envRoot = makeBuildDir('env-override');
+    writeUnityBuildFiles(envRoot, 'EnvPet');
+
+    const resourcesPath = makeBuildDir('resources-ignored');
+    const bundledRoot = join(resourcesPath, 'mqpet', 'unity-webgl');
+    mkdirSync(join(bundledRoot, 'Build'), { recursive: true });
+    writeRequiredBuildFiles(bundledRoot);
+
+    const result = resolveMqpetUnityBuild({
+      env: { QWICKS_MQPET_UNITY_WEBGL_DIR: envRoot },
+      resourcesPath,
+      userDataPath: join(envRoot, 'unused-user-data'),
+    });
+
+    expect(result.available).toBe(true);
+    if (!result.available) throw new Error(result.reason);
+    expect(result.root).toBe(envRoot);
+    expect(result.loaderUrl).toContain('EnvPet.loader.js');
+  });
+
   it('detects the Unity build stem from the loader file instead of requiring QQPet', () => {
     const root = makeBuildDir('alternate-stem');
     writeUnityBuildFiles(root, 'QQPetWebGL');

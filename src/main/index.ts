@@ -1482,6 +1482,7 @@ app.whenReady().then(async () => {
     protocol,
     resolveRoot: () => resolveMqpetUnityBuild({
       env: process.env,
+      resourcesPath: process.resourcesPath,
       userDataPath: app.getPath('userData')
     }).root,
     log: (message, detail) => console.warn(`[mqpet-unity-protocol] ${message}`, detail ?? '')

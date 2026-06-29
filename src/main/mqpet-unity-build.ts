@@ -23,13 +23,16 @@ export {
 
 export interface ResolveMqpetUnityBuildOptions {
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  resourcesPath?: string;
   userDataPath: string;
 }
 
-function buildRoot(options: ResolveMqpetUnityBuildOptions): string {
-  const fromEnv = options.env?.[MQPET_UNITY_WEBGL_ENV]?.trim();
-  if (fromEnv) return fromEnv;
-  return join(options.userDataPath, 'mqpet', 'unity-webgl');
+function bundledBuildRoot(resourcesPath: string): string {
+  return join(resourcesPath, 'mqpet', 'unity-webgl');
+}
+
+function userDataBuildRoot(userDataPath: string): string {
+  return join(userDataPath, 'mqpet', 'unity-webgl');
 }
 
 function buildFile(stem: string, extension: typeof REQUIRED_MQPET_UNITY_BUILD_EXTENSIONS[number]): MqpetUnityBuildFile {
@@ -64,8 +67,7 @@ function detectBuildStem(root: string): { stem: string } | { ambiguousLoaderFile
   return null;
 }
 
-export function resolveMqpetUnityBuild(options: ResolveMqpetUnityBuildOptions): MqpetUnityBuildStatus {
-  const root = buildRoot(options);
+function inspectMqpetUnityBuildRoot(root: string): MqpetUnityBuildStatus {
   const detected = detectBuildStem(root);
   if (detected && 'ambiguousLoaderFiles' in detected) {
     return {
@@ -98,4 +100,19 @@ export function resolveMqpetUnityBuild(options: ResolveMqpetUnityBuildOptions): 
     codeUrl: createMqpetUnityResourceUrl(buildFile(stem, 'wasm')),
     streamingAssetsUrl: createMqpetUnityResourceUrl('StreamingAssets/'),
   };
+}
+
+function candidateBuildRoots(options: ResolveMqpetUnityBuildOptions): string[] {
+  const fromEnv = options.env?.[MQPET_UNITY_WEBGL_ENV]?.trim();
+  if (fromEnv) return [fromEnv];
+
+  return [
+    options.resourcesPath ? bundledBuildRoot(options.resourcesPath) : null,
+    userDataBuildRoot(options.userDataPath),
+  ].filter((root): root is string => Boolean(root));
+}
+
+export function resolveMqpetUnityBuild(options: ResolveMqpetUnityBuildOptions): MqpetUnityBuildStatus {
+  const candidates = candidateBuildRoots(options).map(inspectMqpetUnityBuildRoot);
+  return candidates.find((candidate) => candidate.available) ?? candidates[candidates.length - 1];
 }

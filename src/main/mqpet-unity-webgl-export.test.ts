@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 type ExportModule = {
+  defaultBundledUnityWebGLOutputDir: () => string;
   buildUnityBatchmodeArgs: (options: {
     unityEditor: string;
     projectRoot: string;
@@ -184,5 +185,14 @@ describe('export-unity-webgl', () => {
       else process.env.APPDATA = previousAppData;
       rmSync(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it('can target the repository resources directory for release bundling', async () => {
+    const modulePath = new URL('../../tools/mqpet-source/export-unity-webgl.mjs', import.meta.url).href;
+    const { defaultBundledUnityWebGLOutputDir } = await import(`${modulePath}?bundled-output-${Date.now()}`) as ExportModule;
+
+    expect(defaultBundledUnityWebGLOutputDir().replace(/\\/g, '/')).toMatch(
+      /resources\/mqpet\/unity-webgl$/,
+    );
   });
 });

@@ -33,6 +33,7 @@ export function registerMqpetStateIpc(): void {
   ipcMain.handle('mqpet:get-source-asset', async (_e, sourcePath: string) => readMqpetSourceAsset(sourcePath));
   ipcMain.handle('mqpet:get-unity-build', () => resolveMqpetUnityBuild({
     env: process.env,
+    resourcesPath: process.resourcesPath,
     userDataPath: app.getPath('userData'),
   }));
   ipcMain.handle('mqpet:toggle-console', async () => {

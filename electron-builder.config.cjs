@@ -136,6 +136,11 @@ module.exports = {
       from: 'resources/builtin-skills',
       to: 'builtin-skills',
       filter: ['**/*']
+    },
+    {
+      from: 'resources/mqpet/unity-webgl',
+      to: 'mqpet/unity-webgl',
+      filter: ['**/*']
     }
   ],
   artifactName: `QWicks-${artifactVersion}-\${os}-\${arch}.\${ext}`,

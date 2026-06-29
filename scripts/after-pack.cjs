@@ -10,6 +10,7 @@ const QWICKS_RUNTIME_REQUIRED_PATHS = [
   'qwicks/node_modules/diff/package.json',
   'qwicks/node_modules/@modelcontextprotocol/sdk/package.json'
 ]
+const MQPET_UNITY_BUILD_EXTENSIONS = ['loader.js', 'framework.js', 'wasm', 'data']
 
 function normalizePlatform(platform) {
   return platform === 'win' ? 'win32' : platform
@@ -85,6 +86,36 @@ function validateBundledQWicksRuntime(context) {
   )
 }
 
+function listBundledMqpetUnityLoaderFiles(root) {
+  const buildDir = join(root, 'Build')
+  try {
+    return readdirSync(buildDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.loader.js'))
+      .map((entry) => `Build/${entry.name}`)
+      .sort((a, b) => a.localeCompare(b))
+  } catch {
+    return []
+  }
+}
+
+function validateBundledMqpetUnityWebGL(context) {
+  const root = join(packedResourcesDir(context), 'mqpet', 'unity-webgl')
+  const loaderFiles = listBundledMqpetUnityLoaderFiles(root)
+  if (loaderFiles.length !== 1) {
+    throw new Error(
+      `[after-pack] Expected exactly one bundled QQPet Unity WebGL loader under ${root}/Build, found ${loaderFiles.length}`
+    )
+  }
+
+  const stem = loaderFiles[0].slice('Build/'.length, -'.loader.js'.length)
+  for (const extension of MQPET_UNITY_BUILD_EXTENSIONS) {
+    assertExists(
+      join(root, 'Build', `${stem}.${extension}`),
+      `bundled QQPet Unity WebGL runtime mqpet/unity-webgl/Build/${stem}.${extension}`
+    )
+  }
+}
+
 function maybeAdhocSignMacApp(context) {
   if (normalizePlatform(context.electronPlatformName) !== 'darwin') {
     return
@@ -134,6 +165,7 @@ function ensureNodePtyHelpersExecutable(context) {
 async function afterPack(context) {
   prunePackedQWicksDependencies(context)
   validateBundledQWicksRuntime(context)
+  validateBundledMqpetUnityWebGL(context)
   ensureNodePtyHelpersExecutable(context)
   maybeAdhocSignMacApp(context)
 }
@@ -146,6 +178,7 @@ exports._internals = {
   npmCommand,
   prunePackedQWicksDependencies,
   validateBundledQWicksRuntime,
+  validateBundledMqpetUnityWebGL,
   ensureNodePtyHelpersExecutable
 }
 exports.default = afterPack

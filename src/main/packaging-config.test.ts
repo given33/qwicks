@@ -123,6 +123,14 @@ describe('electron-builder QWicks packaging', () => {
     ]))
   })
 
+  it('bundles the QQPet Unity WebGL runtime so end users do not install Unity', () => {
+    expect(builderConfig.extraResources).toContainEqual({
+      from: 'resources/mqpet/unity-webgl',
+      to: 'mqpet/unity-webgl',
+      filter: ['**/*']
+    })
+  })
+
   it('validates the unpacked QWicks runtime before release artifacts are created', () => {
     const root = tempRoot()
     const context = createMacPackContext(root)
@@ -139,6 +147,24 @@ describe('electron-builder QWicks packaging', () => {
 
     expect(() => afterPack._internals.validateBundledQWicksRuntime(context)).toThrow(
       /qwicks\/node_modules\/zod\/package\.json/
+    )
+  })
+
+  it('validates the bundled QQPet Unity WebGL runtime before release artifacts are created', () => {
+    const root = tempRoot()
+    const context = createMacPackContext(root)
+    const webglRoot = join(afterPack._internals.packedResourcesDir(context), 'mqpet', 'unity-webgl')
+    touch(join(webglRoot, 'Build/QQPetWebGL.loader.js'))
+    touch(join(webglRoot, 'Build/QQPetWebGL.framework.js'))
+    touch(join(webglRoot, 'Build/QQPetWebGL.wasm'))
+    touch(join(webglRoot, 'Build/QQPetWebGL.data'))
+
+    expect(() => afterPack._internals.validateBundledMqpetUnityWebGL(context)).not.toThrow()
+
+    rmSync(join(webglRoot, 'Build/QQPetWebGL.wasm'), { force: true })
+
+    expect(() => afterPack._internals.validateBundledMqpetUnityWebGL(context)).toThrow(
+      /mqpet\/unity-webgl\/Build\/QQPetWebGL\.wasm/
     )
   })
 
