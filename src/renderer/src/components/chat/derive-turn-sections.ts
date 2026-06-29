@@ -90,6 +90,10 @@ function isPendingInteractionBlock(block: ChatBlock): block is PendingInteractio
   )
 }
 
+function isHiddenProcessStatusBlock(block: ChatBlock): boolean {
+  return block.kind === 'system' && /^runtime_status_.*_tool_upload_wait$/.test(block.id)
+}
+
 /**
  * Index of the last assistant block that carries visible (non-think) content.
  * That single segment is the turn's final answer bubble; everything before it
@@ -108,7 +112,7 @@ function findLastAssistantContentIndex(blocks: ChatBlock[]): number {
 
 /**
  * Pure derivation of a turn's three view slices:
- *  - `processBlocks`: chronological reasoning/tool/compaction/approval
+ *  - `processBlocks`: chronological tool/compaction/approval/status
  *    trace, including in-flight assistant output while a turn is processing.
  *  - `assistantContentBlocks`: assistant content that should render as the
  *    visible message body once it is no longer part of the active work timeline.
@@ -139,9 +143,6 @@ export function deriveTurnSections({
   for (const [index, block] of turn.blocks.entries()) {
     if (block.kind === 'assistant') {
       const split = splitThink(block.text)
-      if (split.think) {
-        processBlocks.push({ kind: 'reasoning', id: `${block.id}-think`, text: split.think })
-      }
       if (split.content.trim()) {
         const contentBlock: TurnAssistantBlock = { ...block, text: split.content }
         if (index === finalAssistantContentIndex) {
@@ -152,21 +153,19 @@ export function deriveTurnSections({
       }
       continue
     }
-    if (isProcessBlock(block)) {
+    if (isProcessBlock(block) && block.kind !== 'reasoning' && !isHiddenProcessStatusBlock(block)) {
       processBlocks.push(block)
     }
   }
 
-  if (liveProcessText.trim()) {
-    processBlocks.push({ kind: 'reasoning', id: 'live-reasoning', text: liveProcessText })
-  }
+  void liveProcessText
   // The streaming assistant text is rendered as a separate MessageBubble by
   // MessageTimeline (see `<MessageBubble block={{ kind: 'assistant',
   // id: 'live-assistant', text: liveContent }} />`). Avoid adding it to
   // processBlocks here — that would show the same content twice (once in
   // the WorkMetaRow process area, once in the regular message flow) until
-  // turn_completed drains the live block. Reasoning, by contrast, is
-  // process-only and stays here.
+  // turn_completed drains the live block. Raw model reasoning belongs in
+  // debug/raw-event views, not the main Codex-style workflow.
 
   const turnFileChanges: ToolBlock[] = isProcessing
     ? []

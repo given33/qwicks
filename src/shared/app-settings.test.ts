@@ -473,6 +473,19 @@ describe('mergeQWicksRuntimeSettings', () => {
     expect(next.baseUrl).toBe(current.baseUrl)
   })
 
+  it('drops legacy speech-to-text settings from normalized runtime snapshots', () => {
+    const raw = settings()
+    ;(raw.agents.qwicks as unknown as Record<string, unknown>).speechToText = {
+      enabled: true,
+      providerId: 'legacy-speech',
+      model: 'legacy-asr'
+    }
+
+    const normalized = normalizeAppSettings(raw)
+
+    expect('speechToText' in (normalized.agents.qwicks as unknown as Record<string, unknown>)).toBe(false)
+  })
+
   it('deep-merges token economy settings and keeps the legacy switch synced', () => {
     const current = defaultQWicksRuntimeSettings()
     const next = mergeQWicksRuntimeSettings(current, {
