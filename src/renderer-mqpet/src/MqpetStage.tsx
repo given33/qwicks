@@ -22,6 +22,7 @@ import { PenguinSprite } from './PenguinSprite';
 import { RadialMenu, type MenuPick } from './RadialMenu';
 import { createHoverMenuState, hoverMenuInteractiveBBox, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
 import { animationEventForStateUpdate, shouldApplyStatusFeedback, sourceAssetForStageFrame } from './mqpetStageEvents';
+import { startMqpetHeartbeat } from './mqpetHeartbeat';
 import {
   beginDragSession,
   clampPetCenterToViewport,
@@ -141,7 +142,7 @@ export function MqpetStage(): React.ReactElement {
   useEffect(() => {
     bridge.current?.log(`MqpetStage mounted, bridge=${bridge.current ? 'OK' : 'NULL'}`);
     writePosition(posRef.current, true);
-    const timer = window.setInterval(() => bridge.current?.heartbeat(), 2000);
+    const stopHeartbeat = startMqpetHeartbeat(bridge.current?.heartbeat);
     void bridge.current?.getState().then((raw) => {
       saveRef.current = raw as MqPetSave;
     });
@@ -157,7 +158,7 @@ export function MqpetStage(): React.ReactElement {
       else if (event === 'revive') setFsm((state) => onRevive(state));
     });
     return () => {
-      window.clearInterval(timer);
+      stopHeartbeat();
       unsubscribe?.();
       bridge.current?.setDragging(false);
       bridge.current?.reportBBox(null);

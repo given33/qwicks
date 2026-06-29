@@ -5,6 +5,7 @@ import { consolePanelForMenuAction } from '@shared/mqpet-source-assets';
 import { MqpetStage } from './MqpetStage';
 import { RadialMenu, type MenuPick } from './RadialMenu';
 import { createHoverMenuState, hoverMenuInteractiveBBox, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
+import { startMqpetHeartbeat } from './mqpetHeartbeat';
 import {
   createUnityLoaderConfig,
   installUnityBridge,
@@ -27,6 +28,7 @@ type CreateUnityInstance = (
 type Bridge = {
   reportBBox: (bbox: { x: number; y: number; w: number; h: number } | null) => void;
   setDragging: (dragging: boolean) => void;
+  heartbeat?: () => void;
   getUnityBuild?: () => Promise<MqpetUnityBuildStatus>;
   getSourceAsset?: (sourcePath: string) => Promise<ArrayBuffer | null>;
   openConsolePanel?: (request: MqpetConsolePanelRequest) => Promise<unknown>;
@@ -124,6 +126,7 @@ export function UnityMqpetStage(): React.ReactElement {
 
   useEffect(() => {
     let cancelled = false;
+    const stopHeartbeat = startMqpetHeartbeat(bridge.current?.heartbeat);
     if (!bridge.current?.getUnityBuild) {
       setBuild({
         available: false,
@@ -131,7 +134,7 @@ export function UnityMqpetStage(): React.ReactElement {
         reason: 'missing-files',
         missingFiles: ['Build/QQPet.loader.js'],
       });
-      return;
+      return stopHeartbeat;
     }
 
     void bridge.current.getUnityBuild()
@@ -148,6 +151,7 @@ export function UnityMqpetStage(): React.ReactElement {
 
     return () => {
       cancelled = true;
+      stopHeartbeat();
     };
   }, []);
 
