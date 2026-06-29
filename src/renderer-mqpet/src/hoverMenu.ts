@@ -10,6 +10,20 @@ export interface HoverMenuState {
   hideElapsedMs: number;
 }
 
+export interface HoverMenuBBoxInput {
+  center: { x: number; y: number };
+  width: number;
+  height: number;
+  open: boolean;
+}
+
+export interface HoverMenuBBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export type HoverMenuEvent =
   | { type: 'pointer-distance'; distance: number; dtMs: number }
   | { type: 'force-open' }
@@ -70,5 +84,17 @@ export function reduceHoverMenu(state: HoverMenuState, event: HoverMenuEvent): H
     open: hideElapsedMs < HOVER_MENU_HIDE_DELAY_MS,
     showElapsedMs: 0,
     hideElapsedMs,
+  };
+}
+
+export function hoverMenuInteractiveBBox(input: HoverMenuBBoxInput): HoverMenuBBox {
+  const radius = input.open ? HOVER_MENU_MAX_RADIUS : HOVER_MENU_PENGUIN_RADIUS;
+  const halfW = Math.max(input.width / 2, radius);
+  const halfH = Math.max(input.height / 2, radius);
+  return {
+    x: input.center.x - halfW,
+    y: input.center.y - halfH,
+    w: halfW * 2,
+    h: halfH * 2,
   };
 }

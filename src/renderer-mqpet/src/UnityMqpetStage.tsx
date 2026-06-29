@@ -4,7 +4,7 @@ import type { MqpetConsolePanelRequest } from '@shared/mqpet-console-panel';
 import { consolePanelForMenuAction } from '@shared/mqpet-source-assets';
 import { MqpetStage } from './MqpetStage';
 import { RadialMenu, type MenuPick } from './RadialMenu';
-import { createHoverMenuState, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
+import { createHoverMenuState, hoverMenuInteractiveBBox, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
 import {
   createUnityLoaderConfig,
   installUnityBridge,
@@ -98,17 +98,13 @@ export function UnityMqpetStage(): React.ReactElement {
 
   function reportInteractiveBBox(open = menuOpen): void {
     const bbox = petBBox.current ?? fallbackBBox();
-    if (!open) {
-      bridge.current?.reportBBox(bbox);
-      return;
-    }
     const center = menuCenter();
-    bridge.current?.reportBBox({
-      x: center.x - HOVER_MENU_MAX_RADIUS,
-      y: center.y - HOVER_MENU_MAX_RADIUS,
-      w: HOVER_MENU_MAX_RADIUS * 2,
-      h: HOVER_MENU_MAX_RADIUS * 2,
-    });
+    bridge.current?.reportBBox(hoverMenuInteractiveBBox({
+      center,
+      width: bbox.w,
+      height: bbox.h,
+      open,
+    }));
   }
 
   function distanceToPet(pointer: { x: number; y: number }): number {

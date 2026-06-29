@@ -20,7 +20,7 @@ import { consolePanelForMenuAction } from '@shared/mqpet-source-assets';
 import type { MqPetSave } from '@shared/mqpet-state';
 import { PenguinSprite } from './PenguinSprite';
 import { RadialMenu, type MenuPick } from './RadialMenu';
-import { createHoverMenuState, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
+import { createHoverMenuState, hoverMenuInteractiveBBox, HOVER_MENU_MAX_RADIUS, reduceHoverMenu, type HoverMenuState } from './hoverMenu';
 import { animationEventForStateUpdate, shouldApplyStatusFeedback, sourceAssetForStageFrame } from './mqpetStageEvents';
 import {
   beginDragSession,
@@ -57,7 +57,6 @@ const PENGUIN_W = Math.round(128 * PET_SCALE);
 const PENGUIN_H = Math.round(144 * PET_SCALE);
 const DRAG_THRESHOLD = 5;
 const VIEWPORT_MARGIN = 12;
-const MENU_HIT_RADIUS = HOVER_MENU_MAX_RADIUS;
 export function MqpetStage(): React.ReactElement {
   const bridge = useRef(getBridge());
   const [fsm, setFsm] = useState<MqPetFsm>(initialFsm);
@@ -130,14 +129,12 @@ export function MqpetStage(): React.ReactElement {
     requestAnimationFrame(() => {
       bboxPending.current = false;
       const p = posRef.current;
-      const halfW = menuOpen ? MENU_HIT_RADIUS : PENGUIN_W / 2;
-      const halfH = menuOpen ? MENU_HIT_RADIUS : PENGUIN_H / 2;
-      bridge.current?.reportBBox({
-        x: p.x - halfW,
-        y: p.y - halfH,
-        w: halfW * 2,
-        h: halfH * 2,
-      });
+      bridge.current?.reportBBox(hoverMenuInteractiveBBox({
+        center: p,
+        width: PENGUIN_W,
+        height: PENGUIN_H,
+        open: menuOpen,
+      }));
     });
   }
 
