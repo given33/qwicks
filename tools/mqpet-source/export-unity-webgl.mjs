@@ -10,6 +10,10 @@ import { syncUnityWebGLBuildScript } from './sync-unity-webgl-build-script.mjs';
 const DEFAULT_PROJECT_ROOT = 'C:/Users/given/Desktop/QQpet_extracted/ExportedProject';
 const UNITY_VERSION_HINT = '2022.3.53f1c1';
 
+function defaultQwicksUnityWebGLOutputDir(env = process.env) {
+  return join(env.APPDATA || process.cwd(), 'QWicks', 'mqpet', 'unity-webgl');
+}
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -85,7 +89,11 @@ function ensureProjectLooksLikeUnity(projectRoot) {
 
 export function exportUnityWebGL(options = {}) {
   const projectRoot = resolve(options.projectRoot || DEFAULT_PROJECT_ROOT);
-  const outputDir = resolve(options.outputDir || process.env.QWICKS_MQPET_UNITY_WEBGL_DIR || join(projectRoot, 'QwicksMqpetWebGL'));
+  const outputDir = resolve(
+    options.outputDir
+      || process.env.QWICKS_MQPET_UNITY_WEBGL_DIR
+      || defaultQwicksUnityWebGLOutputDir(),
+  );
   const unityEditor = options.unityEditor || findUnityEditor(process.env);
   const logFile = resolve(options.logFile || join(outputDir, 'unity-build.log'));
   const runCommand = options.runCommand || defaultRunCommand;

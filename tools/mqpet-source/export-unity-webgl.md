@@ -25,16 +25,16 @@ QWicks also accepts alternate Unity stems such as `Build/QQPetWebGL.loader.js` a
 
 ## Recommended Target
 
-Use either:
-
-```powershell
-$env:QWICKS_MQPET_UNITY_WEBGL_DIR="D:\QWicksData\mqpet\unity-webgl"
-```
-
-or place the exported files under QWicks user data:
+`npm run mqpet:export-unity-webgl` now defaults to the QWicks user data location that the app automatically scans:
 
 ```text
 %APPDATA%/QWicks/mqpet/unity-webgl
+```
+
+Use an explicit override when you want the WebGL build somewhere else:
+
+```powershell
+$env:QWICKS_MQPET_UNITY_WEBGL_DIR="D:\QWicksData\mqpet\unity-webgl"
 ```
 
 The Electron preload asks the main process for the resolved build path through `mqpet:get-unity-build`. If the build is incomplete, QWicks keeps the current React/SWF MQPet renderer as a fallback instead of showing a blank pet window.
@@ -64,13 +64,12 @@ and patches `TransparentWindow.cs` so WebGL reports the current pet hit box and 
 After the bridge and build script are synced, export WebGL from Unity Hub or run batchmode with Unity 2022.3.53f1c1:
 
 ```powershell
-$env:QWICKS_MQPET_UNITY_WEBGL_DIR="D:\QWicksData\mqpet\unity-webgl"
 & "C:\Program Files\Unity\Hub\Editor\2022.3.53f1c1\Editor\Unity.exe" `
   -batchmode `
   -quit `
   -projectPath "C:\Users\given\Desktop\QQpet_extracted\ExportedProject" `
   -executeMethod QwicksMqpetWebGLBuild.Build `
-  -logFile "C:\Users\given\Desktop\QQpet-webgl-build.log"
+  -logFile "%APPDATA%\QWicks\mqpet\unity-webgl\unity-build.log"
 ```
 
 This machine did not have the Unity Editor executable available during QWicks integration work, so the final export must be run on a machine with that exact Unity version installed.
