@@ -1,6 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
   MQPET_UNITY_BUILD_DIR,
   MQPET_UNITY_DEFAULT_BUILD_STEM,
@@ -10,6 +9,7 @@ import {
   type MqpetUnityBuildFile,
   type MqpetUnityBuildStatus,
 } from '../shared/mqpet-unity-build';
+import { createMqpetUnityResourceUrl } from './mqpet-unity-protocol';
 
 export {
   MQPET_UNITY_BUILD_DIR,
@@ -24,10 +24,6 @@ export {
 export interface ResolveMqpetUnityBuildOptions {
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   userDataPath: string;
-}
-
-function fileUrl(path: string): string {
-  return pathToFileURL(path).toString();
 }
 
 function buildRoot(options: ResolveMqpetUnityBuildOptions): string {
@@ -95,11 +91,11 @@ export function resolveMqpetUnityBuild(options: ResolveMqpetUnityBuildOptions): 
   return {
     available: true,
     root,
-    buildBaseUrl: `${fileUrl(join(root, MQPET_UNITY_BUILD_DIR))}/`,
-    loaderUrl: fileUrl(join(root, buildFile(stem, 'loader.js'))),
-    dataUrl: fileUrl(join(root, buildFile(stem, 'data'))),
-    frameworkUrl: fileUrl(join(root, buildFile(stem, 'framework.js'))),
-    codeUrl: fileUrl(join(root, buildFile(stem, 'wasm'))),
-    streamingAssetsUrl: `${fileUrl(join(root, 'StreamingAssets'))}/`,
+    buildBaseUrl: createMqpetUnityResourceUrl(`${MQPET_UNITY_BUILD_DIR}/`),
+    loaderUrl: createMqpetUnityResourceUrl(buildFile(stem, 'loader.js')),
+    dataUrl: createMqpetUnityResourceUrl(buildFile(stem, 'data')),
+    frameworkUrl: createMqpetUnityResourceUrl(buildFile(stem, 'framework.js')),
+    codeUrl: createMqpetUnityResourceUrl(buildFile(stem, 'wasm')),
+    streamingAssetsUrl: createMqpetUnityResourceUrl('StreamingAssets/'),
   };
 }

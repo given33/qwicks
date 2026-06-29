@@ -39,10 +39,14 @@ describe('resolveMqpetUnityBuild', () => {
     expect(result.available).toBe(true);
     if (!result.available) throw new Error(result.reason);
     expect(result.root).toBe(root);
-    expect(result.loaderUrl).toMatch(/^file:\/\/\//);
+    expect(result.loaderUrl).toBe('qwicks-mqpet-unity://local/Build/QQPet.loader.js');
+    expect(result.dataUrl).toBe('qwicks-mqpet-unity://local/Build/QQPet.data');
+    expect(result.frameworkUrl).toBe('qwicks-mqpet-unity://local/Build/QQPet.framework.js');
+    expect(result.codeUrl).toBe('qwicks-mqpet-unity://local/Build/QQPet.wasm');
+    expect(result.streamingAssetsUrl).toBe('qwicks-mqpet-unity://local/StreamingAssets/');
     expect(result.loaderUrl).toContain('QQPet.loader.js');
     expect(result.loaderUrl).not.toContain('\\');
-    expect(result.buildBaseUrl).toMatch(/\/Build\/$/);
+    expect(result.buildBaseUrl).toBe('qwicks-mqpet-unity://local/Build/');
   });
 
   it('falls back to the QWicks userData unity-webgl directory when no env override is set', () => {

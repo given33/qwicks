@@ -11,6 +11,12 @@ function cspDirective(name: string): string[] {
 
 describe('MQPet renderer content security policy', () => {
   it('allows local Unity WebGL loader, wasm/data, worker, image, and media files', () => {
+    expect(cspDirective('default-src')).toContain('qwicks-mqpet-unity:');
+    expect(cspDirective('script-src')).toContain('qwicks-mqpet-unity:');
+    expect(cspDirective('worker-src')).toContain('qwicks-mqpet-unity:');
+    expect(cspDirective('connect-src')).toContain('qwicks-mqpet-unity:');
+    expect(cspDirective('img-src')).toContain('qwicks-mqpet-unity:');
+    expect(cspDirective('media-src')).toContain('qwicks-mqpet-unity:');
     expect(cspDirective('default-src')).toContain('file:');
     expect(cspDirective('script-src')).toContain('file:');
     expect(cspDirective('worker-src')).toContain('file:');

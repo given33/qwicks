@@ -11,12 +11,12 @@ import {
 const availableBuild: MqpetUnityBuildStatus = {
   available: true,
   root: 'C:/QWicks/mqpet/unity-webgl',
-  buildBaseUrl: 'file:///C:/QWicks/mqpet/unity-webgl/Build/',
-  loaderUrl: 'file:///C:/QWicks/mqpet/unity-webgl/Build/QQPet.loader.js',
-  dataUrl: 'file:///C:/QWicks/mqpet/unity-webgl/Build/QQPet.data',
-  frameworkUrl: 'file:///C:/QWicks/mqpet/unity-webgl/Build/QQPet.framework.js',
-  codeUrl: 'file:///C:/QWicks/mqpet/unity-webgl/Build/QQPet.wasm',
-  streamingAssetsUrl: 'file:///C:/QWicks/mqpet/unity-webgl/StreamingAssets/',
+  buildBaseUrl: 'qwicks-mqpet-unity://local/Build/',
+  loaderUrl: 'qwicks-mqpet-unity://local/Build/QQPet.loader.js',
+  dataUrl: 'qwicks-mqpet-unity://local/Build/QQPet.data',
+  frameworkUrl: 'qwicks-mqpet-unity://local/Build/QQPet.framework.js',
+  codeUrl: 'qwicks-mqpet-unity://local/Build/QQPet.wasm',
+  streamingAssetsUrl: 'qwicks-mqpet-unity://local/StreamingAssets/',
 };
 
 describe('MQPet Unity runtime selection', () => {

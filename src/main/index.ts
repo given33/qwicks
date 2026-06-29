@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, safeStorage, screen, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, protocol, safeStorage, screen, Tray } from 'electron'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -97,6 +97,8 @@ import { getMqpetStateStore } from './mqpet-state-store'
 import { registerMqpetStateIpc } from './mqpet-ipc'
 import { toggleConsoleWindow } from './mqpet-console-window'
 import { scheduleMqpetStartup } from './mqpet-startup'
+import { resolveMqpetUnityBuild } from './mqpet-unity-build'
+import { registerMqpetUnityProtocolHandler, registerMqpetUnityProtocolScheme } from './mqpet-unity-protocol'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 // AppUserModelId 必须和 electron-builder 的 appId 一致,这样 Windows
@@ -193,6 +195,7 @@ if (runningClawScheduleMcpServer && process.platform === 'darwin') {
 // 抽到 app-identity.ts 是为了让测试可以直接 import,不被 main 的
 // whenReady 副作用污染。
 configureAppIdentity()
+registerMqpetUnityProtocolScheme(protocol)
 
 // 紧跟在身份设置之后、requestSingleInstanceLock() 之前做旧数据迁移:
 // 单实例锁文件就放在 userData 里,必须先把目录定下来。rename 失败
@@ -1475,6 +1478,14 @@ app.whenReady().then(async () => {
   traceStartup('install webview guards:start')
   installDevPreviewWebviewGuards()
   traceStartup('install webview guards:done')
+  registerMqpetUnityProtocolHandler({
+    protocol,
+    resolveRoot: () => resolveMqpetUnityBuild({
+      env: process.env,
+      userDataPath: app.getPath('userData')
+    }).root,
+    log: (message, detail) => console.warn(`[mqpet-unity-protocol] ${message}`, detail ?? '')
+  })
 
   if (process.platform === 'darwin') {
     const macDockIcon = createAppIcon(qwicksMacLogoPng)
