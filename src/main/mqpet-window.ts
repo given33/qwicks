@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import {
   computeMqpetShellInteraction,
+  createMqpetWindowOptions,
   normalizeMqpetBBox,
   type MqpetBBox,
 } from './mqpet-window-shell';
@@ -143,25 +144,10 @@ export function createMqpetWindow(): BrowserWindow {
   const bounds = getCurrentVirtualDesktopBounds();
   desiredVisible = true;
   lastHeartbeat = 0;
-  mqpetWindow = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    hasShadow: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    focusable: false,
-    show: false,
-    webPreferences: { preload: resolvePreloadPath(), contextIsolation: true, sandbox: true },
-  });
+  mqpetWindow = new BrowserWindow(createMqpetWindowOptions({
+    bounds,
+    preload: resolvePreloadPath(),
+  }));
   mqpetWindow.setAlwaysOnTop(true, 'screen-saver');
   mqpetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mqpetWindow.setIgnoreMouseEvents(true, { forward: true });
